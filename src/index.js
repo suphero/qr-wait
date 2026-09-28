@@ -45,9 +45,9 @@ export class Room extends DurableObject {
 
   save() { return this.ctx.storage.put("s", this.s); }
 
-  async create({ name, lat, lng, radius }) {
+  async create(fields) {
     if (this.s) throw new Error("Oda zaten var");
-    this.s = { name, lat, lng, radius, key: crypto.randomUUID(), seq: 0, available: 0, entries: [] };
+    this.s = { ...fields, key: crypto.randomUUID(), seq: 0, available: 0, entries: [] };
     await this.save();
     return this.s.key;
   }
@@ -55,7 +55,7 @@ export class Room extends DurableObject {
   info() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
-      name: s.name, lat: s.lat, lng: s.lng, radius: s.radius, key: s.key,
+      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, radius: s.radius, key: s.key,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), called: s.entries.length - w.length,
     };
   }
@@ -170,35 +170,64 @@ export class Room extends DurableObject {
   }
 }
 
-// Oda listesi. DO'lar listelenemediği için oda ID'leri burada tutulur; oda bilgisi odanın kendisindedir.
+// Oda listesi ve slug eşlemesi. DO'lar listelenemediği için buradadır; oda bilgisi odanın kendisindedir.
+// Anahtarlar: "<oda id>" → oluşturulma zamanı, "slug:<slug>" → oda id.
+// Sıcak yolda değil: sayfalar slug'ı açılışta bir kez çözer, sonra doğrudan odaya gider.
 export class Registry extends DurableObject {
   add(id) { return this.ctx.storage.put(id, Date.now()); }
-  remove(id) { return this.ctx.storage.delete(id); }
-  async list() { return [...(await this.ctx.storage.list())].sort((a, b) => a[1] - b[1]).map(([id]) => id); }
+  remove(id, slug) { return this.ctx.storage.delete([id, `slug:${slug}`]); }
+  resolve(slug) { return this.ctx.storage.get(`slug:${slug}`); }
+
+  async list() {
+    const all = [...(await this.ctx.storage.list())].filter(([k]) => !k.startsWith("slug:"));
+    return all.sort((a, b) => a[1] - b[1]).map(([id]) => id);
+  }
+
+  // DO girdi kapısı sayesinde oku-yaz arasında başka istek araya giremez: aynı slug iki odaya verilemez
+  async claim(slug, id, old) {
+    const owner = await this.ctx.storage.get(`slug:${slug}`);
+    if (owner && owner !== id) throw new Error("Bu adres başka bir plajda kullanılıyor");
+    if (old && old !== slug) await this.ctx.storage.delete(`slug:${old}`);
+    await this.ctx.storage.put(`slug:${slug}`, id);
+  }
 }
+
+const ID_RE = /^[a-f0-9]{10}$/;
+const RESERVED = new Set(["www", "api", "admin", "yonetim", "mail"]);
 
 function roomFields(b) {
   const lat = Number(b.lat), lng = Number(b.lng);
   if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) throw new Error("Geçersiz konum");
+  const slug = String(b.slug ?? "").trim();
+  if (!/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(slug) || ID_RE.test(slug) || RESERVED.has(slug))
+    throw new Error("Geçersiz adres: 3-40 karakter, küçük harf, rakam ve tire");
   return {
     name: String(b.name ?? "").trim().slice(0, 60) || "Plaj",
-    lat, lng, radius: int(b.radius, 50, 2000, "Yarıçap 50-2000 m olmalı"),
+    slug, lat, lng, radius: int(b.radius, 50, 2000, "Yarıçap 50-2000 m olmalı"),
   };
 }
 
-async function adminApi(req, env, path, body) {
+// Görevli linki: alan adı tanımlıysa slug alt alan adı, değilse aynı origin + slug (yoksa id)
+function hostLink(url, env, r) {
+  if (env.BASE_DOMAIN && r.slug) return `https://${r.slug}.${env.BASE_DOMAIN}/host#${r.key}`;
+  return `${url.origin}/host#${r.slug ?? r.room}.${r.key}`;
+}
+
+async function adminApi(req, env, url, body) {
   if (!env.ADMIN_PASSWORD || !same(req.headers.get("x-admin"), env.ADMIN_PASSWORD)) throw new Error("Hatalı şifre");
-  const m = path.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import))?)?$/);
+  const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import))?)?$/);
   if (!m) throw new Error("Geçersiz istek");
   const [, id, op] = m, reg = env.REGISTRY.getByName("main");
   if (!id && req.method === "GET") {
     const ids = await reg.list();
     const rooms = await Promise.all(ids.map((room) => env.ROOM.getByName(room).info().then((x) => ({ room, ...x }), () => null)));
-    return rooms.filter(Boolean);
+    return rooms.filter(Boolean).map((r) => ({ ...r, link: hostLink(url, env, r) }));
   }
   if (!id && req.method === "POST") {
+    const fields = roomFields(body);
     const room = crypto.randomUUID().replaceAll("-", "").slice(0, 10);
-    const key = await env.ROOM.getByName(room).create(roomFields(body));
+    await reg.claim(fields.slug, room);
+    const key = await env.ROOM.getByName(room).create(fields);
     await reg.add(room);
     return { room, key };
   }
@@ -209,10 +238,13 @@ async function adminApi(req, env, path, body) {
     await room.info(); // oda yoksa "Oda bulunamadı" fırlatır
     await reg.add(id);
   } else if (!op && req.method === "PUT") {
-    await room.update(roomFields(body));
+    const fields = roomFields(body);
+    await reg.claim(fields.slug, id, (await room.info()).slug);
+    await room.update(fields);
   } else if (!op && req.method === "DELETE") {
+    const { slug } = await room.info().catch(() => ({}));
     await room.destroy();
-    await reg.remove(id);
+    await reg.remove(id, slug);
   } else throw new Error("Geçersiz istek");
   return { ok: true };
 }
@@ -222,7 +254,15 @@ export default {
     const url = new URL(req.url);
     try {
       const body = ["POST", "PUT"].includes(req.method) ? await req.json() : {};
-      if (url.pathname.startsWith("/api/admin/")) return Response.json(await adminApi(req, env, url.pathname, body));
+      if (url.pathname.startsWith("/api/admin/")) return Response.json(await adminApi(req, env, url, body));
+      if (url.pathname === "/api/resolve") {
+        // ?r= oda id'si ya da slug; yoksa alt alan adından (antalya-konserve.belediyeplaj.com)
+        const sub = env.BASE_DOMAIN && url.hostname.endsWith(`.${env.BASE_DOMAIN}`) ? url.hostname.slice(0, -env.BASE_DOMAIN.length - 1) : "";
+        const ref = url.searchParams.get("r") || sub;
+        const room = ID_RE.test(ref) ? ref : ref && (await env.REGISTRY.getByName("main").resolve(ref));
+        if (!room) throw new Error("Plaj bulunamadı");
+        return Response.json({ room });
+      }
       const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|admin)$/);
       if (!m) return new Response("Not found", { status: 404 });
       const room = env.ROOM.getByName(m[1]);

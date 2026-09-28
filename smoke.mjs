@@ -10,8 +10,14 @@ const post = (p, body, h) => req("POST", p, body, h);
 const PW = { "x-admin": process.env.PASSWORD ?? "test" };
 const beach = { lat: 36.8841, lng: 30.7056 };
 
-const { room, key } = await post("/api/admin/rooms", { name: "Test Plajı", radius: 300, ...beach }, PW);
+const slug = `test-${Date.now()}`;
+const { room, key } = await post("/api/admin/rooms", { name: "Test Plajı", slug, radius: 300, ...beach }, PW);
 assert.ok(room && key);
+const resolve = async (r, h) => (await req("GET", `/api/resolve?r=${r}`, undefined, h));
+assert.equal((await resolve(slug)).room, room, "slug oda id'sine çözülür");
+assert.equal((await resolve(room)).room, room, "eski id linkleri çalışır");
+assert.match((await post("/api/admin/rooms", { name: "X", slug, radius: 300, ...beach }, PW)).error, /kullanılıyor/, "aynı slug iki odaya verilemez");
+assert.match((await post("/api/admin/rooms", { name: "X", slug: "Kötü Adres", radius: 300, ...beach }, PW)).error, /Geçersiz adres/);
 assert.equal((await req("GET", "/api/admin/rooms", undefined, { "x-admin": "yanlis" })).error, "Hatalı şifre");
 
 const admin = (body = {}) => post(`/api/r/${room}/admin`, body, { "x-key": key });
@@ -51,14 +57,19 @@ assert.equal((await me(b.id)).status, "gone");
 // Oda CRUD
 const find = async () => (await req("GET", "/api/admin/rooms", undefined, PW)).find((r) => r.room === room);
 assert.equal((await find()).people, 3, "listede bekleyen kişi sayısı görünür (#3 + #4)");
-await req("PUT", `/api/admin/rooms/${room}`, { name: "Yeni Ad", radius: 500, ...beach }, PW);
-assert.deepEqual([(await find()).name, (await find()).radius], ["Yeni Ad", 500]);
+const slug2 = `${slug}-yeni`;
+await req("PUT", `/api/admin/rooms/${room}`, { name: "Yeni Ad", slug: slug2, radius: 500, ...beach }, PW);
+assert.deepEqual([(await find()).name, (await find()).radius, (await find()).slug], ["Yeni Ad", 500, slug2]);
+assert.ok((await find()).link.includes(slug2), "görevli linki yeni slug ile");
+assert.equal((await resolve(slug)).error, "Plaj bulunamadı", "eski slug serbest kalır");
+assert.equal((await resolve(slug2)).room, room);
 const { key: key2 } = await post(`/api/admin/rooms/${room}/rotate`, {}, PW);
 assert.notEqual(key2, key);
 assert.equal((await admin()).error, "Yetkisiz", "eski görevli linki geçersiz");
 assert.equal((await post(`/api/r/${room}/admin`, {}, { "x-key": key2 })).name, "Yeni Ad");
 await req("DELETE", `/api/admin/rooms/${room}`, undefined, PW);
 assert.equal(await find(), undefined);
+assert.equal((await resolve(slug2)).error, "Plaj bulunamadı", "silinen odanın slug'ı serbest kalır");
 assert.equal((await me(c.id)).error, "Oda bulunamadı");
 assert.equal((await post(`/api/admin/rooms/${room}/import`, {}, PW)).error, "Oda bulunamadı", "silinmiş oda içe aktarılamaz");
 console.log("smoke OK");

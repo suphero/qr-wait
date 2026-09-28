@@ -12,4 +12,10 @@
     { "tag": "v2", "new_sqlite_classes": ["Registry"] }
   ],
   "observability": { "enabled": true }
+  // Alt alan adlarını açmak için (alan adı Cloudflare'de olmalı, DNS'te proxied "*" kaydı gerekir):
+  // "vars": { "BASE_DOMAIN": "belediyeplaj.com" },
+  // "routes": [
+  //   { "pattern": "belediyeplaj.com", "custom_domain": true },
+  //   { "pattern": "*.belediyeplaj.com/*", "zone_name": "belediyeplaj.com" }
+  // ]
 }

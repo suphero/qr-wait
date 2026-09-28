@@ -51,7 +51,10 @@
 </main>
 <script src="app.js"></script>
 <script>
-const [room, key] = location.hash.slice(1).split(".");
+// Hash: "<slug veya id>.<anahtar>" ya da alt alan adında yalnızca "<anahtar>"
+const hash = location.hash.slice(1), dot = hash.indexOf(".");
+const ref = dot < 0 ? "" : hash.slice(0, dot), key = hash.slice(dot + 1);
+let room; // açılışta çözülen oda id'si; slug sonradan değişse de açık panel çalışmaya devam eder
 let qr, qrAt = 0;
 
 async function act(body = {}) {
@@ -66,7 +69,7 @@ async function act(body = {}) {
 function render(s) {
   $("#beach").textContent = s.name;
   if (Date.now() - qrAt > 20000) {
-    const url = `${location.origin}/join?r=${room}&t=${s.token}`;
+    const url = `${location.origin}/join?${ref ? `r=${ref}&` : ""}t=${s.token}`;
     qr ? qr.makeCode(url) : (qr = new QRCode($("#qr"), { text: url, width: 360, height: 360, correctLevel: QRCode.CorrectLevel.M }));
     qrAt = Date.now();
   }
@@ -98,8 +101,9 @@ $("#addBtn").onclick = async () => {
 $("#resetBtn").onclick = () => confirm("Tüm sıra silinecek. Emin misiniz?") && act({ action: "reset" });
 $("#fullBtn").onclick = () => $("#qrCard").classList.toggle("full");
 
-if (!room || !key) $("#err").textContent = "Geçersiz görevli bağlantısı.";
-else { act(); setInterval(act, 4000); }
+api(`/api/resolve?r=${encodeURIComponent(ref)}`)
+  .then((r) => { room = r.room; act(); setInterval(act, 4000); })
+  .catch((e) => ($("#err").textContent = `Geçersiz görevli bağlantısı: ${e.message}`));
 </script>
 </body>
 </html>
