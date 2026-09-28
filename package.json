@@ -1,0 +1,13 @@
+{
+  "name": "plaj-sira",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "smoke": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.143.0"
+  }
+}

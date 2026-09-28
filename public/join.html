@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plaj Sırası</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1 id="beach">Plaj sırası</h1>
+
+  <section id="joinView" class="card" hidden>
+    <label>Kaç kişisiniz?
+      <select id="size"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
+    </label>
+    <button id="joinBtn">Sıraya gir</button>
+    <p class="muted">Sıraya girebilmek için plajda olmanız ve konum izni vermeniz gerekir. Konumunuz yalnızca bu kontrol için kullanılır, saklanmaz.</p>
+  </section>
+
+  <section id="waitView" class="card center" hidden>
+    <p class="muted">Sıra numaranız</p>
+    <div class="big" id="no"></div>
+    <p id="msg"></p>
+    <p class="muted">Bu sayfayı açık tutun. Sıra size geldiğinde ekran yeşile döner ve telefon titrer.</p>
+    <button class="secondary" id="leaveBtn">Sıradan çık</button>
+  </section>
+
+  <p id="err" class="err"></p>
+</main>
+<script src="app.js"></script>
+<script>
+const q = new URLSearchParams(location.search);
+const room = q.get("r"), token = q.get("t");
+const slot = "ticket:" + room;
+let device = localStorage.getItem("device");
+if (!device) localStorage.setItem("device", device = crypto.randomUUID());
+let notified = false;
+
+function show(view) {
+  $("#joinView").hidden = view !== "join";
+  $("#waitView").hidden = view !== "wait";
+}
+
+async function alertUser() {
+  navigator.vibrate?.([500, 200, 500, 200, 500]);
+  try {
+    const a = new AudioContext(), o = a.createOscillator();
+    o.connect(a.destination); o.frequency.value = 880; o.start(); o.stop(a.currentTime + 0.8);
+  } catch {}
+  if (window.Notification?.permission === "granted") {
+    const reg = await navigator.serviceWorker?.ready;
+    reg?.showNotification("Sıra size geldi!", { body: "Görevliye gidip numaranızı gösterin.", vibrate: [500, 200, 500] });
+  }
+}
+
+async function refresh() {
+  const id = localStorage.getItem(slot);
+  if (!id) return show(token ? "join" : null);
+  try {
+    const s = await api(`/api/r/${room}/me?id=${encodeURIComponent(id)}`);
+    $("#beach").textContent = s.name;
+    $("#err").textContent = "";
+    if (s.status === "gone") {
+      localStorage.removeItem(slot);
+      document.body.classList.remove("called");
+      show(null);
+      $("#err").textContent = "Sıranız kapandı. Yeniden sıraya girmek için görevlinin QR kodunu okutun.";
+      return;
+    }
+    show("wait");
+    $("#no").textContent = s.no;
+    document.body.classList.toggle("called", s.status === "called");
+    $("#waitView").classList.toggle("soon", s.status === "waiting" && s.aheadGroups <= 2);
+    if (s.status === "called") {
+      const left = 10 - mins(s.calledAt);
+      $("#msg").innerHTML = `<b>Sıra size geldi!</b><br>Görevliye gidip bu numarayı gösterin.<br>${left > 0 ? `Yaklaşık ${left} dk içinde gelmezseniz sıranız düşebilir.` : "Lütfen hemen gelin."}`;
+      if (!notified) { notified = true; alertUser(); }
+    } else {
+      $("#msg").innerHTML = s.aheadGroups === 0
+        ? "<b>Sıradaki sizsiniz, hazır olun.</b>"
+        : `Önünüzde <b>${s.aheadGroups}</b> grup (<b>${s.aheadPeople}</b> kişi) var.`;
+    }
+  } catch (e) { $("#err").textContent = e.message; }
+}
+
+$("#joinBtn").onclick = async () => {
+  const btn = $("#joinBtn");
+  btn.disabled = true; $("#err").textContent = "";
+  try {
+    // Bildirim izni kullanıcı hareketi gerektirir, bu yüzden burada istenir
+    navigator.serviceWorker?.register("sw.js");
+    window.Notification?.requestPermission();
+    const c = await locate();
+    const r = await api(`/api/r/${room}/join`, { t: token, lat: c.latitude, lng: c.longitude, size: +$("#size").value, device });
+    localStorage.setItem(slot, r.id);
+    history.replaceState(null, "", `?r=${room}`); // süresi dolacak token'ı adres çubuğundan kaldır
+    await refresh();
+  } catch (e) { $("#err").textContent = e.message; }
+  btn.disabled = false;
+};
+
+$("#leaveBtn").onclick = async () => {
+  if (!confirm("Sıradan çıkmak istediğinize emin misiniz?")) return;
+  await api(`/api/r/${room}/leave`, { id: localStorage.getItem(slot) }).catch(() => {});
+  localStorage.removeItem(slot);
+  location.reload();
+};
+
+if (!room) $("#err").textContent = "Geçersiz bağlantı. Görevlinin QR kodunu okutun.";
+else {
+  refresh();
+  setInterval(refresh, 10000);
+  document.addEventListener("visibilitychange", () => !document.hidden && refresh());
+}
+</script>
+</body>
+</html>

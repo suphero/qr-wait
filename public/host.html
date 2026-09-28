@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Görevli Paneli</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<main>
+  <h1 id="beach">Görevli paneli</h1>
+  <p id="stats" class="muted"></p>
+  <p id="err" class="err"></p>
+
+  <div id="qrCard" class="card center">
+    <div id="qr"></div>
+    <p><b>Sıraya girmek için telefon kameranızla okutun</b></p>
+    <button class="secondary" id="fullBtn">Tam ekran QR</button>
+  </div>
+
+  <div class="card">
+    <h2>Kalkan kişi sayısı</h2>
+    <div class="row">
+      <input id="freeN" type="number" min="1" max="500" value="1" inputmode="numeric">
+      <button id="freeBtn">Yer boşaldı, sıradakileri çağır</button>
+    </div>
+    <p id="avail" class="muted"></p>
+  </div>
+
+  <div class="card">
+    <h2>Çağrılanlar</h2>
+    <div id="called"></div>
+  </div>
+
+  <div class="card">
+    <h2>Bekleyenler</h2>
+    <div id="waiting"></div>
+  </div>
+
+  <div class="card">
+    <h2>Elle ekle (telefonu olmayanlar için)</h2>
+    <div class="row">
+      <select id="addSize"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
+      <input id="addNote" placeholder="Not (ör. şapkalı amca)" maxlength="60">
+    </div>
+    <button id="addBtn">Sıraya ekle</button>
+  </div>
+
+  <button class="bad" id="resetBtn">Sırayı sıfırla (gün sonu)</button>
+</main>
+<script src="app.js"></script>
+<script>
+const [room, key] = location.hash.slice(1).split(".");
+let qr, qrAt = 0;
+
+async function act(body = {}) {
+  try {
+    const s = await api(`/api/r/${room}/admin`, body, { "x-key": key });
+    render(s);
+    $("#err").textContent = "";
+    return s;
+  } catch (e) { $("#err").textContent = e.message; }
+}
+
+function render(s) {
+  $("#beach").textContent = s.name;
+  if (Date.now() - qrAt > 20000) {
+    const url = `${location.origin}/join?r=${room}&t=${s.token}`;
+    qr ? qr.makeCode(url) : (qr = new QRCode($("#qr"), { text: url, width: 360, height: 360, correctLevel: QRCode.CorrectLevel.M }));
+    qrAt = Date.now();
+  }
+  const waiting = s.entries.filter((e) => e.status === "waiting");
+  const called = s.entries.filter((e) => e.status === "called");
+  $("#stats").textContent = `${waiting.length} grup / ${waiting.reduce((n, e) => n + e.size, 0)} kişi bekliyor`;
+  $("#avail").innerHTML = s.available
+    ? `Ayrılmayı bekleyen boş yer: <b>${s.available}</b> (sıradaki grup sığmıyor) <button class="secondary" data-act="setAvailable" style="width:auto">Sıfırla</button>`
+    : "";
+  const row = (e, btns) => `<div class="item"><b>#${e.no}</b><span>${e.size} kişi${e.src === "manual" ? " · elle" : ""}${e.note ? " · " + esc(e.note) : ""}${btns[1]}</span>${btns[0]}</div>`;
+  $("#called").innerHTML = called.map((e) => row(e, [
+    `<button class="ok" data-act="arrived" data-id="${e.id}">Geldi</button><button class="bad" data-act="drop" data-id="${e.id}">Gelmedi</button>`,
+    ` · <span class="${mins(e.calledAt) >= 10 ? "late" : ""}">${mins(e.calledAt)} dk önce</span>`,
+  ])).join("") || '<p class="muted">Yok</p>';
+  $("#waiting").innerHTML = waiting.map((e) => row(e, [
+    `<button class="secondary" data-act="call" data-id="${e.id}">Çağır</button><button class="secondary" data-act="drop" data-id="${e.id}">Sil</button>`, "",
+  ])).join("") || '<p class="muted">Sıra boş</p>';
+}
+
+document.body.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-act]");
+  if (b) act({ action: b.dataset.act, id: b.dataset.id, n: 0 });
+});
+$("#freeBtn").onclick = () => act({ action: "free", n: +$("#freeN").value });
+$("#addBtn").onclick = async () => {
+  const s = await act({ action: "add", size: +$("#addSize").value, note: $("#addNote").value });
+  if (s?.added) { alert(`Sıra numarası: ${s.added}\nKişiye söyleyin.`); $("#addNote").value = ""; }
+};
+$("#resetBtn").onclick = () => confirm("Tüm sıra silinecek. Emin misiniz?") && act({ action: "reset" });
+$("#fullBtn").onclick = () => $("#qrCard").classList.toggle("full");
+
+if (!room || !key) $("#err").textContent = "Geçersiz görevli bağlantısı.";
+else { act(); setInterval(act, 4000); }
+</script>
+</body>
+</html>
