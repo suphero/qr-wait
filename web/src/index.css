@@ -1,0 +1,84 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    /* Tanıtım sitesi (home) marka renkleri */
+    --color-ink: #1B2A4A;
+    --color-ink-soft: #4A5874;
+    --color-paper: #F5F6F8;
+    --color-line: #DCE1E8;
+    --color-ticket: #FFE27A;
+    --color-ticket-edge: #F2CF4E;
+    --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    /* Sıran Geldi renkleri: deniz mavisi birincil, yeşil "sıra geldi", kırmızı tehlikeli işlem */
+    --background: oklch(0.977 0.013 236.62); /* #f0f9ff */
+    --foreground: oklch(0.208 0.042 265.755); /* #0f172a */
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.208 0.042 265.755);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.208 0.042 265.755);
+    --primary: oklch(0.5 0.134 242.75); /* #0369a1 */
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.929 0.013 255.508); /* #e2e8f0 */
+    --secondary-foreground: oklch(0.208 0.042 265.755);
+    --muted: oklch(0.968 0.007 247.896);
+    --muted-foreground: oklch(0.554 0.046 257.417); /* #64748b */
+    --accent: oklch(0.951 0.026 236.824); /* #e0f2fe */
+    --accent-foreground: oklch(0.5 0.134 242.75);
+    --destructive: oklch(0.505 0.213 27.518); /* #b91c1c */
+    --success: oklch(0.527 0.154 150.069); /* #15803d */
+    --success-foreground: oklch(0.985 0 0);
+    --border: oklch(0.929 0.013 255.508);
+    --input: oklch(0.869 0.022 252.894); /* #cbd5e1 */
+    --ring: oklch(0.5 0.134 242.75);
+    --radius: 0.75rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  button:not(:disabled), [role="button"]:not(:disabled) {
+    cursor: pointer;
+    }
+  html {
+    @apply font-sans;
+    }
+}

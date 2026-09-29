@@ -1,0 +1,19 @@
+/* Tanıtım sitesinin Tailwind sınıflarıyla ifadesi zor parçaları */
+
+/* Sıra fişi: yanlarda yırtma çentikleri */
+.ticket {
+  -webkit-mask: radial-gradient(circle 11px at 0 50%, #0000 98%, #000) left / 51% 100% no-repeat, radial-gradient(circle 11px at 100% 50%, #0000 98%, #000) right / 51% 100% no-repeat;
+          mask: radial-gradient(circle 11px at 0 50%, #0000 98%, #000) left / 51% 100% no-repeat, radial-gradient(circle 11px at 100% 50%, #0000 98%, #000) right / 51% 100% no-repeat;
+}
+
+/* Adımların numaraları: sarı dolgu, lacivert kontur */
+.steps { counter-reset: s; }
+.steps li { counter-increment: s; }
+.steps li::before { content: counter(s); display: block; font-weight: 800; font-size: 3.5rem; line-height: 1; color: var(--color-ticket-edge); -webkit-text-stroke: 2px var(--color-ink); margin-bottom: 16px; }
+
+.pin { display: grid; place-items: center; width: 34px; height: 34px; border: 2px solid var(--color-ink); border-radius: 50%; font-size: 18px; line-height: 1; box-shadow: 0 1px 3px #0004; }
+.leaflet-popup-content { font: 400 1rem/1.4 var(--font-display); }
+.leaflet-popup-content a { font-weight: 600; color: var(--color-success); }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .ticket { transition: none; } }
