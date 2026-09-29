@@ -25,6 +25,9 @@ export const CATEGORIES: Record<string, [string, string]> = {
 };
 export const catIcon = (c?: string) => (CATEGORIES[c ?? ""] ?? CATEGORIES.diger)[0];
 
+// "7" → "Masa 7", "Bahçe 3" olduğu gibi; src/index.js'teki tableName ile aynı
+export const tableName = (t: Table) => (/^\d+$/.test(t.name) ? `Masa ${t.name}` : t.name || `${t.cap} kişilik masa`);
+
 // Sayfa dönen `setInterval` yoklaması; sekme gizliyken atlanır, sekmeye dönünce hemen yenilenir
 export function poll(fn: () => void, ms: number, whenHidden = false) {
   const tick = () => (whenHidden || !document.hidden) && fn();
@@ -40,19 +43,21 @@ export type Status = {
   waiting: number; people: number; next: number | null; called: number[]; lastNo: number | null;
 };
 export type PublicRoom = Status & { link: string };
+export type Table = { id: string; cap: number; name: string; at: number };
 export type Me = {
-  name: string; status: "waiting" | "called" | "gone"; no: number; size: number; accept: number[]; alloc?: number; calledAt?: number;
+  name: string; status: "waiting" | "called" | "gone"; no: number; size: number; accept: number[]; alloc?: number; table?: Table; calledAt?: number;
   aheadGroups: number; aheadPeople: number;
 };
 export type Entry = {
-  id: string; no: number; size: number; accept?: number[]; alloc?: number; src: "qr" | "manual"; note: string;
+  id: string; no: number; size: number; accept?: number[]; alloc?: number; table?: Table; src: "qr" | "manual"; note: string;
   status: "waiting" | "called"; at: number; calledAt?: number;
 };
 export type AdminState = {
-  name: string; flex: boolean; available: number; added?: number; qr: "dynamic" | "static"; ttl: number; maxGroup: number;
+  name: string; flex: boolean; tables: boolean; maxEmpty: number | null; available: number; added?: number;
+  seated?: number | null; freeTables: Table[]; qr: "dynamic" | "static"; ttl: number; maxGroup: number;
   token: string; entries: Entry[];
 };
 export type RoomInfo = {
   room: string; name: string; slug?: string; lat: number; lng: number; radius: number; flex: boolean; private: boolean; key: string;
-  category: string; maxGroup: number; qr: "dynamic" | "static"; ttl: number; waiting: number; people: number; called: number; link: string;
+  category: string; mode: "seats" | "tables"; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; waiting: number; people: number; called: number; link: string;
 };

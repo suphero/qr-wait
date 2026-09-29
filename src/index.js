@@ -4,6 +4,7 @@ import { cleanSub, sendPush } from "./push.js";
 const TTLS = [60, 90, 180, 300]; // seçilebilir QR geçerlilik süreleri (sn); görevli ekranı süre/4'te bir yeni kod gösterir
 const MAX_GROUP = 8; // varsayılan en büyük grup
 const GROUP_LIMIT = 20;
+const TABLE_LIMIT = 50;
 const CATEGORIES = new Set(["plaj", "iskele", "gise", "restoran", "saglik", "resmi", "etkinlik", "diger"]); // ikonları public/app.js'te
 const MAX_ENTRIES = 1000;
 
@@ -36,10 +37,21 @@ const int = (v, min, max, msg) => {
 // Grubun kabul ettiği yer sayıları (ör. 4 kişi: [2, 4]). Esnek olmayan sırada ve eski kayıtlarda yalnızca grup büyüklüğü.
 const acceptOf = (e) => e.accept ?? [e.size];
 
-// Sonradan eklenen oda ayarları; eski kayıtlarda alan yoksa varsayılan
-const conf = (s) => ({
-  category: s.category ?? "diger", maxGroup: s.maxGroup ?? MAX_GROUP, qr: s.qr ?? "dynamic", ttl: s.ttl ?? 90,
-});
+// "7" → "Masa 7", "Bahçe 3" olduğu gibi; web/src/lib/api.ts'teki tableName ile aynı
+const tableName = (t) => (/^\d+$/.test(t.name) ? `Masa ${t.name}` : t.name || `${t.cap} kişilik masa`);
+
+// Sonradan eklenen oda ayarları; eski kayıtlarda alan yoksa varsayılan.
+// Sıra türü: "seats" boş yer havuzu (plaj, iskele), "tables" masalar (restoran); masada esnek yer seçimi anlamsız.
+const conf = (s) => {
+  const mode = s.mode === "tables" ? "tables" : "seats", tables = mode === "tables";
+  return {
+    category: s.category ?? "diger", mode, tables, flex: !!s.flex && !tables, maxEmpty: tables ? s.maxEmpty ?? null : null,
+    maxGroup: s.maxGroup ?? MAX_GROUP, qr: s.qr ?? "dynamic", ttl: s.ttl ?? 90,
+  };
+};
+
+// Grup masaya sığıyor mu; maxEmpty: masada boş kalabilecek en fazla sandalye (null: sınır yok)
+const seats = (size, cap, maxEmpty) => size <= cap && (maxEmpty === null || cap - size <= maxEmpty);
 
 // Boş yere sığan en büyük kabul edilen yer sayısı; hiçbiri sığmıyorsa null
 function fit(e, available) {
@@ -71,7 +83,7 @@ export class Room extends DurableObject {
 
   async create(fields) {
     if (this.s) throw new Error("Oda zaten var");
-    this.s = { ...fields, key: crypto.randomUUID(), seq: 0, available: 0, entries: [] };
+    this.s = { ...fields, key: crypto.randomUUID(), seq: 0, available: 0, tables: [], entries: [] };
     await this.save();
     return this.s.key;
   }
@@ -79,7 +91,7 @@ export class Room extends DurableObject {
   info() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
-      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, radius: s.radius, flex: !!s.flex, private: !!s.private, key: s.key, ...conf(s),
+      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, radius: s.radius, private: !!s.private, key: s.key, ...conf(s),
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), called: s.entries.length - w.length,
     };
   }
@@ -88,7 +100,7 @@ export class Room extends DurableObject {
   status() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
-      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, flex: !!s.flex, private: !!s.private,
+      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, flex: conf(s).flex, private: !!s.private,
       category: conf(s).category, maxGroup: conf(s).maxGroup,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), next: w[0]?.no ?? null,
       called: s.entries.filter((e) => e.status === "called").map((e) => e.no), lastNo: s.lastNo ?? null,
@@ -135,10 +147,12 @@ export class Room extends DurableObject {
       throw new Error("Sıranın bulunduğu yerde görünmüyorsunuz. Konum izniniz açık olmalı ve orada olmalısınız.");
     if (typeof device !== "string" || device.length < 16) throw new Error("Geçersiz cihaz");
     size = int(size, 1, c.maxGroup, `Grup 1-${c.maxGroup} kişi olmalı`);
-    accept = acceptList(accept, size, s.flex);
+    accept = acceptList(accept, size, c.flex);
     // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner
     const e = s.entries.find((x) => x.device === device) ?? this.add(size, accept, "qr", device);
+    this.fill(); // boş yer / bekleyen masa varsa hemen çağrılır
     await this.save();
+    await this.notify();
     return { id: e.id, no: e.no };
   }
 
@@ -156,7 +170,7 @@ export class Room extends DurableObject {
     const e = s.entries[i];
     const ahead = s.entries.slice(0, i).filter((x) => x.status === "waiting");
     return {
-      name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, status: e.status, calledAt: e.calledAt,
+      name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, table: e.table, status: e.status, calledAt: e.calledAt,
       aheadGroups: ahead.length, aheadPeople: ahead.reduce((n, x) => n + x.size, 0),
     };
   }
@@ -188,8 +202,8 @@ export class Room extends DurableObject {
     let dead = false;
     await Promise.all(list.map(async (e) => {
       const msg = {
-        title: "Sıra size geldi!",
-        body: `${s.name} · ${e.no} numara. Görevliye gidip numaranızı gösterin.`,
+        title: e.table ? "Masanız hazır!" : "Sıra size geldi!",
+        body: `${s.name} · ${e.no} numara${e.table?.name ? ` · ${tableName(e.table)}` : ""}. Görevliye gidip numaranızı gösterin.`,
         tag: `called-${e.id}`,
         url: s.slug ? `/join?r=${s.slug}` : "/",
       };
@@ -200,59 +214,100 @@ export class Room extends DurableObject {
     if (dead) await this.save();
   }
 
-  // Sığan en büyük seçenek ayrılır; görevli sığmayan birini elle çağırırsa en küçük seçenek
-  call(e) {
+  // Yer modunda sığan en büyük seçenek ayrılır; görevli sığmayan birini elle çağırırsa en küçük seçenek.
+  // Masa modunda masanın tamamı gruba verilir (table yoksa görevli masasız çağırmıştır).
+  call(e, table) {
     e.status = "called";
     e.calledAt = Date.now();
-    e.alloc = fit(e, this.s.available) ?? Math.min(...acceptOf(e));
     this.s.lastNo = e.no;
-    this.s.available = Math.max(0, this.s.available - e.alloc);
+    if (conf(this.s).tables) {
+      if (table) {
+        this.s.tables = this.s.tables.filter((t) => t !== table);
+        e.table = table;
+      }
+    } else {
+      e.alloc = fit(e, this.s.available) ?? Math.min(...acceptOf(e));
+      this.s.available = Math.max(0, this.s.available - e.alloc);
+    }
     if (e.push) (this.outbox ??= []).push(e);
   }
 
-  // Sıradan çıkarma. Çağrılmış ama gelmemiş biri çıkarsa, ayrılan yerleri boşa döner.
+  // Sıradan çıkarma. Çağrılmış ama gelmemiş biri çıkarsa, ayrılan yerleri / masası boşa döner.
   drop(id) {
     const i = this.s.entries.findIndex((e) => e.id === id);
     if (i < 0) return;
     const [e] = this.s.entries.splice(i, 1);
-    if (e.status === "called") this.s.available += e.alloc ?? e.size;
+    if (e.status !== "called") return;
+    if (e.table) this.s.tables.push(e.table);
+    else if (!conf(this.s).tables) this.s.available += e.alloc ?? e.size;
+  }
+
+  // Bekleyen masalar içinde gruba sığan en küçüğü; eşitse en uzun bekleyen
+  bestTable(size, maxEmpty) {
+    return this.s.tables.filter((t) => seats(size, t.cap, maxEmpty)).sort((a, b) => a.cap - b.cap)[0];
   }
 
   // Boş yer (this.s.available) varken bekleyenleri çağırır.
   // TODO(politika): Şu an katı FIFO: sıradaki grup sığmıyorsa arkadakiler de beklemeye devam eder.
   // Alternatif: sığan küçük grupları öne al (daha az boş yer kalır ama kalabalık aileler sürekli geri düşebilir).
+  // Masa modunda: bekleyen gruplar sırayla, her birine sığan en küçük boş masa. Sığmayan grup atlanır;
+  // böylece büyük masa boşalınca arkadaki büyük grup çağrılabilir.
   fill() {
-    for (const e of this.s.entries) {
+    const s = this.s;
+    if (conf(s).tables) {
+      s.tables ??= [];
+      for (const e of s.entries) {
+        if (!s.tables.length) break;
+        const t = e.status === "waiting" && this.bestTable(e.size, conf(s).maxEmpty);
+        if (t) this.call(e, t);
+      }
+      return;
+    }
+    for (const e of s.entries) {
       if (e.status !== "waiting") continue;
       if (fit(e, this.s.available) === null) break;
       this.call(e);
     }
   }
 
-  async admin(key, { action, id, n, size, accept, note }) {
-    const s = this.need();
+  async admin(key, { action, id, n, size, accept, note, name }) {
+    const s = this.need(), c = conf(s);
     if (!same(key, s.key)) throw new Error("Yetkisiz");
+    s.tables ??= [];
     const e = s.entries.find((x) => x.id === id);
-    let added;
+    let added, table;
     switch (action) {
       case "free": s.available += int(n, 1, 500, "Geçersiz sayı"); break;
       case "setAvailable": s.available = int(n, 0, 500, "Geçersiz sayı"); break;
-      case "call": if (e?.status === "waiting") this.call(e); break;
+      case "table": {
+        if (!c.tables) throw new Error("Bu sırada masa yok");
+        const nm = String(name ?? "").trim().slice(0, 20);
+        if (nm && s.tables.some((t) => t.name === nm)) throw new Error(`${tableName({ name: nm })} zaten boş masalarda`);
+        table = { id: crypto.randomUUID().slice(0, 8), cap: int(n, 1, TABLE_LIMIT, `Masa 1-${TABLE_LIMIT} kişilik olmalı`), name: nm, at: Date.now() };
+        s.tables.push(table);
+        break;
+      }
+      case "untable": s.tables = s.tables.filter((t) => t.id !== id); break;
+      // Masa modunda elle çağırma boş kalma sınırına bakmaz: sığan en küçük boş masa, yoksa masasız
+      case "call": if (e?.status === "waiting") this.call(e, c.tables ? this.bestTable(e.size, null) : undefined); break;
       case "arrived": s.entries = s.entries.filter((x) => x !== e); break;
       case "drop": this.drop(id); break;
       case "add": {
         const sz = int(size, 1, conf(s).maxGroup, "Geçersiz grup");
-        added = this.add(sz, acceptList(accept, sz, s.flex), "manual", null, String(note ?? "").slice(0, 60));
+        added = this.add(sz, acceptList(accept, sz, c.flex), "manual", null, String(note ?? "").slice(0, 60));
         break;
       }
-      case "reset": Object.assign(s, { seq: 0, available: 0, entries: [] }); break;
+      case "reset": Object.assign(s, { seq: 0, available: 0, tables: [], entries: [] }); break;
     }
     this.fill();
     if (action) await this.save();
     await this.notify();
-    const { qr, ttl, maxGroup } = conf(s);
+    const { qr, ttl, maxGroup, flex, tables, maxEmpty } = c;
     return {
-      name: s.name, flex: !!s.flex, available: s.available, added: added?.no, qr, ttl, maxGroup,
+      name: s.name, flex, tables, maxEmpty, available: s.available, added: added?.no, qr, ttl, maxGroup,
+      // Boşalan masa: çağrılan grubun numarası, uygun grup yoksa null (masa bekleyenlere düştü)
+      seated: table && (s.entries.find((x) => x.table === table)?.no ?? null),
+      freeTables: s.tables,
       token: await this.token(),
       entries: s.entries.map(({ device, push, ...x }) => x),
     };
@@ -310,6 +365,9 @@ function roomFields(b, prev) {
     slug, lat, lng, radius: int(b.radius, 50, 2000, "Yarıçap 50-2000 m olmalı"),
     flex: b.flex === true || b.flex === "on", // grup, kişi sayısından az yeri de kabul edebilir (plaj şezlongu gibi)
     category: CATEGORIES.has(b.category) ? b.category : "diger",
+    mode: b.mode === "tables" ? "tables" : "seats",
+    // Masa modunda masada boş kalabilecek en fazla sandalye; boş: sınır yok
+    maxEmpty: b.maxEmpty === "" || b.maxEmpty == null ? null : int(b.maxEmpty, 0, TABLE_LIMIT, `Boş sandalye 0-${TABLE_LIMIT} olmalı`),
     maxGroup: int(b.maxGroup ?? MAX_GROUP, 1, GROUP_LIMIT, `Grup büyüklüğü 1-${GROUP_LIMIT} kişi olmalı`),
     qr: b.qr === "static" ? "static" : "dynamic", // sabit: basılı QR, giriş yalnızca konumla sınırlı
     ttl: TTLS.includes(Number(b.ttl)) ? Number(b.ttl) : 90,

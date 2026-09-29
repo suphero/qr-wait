@@ -6,7 +6,7 @@ import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { api, mins, poll, type AdminState, type Entry } from "@/lib/api";
+import { api, mins, poll, tableName, type AdminState, type Entry } from "@/lib/api";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +32,8 @@ function Row({ e, children }: { e: Entry; children: ReactNode }) {
       <b className="min-w-[3.5em] tabular-nums">#{e.no}</b>
       <span className="flex-1">
         {e.size} kişi
-        {e.status === "called" ? <> · <b>{e.alloc ?? e.size} yer</b></>
+        {e.table ? <> · <b>{tableName(e.table)}</b>{e.table.name && ` (${e.table.cap} kişilik)`}</>
+          : e.status === "called" ? e.alloc != null && <> · <b>{e.alloc} yer</b></>
           : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${e.accept.join("/")} yer olur` : ""}
         {e.src === "manual" && " · elle"}
         {e.note && ` · ${e.note}`}
@@ -50,6 +51,9 @@ function HostPage() {
   const [qrUrl, setQrUrl] = useState("");
   const [full, setFull] = useState(false);
   const [freeN, setFreeN] = useState("1");
+  const [tName, setTName] = useState("");
+  const [tCap, setTCap] = useState("");
+  const [tMsg, setTMsg] = useState("");
   const [addSize, setAddSize] = useState(2);
   const [addAccept, setAddAccept] = useState([2]);
   const [addNote, setAddNote] = useState("");
@@ -92,6 +96,15 @@ function HostPage() {
     }
   }
 
+  async function freeTable(n: number) {
+    if (!(n >= 1)) return;
+    const label = tableName({ id: "", at: 0, cap: n, name: tName.trim() });
+    const st = await act({ action: "table", n, name: tName });
+    if (!st) return;
+    setTName(""); setTCap("");
+    setTMsg(st.seated ? `${label} → #${st.seated} çağrıldı.` : `${label} için uygun grup yok. Boş masalarda bekliyor, uygun grup gelince otomatik çağrılır.`);
+  }
+
   const waiting = s?.entries.filter((e) => e.status === "waiting") ?? [];
   const called = s?.entries.filter((e) => e.status === "called") ?? [];
   const fixed = s?.qr === "static";
@@ -114,7 +127,39 @@ function HostPage() {
         </CardContent>
       </Card>
 
-      <Section title="Boşalan yer sayısı">
+      {s?.tables && (
+        <Section title="Masa boşaldı">
+          <div className="flex flex-col gap-3">
+            <Input placeholder="Masa adı / no (isteğe bağlı, ör. 7 veya Bahçe 3)" maxLength={20} value={tName} onChange={(e) => setTName(e.target.value)} />
+            <div className="flex flex-wrap gap-2 *:flex-auto">
+              {[2, 4, 6].map((n) => <Button key={n} onClick={() => freeTable(n)}>{n} kişilik</Button>)}
+              <div className="flex gap-2">
+                <Input className="w-20" type="number" min={1} max={50} inputMode="numeric" placeholder="kişi" value={tCap} onChange={(e) => setTCap(e.target.value)} />
+                <Button variant="secondary" onClick={() => freeTable(+tCap)}>Boşaldı</Button>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Sıradaki gruplardan masaya sığan ilk grup çağrılır.
+              {s.maxEmpty !== null && ` Masada en fazla ${s.maxEmpty} boş sandalye kalacak şekilde.`}
+              {" "}Birleştirdiğiniz masaları toplam kişi sayısıyla girin.
+            </p>
+            {tMsg && <p className="text-sm font-semibold">{tMsg}</p>}
+          </div>
+          {!!s.freeTables.length && (
+            <div className="mt-3">
+              <p className="text-sm text-muted-foreground">Boş masalar (uygun grup bekliyor)</p>
+              {s.freeTables.map((t) => (
+                <div key={t.id} className="flex items-center gap-2 border-b py-2 last:border-0">
+                  <span className="flex-1"><b>{tableName(t)}</b>{t.name && ` · ${t.cap} kişilik`} · {mins(t.at)} dk</span>
+                  <Button variant="secondary" size="sm" onClick={() => act({ action: "untable", id: t.id })}>Kaldır</Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {s && !s.tables && <Section title="Boşalan yer sayısı">
         <div className="flex gap-2">
           <Input className="w-24" type="number" min={1} max={500} inputMode="numeric" value={freeN} onChange={(e) => setFreeN(e.target.value)} />
           <Button className="flex-1 whitespace-normal" onClick={() => act({ action: "free", n: +freeN })}>Yer boşaldı, sıradakileri çağır</Button>
@@ -125,7 +170,7 @@ function HostPage() {
             <Button variant="secondary" size="sm" onClick={() => act({ action: "setAvailable", n: 0 })}>Sıfırla</Button>
           </p>
         )}
-      </Section>
+      </Section>}
 
       <Section title="Çağrılanlar">
         {called.map((e) => (

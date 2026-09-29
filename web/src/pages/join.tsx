@@ -5,7 +5,7 @@ import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { api, catIcon, locate, mins, orList, poll, type Me, type Status } from "@/lib/api";
+import { api, catIcon, locate, mins, orList, poll, tableName, type Me, type Status } from "@/lib/api";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +36,7 @@ async function enablePush(id: string) {
   } catch { return false; }
 }
 
-async function alertUser(id: string) {
+async function alertUser(id: string, table?: string) {
   navigator.vibrate?.([500, 200, 500, 200, 500]);
   try {
     const a = new AudioContext(), o = a.createOscillator();
@@ -45,7 +45,7 @@ async function alertUser(id: string) {
   if (window.Notification?.permission === "granted") {
     const reg = await navigator.serviceWorker?.ready;
     // push ile aynı tag: ikisi birden gelirse tek bildirim görünür
-    reg?.showNotification("Sıra size geldi!", { body: "Görevliye gidip numaranızı gösterin.", tag: `called-${id}`, icon: "/icons/icon-192.png", vibrate: [500, 200, 500] } as NotificationOptions);
+    reg?.showNotification(table ? "Masanız hazır!" : "Sıra size geldi!", { body: `${table ? `${table}. ` : ""}Görevliye gidip numaranızı gösterin.`, tag: `called-${id}`, icon: "/icons/icon-192.png", vibrate: [500, 200, 500] } as NotificationOptions);
   }
 }
 
@@ -100,7 +100,7 @@ function JoinPage() {
       setMe(s);
       setView("wait");
       if (s.status === "called") {
-        if (!notified.current) { notified.current = true; alertUser(id); }
+        if (!notified.current) { notified.current = true; alertUser(id, s.table && tableName(s.table)); }
       } else pushUI(id);
     } catch (e: any) { setErr(e.message); }
   }
@@ -187,7 +187,8 @@ function JoinPage() {
             <div className={cn("text-8xl leading-tight font-extrabold tabular-nums", !called && "text-primary")}>{me.no}</div>
             {called ? (
               <p>
-                <b>Sıra size geldi!</b><br />
+                <b>{me.table ? "Masanız hazır!" : "Sıra size geldi!"}</b><br />
+                {me.table && <span className="my-2 block text-4xl font-extrabold">{tableName(me.table)}</span>}
                 {me.alloc && me.alloc !== me.size ? <><b>{me.alloc} yer</b> ayrıldı. </> : null}
                 Görevliye gidip bu numarayı gösterin.<br />
                 {left > 0 ? `Yaklaşık ${left} dk içinde gelmezseniz sıranız düşebilir.` : "Lütfen hemen gelin."}

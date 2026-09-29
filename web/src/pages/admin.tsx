@@ -20,7 +20,7 @@ const slugify = (t: string) => t.toLocaleLowerCase("tr").replace(/[çğıöşü]
 type Pt = { lat: number; lng: number };
 type Form = {
   name: string; category: string; private: boolean; slug: string; radius: string; flex: boolean;
-  maxGroup: string; qr: "dynamic" | "static"; ttl: string;
+  mode: "seats" | "tables"; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string;
 };
 
 // Onay kutusu + başlık + açıklama
@@ -42,9 +42,10 @@ function RoomForm({ room, rooms, onDone, onCancel, onError }: { room: RoomInfo |
   const [f, setF] = useState<Form>({
     name: room?.name ?? "", category: room?.category ?? "diger", private: !!room?.private,
     slug: room?.private ? "" : room?.slug ?? "", // gizli odanın rastgele adresi açık adrese taşınmasın
-    radius: String(room?.radius ?? 300), flex: !!room?.flex, maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
+    radius: String(room?.radius ?? 300), flex: !!room?.flex, mode: room?.mode ?? "seats", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
   });
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
+  const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
   const slugTouched = useRef(!!room?.slug && !room.private); // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
   const [pt, setPt] = useState<Pt | null>(room && { lat: room.lat, lng: room.lng });
   const [pos, setPos] = useState(room ? "" : "Haritada sıranın kurulacağı yerin ortasına dokunun. İşaretçiyi sürükleyerek ince ayar yapabilirsiniz.");
@@ -92,7 +93,7 @@ function RoomForm({ room, rooms, onDone, onCancel, onError }: { room: RoomInfo |
     ev.preventDefault();
     if (!pt) return onError("Haritadan sıranın konumunu seçin.");
     const { slug, ...rest } = f;
-    const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxGroup: +f.maxGroup, ttl: +f.ttl, ...pt };
+    const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, ...pt };
     const prev = rooms.find((r) => r.room === room?.room);
     const changed = prev?.slug && (f.private ? !prev.private : prev.slug !== slug);
     if (changed && !(await confirm({ title: "Adres değişecek", description: "Adres değişirse eski görevli linki ve ekrandaki QR çalışmaz. Görevlilere yeni linki göndermeniz gerekir. Devam?", action: "Devam" }))) return;
@@ -114,7 +115,10 @@ function RoomForm({ room, rooms, onDone, onCancel, onError }: { room: RoomInfo |
           </Field>
           <Field>
             <FieldLabel htmlFor="category">Kategori</FieldLabel>
-            <NativeSelect id="category" value={f.category} onChange={(e) => set("category", e.target.value)}>
+            <NativeSelect id="category" value={f.category} onChange={(e) => {
+              set("category", e.target.value);
+              if (!modeTouched.current) set("mode", e.target.value === "restoran" ? "tables" : "seats");
+            }}>
               {Object.entries(CATEGORIES).map(([k, [i, t]]) => <NativeSelectOption key={k} value={k}>{i} {t}</NativeSelectOption>)}
             </NativeSelect>
           </Field>
@@ -151,9 +155,39 @@ function RoomForm({ room, rooms, onDone, onCancel, onError }: { room: RoomInfo |
             <Input id="radius" type="number" min={50} max={2000} required value={f.radius} onChange={(e) => set("radius", e.target.value)} />
             <FieldDescription>Ziyaretçiler yalnızca dairenin içindeyken sıraya girebilir. Telefon GPS'i 20-50 m sapabilir, daireyi alandan biraz geniş tutun.</FieldDescription>
           </Field>
-          <Check title="Esnek yer seçimi" checked={f.flex} onChange={(v) => set("flex", v)}>
-            Gruplar kişi sayısından az yeri de kabul edebilir. Örneğin plajda 4 kişilik grup 2 veya 4 şezlonga razı olabilir. Otobüs ya da gişe sıralarında kapalı bırakın.
-          </Check>
+          <FieldSet className="rounded-lg border p-4">
+            <FieldLegend>Sıra türü</FieldLegend>
+            <RadioGroup value={f.mode} onValueChange={(v) => { modeTouched.current = true; set("mode", v as Form["mode"]); }} className="gap-4">
+              <Field orientation="horizontal">
+                <RadioGroupItem value="seats" id="mode-seats" />
+                <FieldContent>
+                  <FieldLabel htmlFor="mode-seats" className="text-base font-semibold">Yer sayısı</FieldLabel>
+                  <FieldDescription>Görevli boşalan yer sayısını girer, sıradaki gruplar sığdıkça çağrılır. Plaj, iskele, gişe, bekleme salonu.</FieldDescription>
+                </FieldContent>
+              </Field>
+              {f.mode === "seats" && (
+                <div className="pl-6">
+                  <Check title="Esnek yer seçimi" checked={f.flex} onChange={(v) => set("flex", v)}>
+                    Gruplar kişi sayısından az yeri de kabul edebilir. Örneğin plajda 4 kişilik grup 2 veya 4 şezlonga razı olabilir. Otobüs ya da gişe sıralarında kapalı bırakın.
+                  </Check>
+                </div>
+              )}
+              <Field orientation="horizontal">
+                <RadioGroupItem value="tables" id="mode-tables" />
+                <FieldContent>
+                  <FieldLabel htmlFor="mode-tables" className="text-base font-semibold">Masa</FieldLabel>
+                  <FieldDescription>Görevli "4 kişilik masa boşaldı" der, masaya sığan ilk grup masa adıyla çağrılır. Masa bölünmez; uygun grup yoksa masa bekler. Restoran, kafe.</FieldDescription>
+                </FieldContent>
+              </Field>
+              {f.mode === "tables" && (
+                <Field className="pl-6">
+                  <FieldLabel htmlFor="maxEmpty">Masada en fazla kaç boş sandalye kalabilir?</FieldLabel>
+                  <Input id="maxEmpty" type="number" min={0} max={50} inputMode="numeric" placeholder="Sınır yok" value={f.maxEmpty} onChange={(e) => set("maxEmpty", e.target.value)} />
+                  <FieldDescription>Örneğin 1: 4 kişilik masaya 3-4 kişi, 2 kişilik masaya 1-2 kişi alınır. Boş bırakırsanız masaya sığan her grup alınır. Görevli "Çağır" ile bu sınırı aşabilir.</FieldDescription>
+                </Field>
+              )}
+            </RadioGroup>
+          </FieldSet>
           <Field>
             <FieldLabel htmlFor="maxGroup">Bir grupta en fazla kaç kişi olabilir?</FieldLabel>
             <Input id="maxGroup" type="number" min={1} max={20} required inputMode="numeric" value={f.maxGroup} onChange={(e) => set("maxGroup", e.target.value)} />
@@ -223,7 +257,7 @@ function RoomCard({ r, onChange, onEdit, onError }: { r: RoomInfo; onChange: () 
           <span className="text-sm text-muted-foreground">{r.private ? "🔒 gizli" : r.slug ? r.slug : "⚠ adres yok, Düzenle ile ekleyin"}</span>
         </p>
         <p className="text-sm text-muted-foreground">
-          {r.waiting} grup / {r.people} kişi bekliyor · {r.called} çağrıldı · {r.radius} m · en fazla {r.maxGroup} kişi{r.flex ? " · esnek yer" : ""} · {r.qr === "static" ? "sabit QR" : `QR ${r.ttl} sn`}
+          {r.waiting} grup / {r.people} kişi bekliyor · {r.called} çağrıldı · {r.radius} m · en fazla {r.maxGroup} kişi{r.tables ? ` · masa${r.maxEmpty !== null ? ` (en fazla ${r.maxEmpty} boş)` : ""}` : r.flex ? " · esnek yer" : ""} · {r.qr === "static" ? "sabit QR" : `QR ${r.ttl} sn`}
         </p>
         <div className="flex flex-wrap gap-2 *:flex-auto">
           <Button onClick={copy}>{copied ? "Kopyalandı ✓" : "Görevli linkini kopyala"}</Button>

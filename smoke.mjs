@@ -136,4 +136,39 @@ assert.match((await ojoin("opt-device-00000003", 2, st1.token)).error, /geçerli
 assert.notEqual((await post(`/api/r/${o.room}/admin`, {}, { "x-key": okey })).token, st1.token);
 assert.match((await post("/api/admin/rooms", { name: "X", slug: `${slug}-x`, radius: 300, maxGroup: 50, ...spot }, PW)).error, /1-20/);
 await req("DELETE", `/api/admin/rooms/${o.room}`, undefined, PW);
+// Masa modu: masa bölünmez, sığan en küçük masa, boş sandalye sınırı, bekleyen masa, masa adı
+const tr = await post("/api/admin/rooms", { name: "Lokanta", slug: `${slug}-masa`, radius: 300, category: "restoran", mode: "tables", maxEmpty: 1, flex: true, ...spot }, PW);
+const tadmin = (body = {}) => post(`/api/r/${tr.room}/admin`, body, { "x-key": tr.key });
+const tt = await tadmin();
+assert.ok(tt.tables && !tt.flex && tt.maxEmpty === 1, "masa modunda esnek yer kapalı");
+const tjoin = (device, size) => post(`/api/r/${tr.room}/join`, { t: tt.token, ...spot, size, accept: [1], device });
+const tme = async (id) => (await fetch(`${B}/api/r/${tr.room}/me?id=${id}`)).json();
+const t1 = await tjoin("table-device-00000001", 2), t2 = await tjoin("table-device-00000002", 4), t3 = await tjoin("table-device-00000003", 3);
+assert.deepEqual((await tme(t1.id)).accept, [2], "masa modunda accept yok sayılır");
+let ts = await tadmin({ action: "table", n: 4, name: "7" }); // #1 (2 kişi) 4'lüğe fazla boş bırakır → #2 (4 kişi)
+assert.equal(ts.seated, t2.no);
+assert.deepEqual(((m) => [m.status, m.table.name, m.table.cap])(await tme(t2.id)), ["called", "7", 4]);
+assert.equal(ts.available, 0, "masa havuza yer eklemez");
+ts = await tadmin({ action: "table", n: 6, name: "Bahçe 1" }); // #1: 4 boş, #3: 3 boş → uygun yok, bekler
+assert.equal(ts.seated, null);
+assert.deepEqual(ts.freeTables.map((t) => t.name), ["Bahçe 1"]);
+assert.match((await tadmin({ action: "table", n: 2, name: "Bahçe 1" })).error, /zaten boş/);
+ts = await tadmin({ action: "table", n: 2 }); // #1 (2 kişi) adsız 2'lik masaya
+assert.equal(ts.seated, t1.no);
+assert.equal((await tme(t1.id)).table.cap, 2);
+ts = await tadmin({ action: "drop", id: t2.id }); // #2 gelmedi: Masa 7 (4'lük) #3'e (3 kişi) geçer
+assert.equal((await tme(t3.id)).table.name, "7", "gelmeyenin masası sıradaki uygun gruba");
+const t4 = await tjoin("table-device-00000004", 5); // gelen 5 kişi bekleyen 6'lık masaya oturur
+assert.equal((await tme(t4.id)).table.name, "Bahçe 1", "sıraya girince bekleyen masaya hemen çağrılır");
+ts = await tadmin();
+assert.equal(ts.freeTables.length, 0);
+const t5 = await tjoin("table-device-00000005", 1);
+ts = await tadmin({ action: "table", n: 4 }); // 1 kişi 4'lüğe sınırı aşar → bekler; görevli elle çağırırsa masayı alır
+assert.equal(ts.seated, null);
+await tadmin({ action: "call", id: t5.id });
+assert.equal((await tme(t5.id)).table.cap, 4, "elle çağırmada sınır yok");
+await tadmin({ action: "table", n: 2 });
+ts = await tadmin({ action: "untable", id: (await tadmin()).freeTables[0].id });
+assert.equal(ts.freeTables.length, 0);
+await req("DELETE", `/api/admin/rooms/${tr.room}`, undefined, PW);
 console.log("smoke OK");
