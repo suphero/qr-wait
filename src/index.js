@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { cleanSub, sendPush } from "./push.js";
 
 const TOKEN_TTL = 90_000; // QR token ömrü; görevli ekranı her 20 sn'de yeni kod gösterir
 const MAX_GROUP = 8;
@@ -144,7 +145,38 @@ export class Room extends DurableObject {
     this.drop(id);
     this.fill();
     await this.save();
+    await this.notify();
     return { ok: true };
+  }
+
+  // Sayfa kapalıyken / ekran kilitliyken haber verebilmek için tarayıcının push aboneliği
+  async subscribe(id, sub) {
+    const e = this.need().entries.find((x) => x.id === id);
+    if (!e) throw new Error("Sıra kaydı bulunamadı");
+    e.push = cleanSub(sub);
+    await this.save();
+    return { ok: true };
+  }
+
+  // call() ile biriken çağrılara push gönderir. Sayfa açıksa yoklama zaten yakalar; push hatası isteği bozmamalı.
+  async notify() {
+    const list = this.outbox ?? [];
+    this.outbox = [];
+    if (!list.length || !this.env.VAPID_PRIVATE_KEY) return;
+    const s = this.s;
+    let dead = false;
+    await Promise.all(list.map(async (e) => {
+      const msg = {
+        title: "Sıra size geldi!",
+        body: `${s.name} · ${e.no} numara. Görevliye gidip numaranızı gösterin.`,
+        tag: `called-${e.id}`,
+        url: s.slug ? `/join?r=${s.slug}` : "/",
+      };
+      try {
+        if (!(await sendPush(e.push, msg, this.env))) { delete e.push; dead = true; }
+      } catch (err) { console.error("push", err.message); }
+    }));
+    if (dead) await this.save();
   }
 
   // Sığan en büyük seçenek ayrılır; görevli sığmayan birini elle çağırırsa en küçük seçenek
@@ -154,6 +186,7 @@ export class Room extends DurableObject {
     e.alloc = fit(e, this.s.available) ?? Math.min(...acceptOf(e));
     this.s.lastNo = e.no;
     this.s.available = Math.max(0, this.s.available - e.alloc);
+    if (e.push) (this.outbox ??= []).push(e);
   }
 
   // Sıradan çıkarma. Çağrılmış ama gelmemiş biri çıkarsa, ayrılan yerleri boşa döner.
@@ -195,11 +228,12 @@ export class Room extends DurableObject {
     }
     this.fill();
     if (action) await this.save();
+    await this.notify();
     const ts = String(Date.now());
     return {
       name: s.name, flex: !!s.flex, available: s.available, added: added?.no,
       token: `${ts}.${await sign(s.key, ts)}`,
-      entries: s.entries.map(({ device, ...x }) => x),
+      entries: s.entries.map(({ device, push, ...x }) => x),
     };
   }
 }
@@ -312,6 +346,7 @@ export default {
           .then((st) => ({ ...st, link: statusLink(url, env, st.slug ?? id) }), () => null)));
         return Response.json(rooms.filter(Boolean));
       }
+      if (url.pathname === "/api/vapid") return Response.json({ key: env.VAPID_PUBLIC_KEY ?? null });
       if (url.pathname === "/api/resolve") {
         // ?r= oda id'si ya da slug; yoksa alt alan adından (antalya-konserve.sirangeldi.com)
         const ref = url.searchParams.get("r") || subdomain(url, env);
@@ -319,13 +354,14 @@ export default {
         if (!room) throw new Error("Sıra bulunamadı");
         return Response.json({ room });
       }
-      const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|admin|status)$/);
+      const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|push|admin|status)$/);
       if (!m) return new Response("Not found", { status: 404 });
       const room = env.ROOM.getByName(m[1]);
       switch (m[2]) {
         case "join": return Response.json(await room.join(body));
         case "me": return Response.json(await room.me(url.searchParams.get("id")));
         case "leave": return Response.json(await room.leave(body.id));
+        case "push": return Response.json(await room.subscribe(body.id, body.sub));
         case "admin": return Response.json(await room.admin(req.headers.get("x-key"), body));
         case "status": return Response.json(await room.status());
       }

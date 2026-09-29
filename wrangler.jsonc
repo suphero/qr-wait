@@ -17,7 +17,8 @@
   "observability": { "enabled": true },
   "workers_dev": true, // alan adı aktif olana kadar ve yedek erişim için açık kalsın
   // DNS'te "@" ve "*" için proxied AAAA 100:: yer tutucu kayıtları var
-  "vars": { "BASE_DOMAIN": "sirangeldi.com" },
+  // VAPID_PRIVATE_KEY secret olarak tutulur (wrangler secret put), .dev.vars'ta yerel kopyası var
+  "vars": { "BASE_DOMAIN": "sirangeldi.com", "VAPID_PUBLIC_KEY": "BMnLrY7VHICel9RZSt62UEiLxZymXnHinntTM-oeV88iHlXTfWZjrtjTJjE_XSx4_q25hNs9TftLofwDaH-UHC4" },
   "routes": [
     { "pattern": "sirangeldi.com/*", "zone_name": "sirangeldi.com" },
     { "pattern": "*.sirangeldi.com/*", "zone_name": "sirangeldi.com" }
