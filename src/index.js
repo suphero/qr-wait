@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { langOf, msg, tableLabel } from "./i18n.js";
 import { cleanSub, sendPush } from "./push.js";
 
 const TTLS = [60, 90, 180, 300]; // seçilebilir QR geçerlilik süreleri (sn); görevli ekranı süre/4'te bir yeni kod gösterir
@@ -59,10 +60,10 @@ function fit(e, available) {
   return ok.length ? Math.max(...ok) : null;
 }
 
-function acceptList(accept, size, flex) {
+function acceptList(accept, size, flex, lang) {
   if (!flex) return [size];
   const list = [...new Set([].concat(accept ?? size).map(Number))].filter((a) => Number.isInteger(a) && a >= 1 && a <= size);
-  if (!list.length) throw new Error("Kabul ettiğiniz en az bir yer sayısı seçin");
+  if (!list.length) throw new Error(msg(lang, "accept"));
   return list.sort((a, b) => a - b);
 }
 
@@ -74,8 +75,8 @@ export class Room extends DurableObject {
     ctx.blockConcurrencyWhile(async () => { this.s = await ctx.storage.get("s"); });
   }
 
-  need() {
-    if (!this.s) throw new Error("Sıra bulunamadı");
+  need(lang) {
+    if (!this.s) throw new Error(msg(lang, "notFound"));
     return this.s;
   }
 
@@ -132,33 +133,35 @@ export class Room extends DurableObject {
     return `${ts}.${await sign(s.key, ts)}`;
   }
 
-  async join({ t, lat, lng, size, accept, device }) {
-    const s = this.need(), c = conf(s);
+  // lang: ziyaretçinin dili; hata mesajları ve push bildirimi bu dilde
+  async join({ t, lat, lng, size, accept, device, lang }) {
+    lang = langOf(lang);
+    const s = this.need(lang), c = conf(s);
     const [ts, sig] = String(t).split(".");
     if (ts === "s") {
       if (c.qr !== "static" || !same(sig, await sign(s.key, "static")))
-        throw new Error("Bu QR kodu artık geçerli değil. Görevliden güncel kodu isteyin.");
+        throw new Error(msg(lang, "qrInvalid"));
     } else {
       const age = Date.now() - Number(ts);
       if (!(age > -5000 && age < c.ttl * 1000) || !same(sig, await sign(s.key, ts)))
-        throw new Error("QR kodunun süresi dolmuş. Görevlinin ekranındaki kodu yeniden okutun.");
+        throw new Error(msg(lang, "qrExpired"));
     }
     if (!(meters(s, { lat: Number(lat), lng: Number(lng) }) <= s.radius))
-      throw new Error("Sıranın bulunduğu yerde görünmüyorsunuz. Konum izniniz açık olmalı ve orada olmalısınız.");
-    if (typeof device !== "string" || device.length < 16) throw new Error("Geçersiz cihaz");
-    size = int(size, 1, c.maxGroup, `Grup 1-${c.maxGroup} kişi olmalı`);
-    accept = acceptList(accept, size, c.flex);
+      throw new Error(msg(lang, "far"));
+    if (typeof device !== "string" || device.length < 16) throw new Error(msg(lang, "device"));
+    size = int(size, 1, c.maxGroup, msg(lang, "group", c.maxGroup));
+    accept = acceptList(accept, size, c.flex, lang);
     // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner
-    const e = s.entries.find((x) => x.device === device) ?? this.add(size, accept, "qr", device);
+    const e = s.entries.find((x) => x.device === device) ?? this.add(size, accept, "qr", device, "", lang);
     this.fill(); // boş yer / bekleyen masa varsa hemen çağrılır
     await this.save();
     await this.notify();
     return { id: e.id, no: e.no };
   }
 
-  add(size, accept, src, device = null, note = "") {
-    if (this.s.entries.length >= MAX_ENTRIES) throw new Error("Sıra dolu");
-    const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, accept, src, device, note, status: "waiting", at: Date.now() };
+  add(size, accept, src, device = null, note = "", lang = "tr") {
+    if (this.s.entries.length >= MAX_ENTRIES) throw new Error(msg(lang, "full"));
+    const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, accept, src, device, note, lang, status: "waiting", at: Date.now() };
     this.s.entries.push(e);
     return e;
   }
@@ -202,8 +205,8 @@ export class Room extends DurableObject {
     let dead = false;
     await Promise.all(list.map(async (e) => {
       const msg = {
-        title: e.table ? "Masanız hazır!" : "Sıra size geldi!",
-        body: `${s.name} · ${e.no} numara${e.table?.name ? ` · ${tableName(e.table)}` : ""}. Görevliye gidip numaranızı gösterin.`,
+        title: msg(e.lang, e.table ? "tableReady" : "yourTurn"),
+        body: msg(e.lang, "pushBody", s.name, e.no, e.table?.name && tableLabel(e.table, e.lang)),
         tag: `called-${e.id}`,
         url: s.slug ? `/join?r=${s.slug}` : "/",
       };

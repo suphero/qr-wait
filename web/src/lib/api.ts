@@ -5,17 +5,20 @@ export async function api<T = any>(path: string, body?: unknown, headers: Record
   return j;
 }
 
-export function locate(): Promise<GeolocationCoordinates> {
+// msg: ziyaretçi sayfalarında lib/i18n.ts'teki geoErrors
+export function locate(msg = {
+  unsupported: "Tarayıcınız konum desteklemiyor.",
+  denied: "Konum izni gerekli. Tarayıcı ayarlarından bu siteye konum izni verin.",
+}): Promise<GeolocationCoordinates> {
   return new Promise((ok, fail) => {
-    if (!navigator.geolocation) return fail(new Error("Tarayıcınız konum desteklemiyor."));
+    if (!navigator.geolocation) return fail(new Error(msg.unsupported));
     navigator.geolocation.getCurrentPosition((p) => ok(p.coords),
-      () => fail(new Error("Konum izni gerekli. Tarayıcı ayarlarından bu siteye konum izni verin.")),
+      () => fail(new Error(msg.denied)),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   });
 }
 
 export const mins = (t: number) => Math.floor((Date.now() - t) / 60000);
-export const orList = (a: number[]) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} veya ${a.at(-1)}` : String(a[0]));
 export const range = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
 // Sıra kategorileri; anahtarlar src/index.js'teki CATEGORIES ile aynı

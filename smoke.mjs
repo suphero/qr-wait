@@ -60,6 +60,13 @@ assert.equal((await join("device-aaaaaaaaaaaa", 3)).no, 1, "aynı cihaz ikinci b
 assert.match((await join("device-dddddddddddd", 2, { lat: 36.9, lng: 30.7056 })).error, /bulunduğu yerde görünmüyorsunuz/, "~1.8 km uzak");
 assert.match((await join("device-dddddddddddd", 2, spot, `${Date.now() - 120000}.abc`)).error, /süresi dolmuş/);
 assert.match((await join("device-dddddddddddd", 2, spot, `${token.split(".")[0]}.${"0".repeat(20)}`)).error, /süresi dolmuş/, "sahte imza");
+// Ziyaretçinin dili: hata mesajları o dilde, desteklenmeyen dilde Türkçe
+const ljoin = (lang, body = {}) => post(`/api/r/${room}/join`, { t: `${Date.now() - 120000}.x`, ...spot, size: 2, device: "device-lang-000000001", lang, ...body });
+assert.match((await ljoin("en")).error, /QR code has expired/);
+assert.match((await ljoin("de")).error, /QR-Code ist abgelaufen/);
+assert.match((await ljoin("ru")).error, /QR-кода истёк/);
+assert.match((await ljoin("fr")).error, /süresi dolmuş/, "desteklenmeyen dil → Türkçe");
+assert.match((await ljoin("en", { t: token, size: 99 })).error, /1–8 people/);
 
 const me = async (id) => (await fetch(`${B}/api/r/${room}/me?id=${id}`)).json();
 assert.equal((await me(c.id)).aheadPeople, 6);
