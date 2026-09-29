@@ -22,6 +22,10 @@ button:disabled { opacity: .5; }
 .soon { background: #fef3c7; }
 body.called { background: var(--ok); color: #fff; }
 body.called .big, body.called h1 { color: #fff; }
+/* Çağrılınca kart şeffaf: ekranın tamamı yeşil, numara ve mesaj beyaz (beyaz kartta beyaz yazı kalmasın) */
+body.called .card { background: transparent; box-shadow: none; }
+body.called .muted { color: #dcfce7; }
+body.called .wait-hint { display: none; }
 .item { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
 .item b { min-width: 3.5em; }
 .item span { flex: 1; }
