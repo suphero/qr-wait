@@ -19,4 +19,6 @@ export function meters(a: { lat: number; lng: number }, b: { lat: number; lng: n
   return 2 * 6371e3 * Math.asin(Math.sqrt(h));
 }
 
+export const fmtDist = (m: number) => (m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toFixed(1).replace(".", ",")} km`);
+
 export { L };

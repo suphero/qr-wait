@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { api, catIcon, locate, type PublicRoom } from "@/lib/api";
-import { baseMap, L, meters } from "@/lib/leaflet";
+import { baseMap, fmtDist, L, meters } from "@/lib/leaflet";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 import "./home.css";
 
 const green = "#15803D", yellow = "#FFE27A";
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const fmtDist = (m: number) => (m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toFixed(1).replace(".", ",")} km`);
 const waitText = (r: PublicRoom) => (r.waiting ? `${r.waiting} grup, ${r.people} kişi bekliyor` : "Şu an sıra yok");
 
 // Hap biçimli lacivert kenarlı butonlar

@@ -1,16 +1,23 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsUpDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon,
+  ExternalLinkIcon, LocateFixedIcon, LockIcon, PencilIcon, RefreshCwIcon, SearchIcon, Trash2Icon,
+} from "lucide-react";
 import { useConfirm } from "@/components/confirm";
 import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, CATEGORIES, catIcon, locate, poll, type RoomInfo } from "@/lib/api";
-import { baseMap, L } from "@/lib/leaflet";
+import { baseMap, fmtDist, L, meters } from "@/lib/leaflet";
 import { mount } from "@/lib/mount";
+import { cn } from "@/lib/utils";
 
 let pw = sessionStorage.getItem("pw");
 const adm = <T = any,>(path: string, body?: unknown, method?: string) => api<T>("/api/admin/rooms" + path, body, { "x-admin": pw ?? "" }, method);
@@ -234,7 +241,7 @@ function RoomForm({ room, rooms, onDone, onCancel, onError }: { room: RoomInfo |
   );
 }
 
-function RoomCard({ r, onChange, onEdit, onError }: { r: RoomInfo; onChange: () => Promise<void>; onEdit: () => void; onError: (m: string) => void }) {
+function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: number; onChange: () => Promise<void>; onEdit: () => void; onError: (m: string) => void }) {
   const confirm = useConfirm();
   const [copied, setCopied] = useState(false);
 
@@ -250,36 +257,138 @@ function RoomCard({ r, onChange, onEdit, onError }: { r: RoomInfo; onChange: () 
   }
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-2 text-base">
-        <p>
-          <b>{catIcon(r.category)} {r.name}</b>{" "}
-          <span className="text-sm text-muted-foreground">{r.private ? "🔒 gizli" : r.slug ? r.slug : "⚠ adres yok, Düzenle ile ekleyin"}</span>
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {r.waiting} grup / {r.people} kişi bekliyor · {r.called} çağrıldı · {r.radius} m · en fazla {r.maxGroup} kişi{r.tables ? ` · masa${r.maxEmpty !== null ? ` (en fazla ${r.maxEmpty} boş)` : ""}` : r.flex ? " · esnek yer" : ""} · {r.qr === "static" ? "sabit QR" : `QR ${r.ttl} sn`}
-        </p>
-        <div className="flex flex-wrap gap-2 *:flex-auto">
-          <Button onClick={copy}>{copied ? "Kopyalandı ✓" : "Görevli linkini kopyala"}</Button>
-          <Button variant="secondary" asChild><a href={r.link} target="_blank">Paneli aç</a></Button>
-          <Button variant="secondary" onClick={onEdit}>Düzenle</Button>
-          <Button variant="secondary" onClick={async () => {
-            if (await confirm({ title: "Görevli linki yenilensin mi?", description: `"${r.name}" için yeni görevli linki oluşturulacak. Eski link ve ${r.qr === "static" ? "basılı QR'lar" : "ekrandaki QR"} hemen çalışmaz hale gelir. Devam?`, action: "Yenile" }))
-              run(() => adm(`/${r.room}/rotate`, {}));
-          }}>Linki yenile</Button>
-          {r.private && (
-            <Button variant="secondary" onClick={async () => {
-              if (await confirm({ title: "Gizli adres yenilensin mi?", description: `"${r.name}" için yeni gizli adres oluşturulacak. Eski adres, görevli linki ve ekrandaki QR hemen çalışmaz hale gelir; sıradakilerin açık sayfaları çalışmaya devam eder. Devam?`, action: "Yenile" }))
-                run(() => adm(`/${r.room}/reslug`, {}));
-            }}>Gizli adresi yenile</Button>
-          )}
-          <Button variant="destructive" onClick={async () => {
-            if (await confirm({ title: "Sıra silinsin mi?", description: `"${r.name}" silinecek. Sıradaki herkes düşer. Emin misiniz?`, action: "Sil", destructive: true }))
-              run(() => adm(`/${r.room}`, undefined, "DELETE"));
-          }}>Sil</Button>
+    <TableRow>
+      <TableCell className="whitespace-normal">
+        <b>{catIcon(r.category)} {r.name}</b>
+        <div className="text-sm text-muted-foreground">{r.private ? "🔒 gizli" : r.slug ? r.slug : "⚠ adres yok, Düzenle ile ekleyin"}</div>
+        <div className="text-xs text-muted-foreground">
+          {r.radius} m · en fazla {r.maxGroup} kişi{r.tables ? ` · masa${r.maxEmpty !== null ? ` (en fazla ${r.maxEmpty} boş)` : ""}` : r.flex ? " · esnek yer" : ""} · {r.qr === "static" ? "sabit QR" : `QR ${r.ttl} sn`}
         </div>
-      </CardContent>
-    </Card>
+      </TableCell>
+      <TableCell className="text-right tabular-nums">{r.waiting} <span className="text-muted-foreground">/ {r.people} kişi</span></TableCell>
+      <TableCell className="text-right tabular-nums">{r.called}</TableCell>
+      {dist !== undefined && <TableCell className="text-right tabular-nums">{fmtDist(dist)}</TableCell>}
+      <TableCell>
+        <div className="flex justify-end gap-1">
+          <Button size="icon-sm" variant="ghost" title="Görevli linkini kopyala" onClick={copy}>{copied ? <CheckIcon /> : <CopyIcon />}</Button>
+          <Button size="icon-sm" variant="ghost" title="Paneli aç" asChild><a href={r.link} target="_blank"><ExternalLinkIcon /></a></Button>
+          <Button size="icon-sm" variant="ghost" title="Düzenle" onClick={onEdit}><PencilIcon /></Button>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title="Diğer"><EllipsisIcon /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={async () => {
+                if (await confirm({ title: "Görevli linki yenilensin mi?", description: `"${r.name}" için yeni görevli linki oluşturulacak. Eski link ve ${r.qr === "static" ? "basılı QR'lar" : "ekrandaki QR"} hemen çalışmaz hale gelir. Devam?`, action: "Yenile" }))
+                  run(() => adm(`/${r.room}/rotate`, {}));
+              }}><RefreshCwIcon /> Linki yenile</DropdownMenuItem>
+              {r.private && (
+                <DropdownMenuItem onSelect={async () => {
+                  if (await confirm({ title: "Gizli adres yenilensin mi?", description: `"${r.name}" için yeni gizli adres oluşturulacak. Eski adres, görevli linki ve ekrandaki QR hemen çalışmaz hale gelir; sıradakilerin açık sayfaları çalışmaya devam eder. Devam?`, action: "Yenile" }))
+                    run(() => adm(`/${r.room}/reslug`, {}));
+                }}><LockIcon /> Gizli adresi yenile</DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={async () => {
+                if (await confirm({ title: "Sıra silinsin mi?", description: `"${r.name}" silinecek. Sıradaki herkes düşer. Emin misiniz?`, action: "Sil", destructive: true }))
+                  run(() => adm(`/${r.room}`, undefined, "DELETE"));
+              }}><Trash2Icon /> Sil</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+type SortKey = "name" | "waiting" | "called" | "dist";
+const PAGE = 10;
+const norm = (t: string) => t.toLocaleLowerCase("tr");
+
+// Tıklanınca sıralayan başlık; aynı sütuna tekrar tıklamak yönü çevirir
+function SortHead({ k, sort, setSort, className, children }: { k: SortKey; sort: { key: SortKey; asc: boolean }; setSort: (s: { key: SortKey; asc: boolean }) => void; className?: string; children: ReactNode }) {
+  const on = sort.key === k;
+  const Icon = !on ? ChevronsUpDownIcon : sort.asc ? ChevronUpIcon : ChevronDownIcon;
+  return (
+    <TableHead className={className} aria-sort={on ? (sort.asc ? "ascending" : "descending") : "none"}>
+      <button type="button" className="inline-flex items-center gap-1 hover:text-primary" onClick={() => setSort({ key: k, asc: on ? !sort.asc : k === "name" || k === "dist" })}>
+        {children}<Icon className={cn("size-3.5", !on && "opacity-40")} />
+      </button>
+    </TableHead>
+  );
+}
+
+function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; onChange: () => Promise<void>; onEdit: (r: RoomInfo) => void; onError: (m: string) => void }) {
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "name", asc: true });
+  const [page, setPage] = useState(0);
+  const [me, setMe] = useState<Pt | null>(null);
+  const [locating, setLocating] = useState(false);
+
+  const words = norm(q).split(/\s+/).filter(Boolean);
+  const rows = rooms
+    .map((r) => ({ r, d: me ? meters(me, r) : undefined, hay: norm(`${r.name} ${r.slug ?? ""} ${CATEGORIES[r.category]?.[1] ?? ""} ${r.private ? "gizli" : ""}`) }))
+    .filter((x) => words.every((w) => x.hay.includes(w)))
+    .sort((a, b) => {
+      const v = sort.key === "name" ? a.r.name.localeCompare(b.r.name, "tr")
+        : sort.key === "dist" ? (a.d ?? 0) - (b.d ?? 0)
+        : a.r[sort.key] - b.r[sort.key];
+      return sort.asc ? v : -v;
+    });
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const p = Math.min(page, pages - 1); // silme/arama sonrası boş sayfada kalma
+  const shown = rows.slice(p * PAGE, (p + 1) * PAGE);
+  const sortTo = (s: typeof sort) => { setSort(s); setPage(0); };
+
+  async function nearMe() {
+    setLocating(true);
+    try {
+      const c = await locate();
+      setMe({ lat: c.latitude, lng: c.longitude });
+      sortTo({ key: "dist", asc: true });
+    } catch (e: any) { onError(e.message); }
+    finally { setLocating(false); }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        <div className="relative min-w-48 flex-1">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input type="search" className="pl-9" placeholder="Ad, adres veya kategori ara" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} />
+        </div>
+        <Button variant="secondary" disabled={locating} onClick={nearMe}><LocateFixedIcon /> {locating ? "Konum alınıyor…" : me ? "Konumu yenile" : "Yakınımdakiler"}</Button>
+      </div>
+      <Card className="py-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <SortHead k="name" sort={sort} setSort={sortTo}>Sıra</SortHead>
+              <SortHead k="waiting" sort={sort} setSort={sortTo} className="text-right">Bekleyen</SortHead>
+              <SortHead k="called" sort={sort} setSort={sortTo} className="text-right">Çağrılan</SortHead>
+              {me && <SortHead k="dist" sort={sort} setSort={sortTo} className="text-right">Mesafe</SortHead>}
+              <TableHead className="text-right">İşlemler</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {shown.map(({ r, d }) => <RoomRow key={r.room} r={r} dist={d} onChange={onChange} onEdit={() => onEdit(r)} onError={onError} />)}
+            {!shown.length && (
+              <TableRow>
+                <TableCell colSpan={me ? 5 : 4} className="py-8 text-center text-muted-foreground">
+                  {rooms.length ? "Aramaya uyan sıra yok." : "Henüz sıra yok. + Yeni sıra ile ilk sıranızı oluşturun."}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+      {rows.length > PAGE && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="flex-1">{p * PAGE + 1}–{p * PAGE + shown.length} / {rows.length}</span>
+          <Button size="sm" variant="secondary" disabled={p === 0} onClick={() => setPage(p - 1)}><ChevronLeftIcon /> Önceki</Button>
+          <span className="tabular-nums">{p + 1} / {pages}</span>
+          <Button size="sm" variant="secondary" disabled={p >= pages - 1} onClick={() => setPage(p + 1)}>Sonraki <ChevronRightIcon /></Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -337,14 +446,13 @@ function AdminPage() {
   }
 
   return (
-    <Page>
+    <Page className="max-w-5xl">
       <div className="flex items-center gap-2">
         <Title className="flex-1">Sıralar</Title>
+        <Button onClick={() => setEditing(null)}>+ Yeni sıra</Button>
         <Button variant="secondary" onClick={() => logout()}>Çıkış</Button>
       </div>
-      <Button onClick={() => setEditing(null)}>+ Yeni sıra</Button>
-      {rooms.map((r) => <RoomCard key={r.room} r={r} onChange={load} onEdit={() => setEditing(r)} onError={setErr} />)}
-      {!rooms.length && <p className="text-muted-foreground">Henüz sıra yok. + Yeni sıra ile ilk sıranızı oluşturun.</p>}
+      <RoomTable rooms={rooms} onChange={load} onEdit={setEditing} onError={setErr} />
       {editing !== undefined && (
         <RoomForm key={editing?.room ?? "new"} room={editing} rooms={rooms} onError={setErr}
           onDone={() => { setEditing(undefined); load(); }} onCancel={() => setEditing(undefined)} />
