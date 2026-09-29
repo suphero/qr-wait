@@ -11,11 +11,12 @@
     { "tag": "v1", "new_sqlite_classes": ["Room"] },
     { "tag": "v2", "new_sqlite_classes": ["Registry"] }
   ],
-  "observability": { "enabled": true }
-  // Alt alan adlarını açmak için (alan adı Cloudflare'de olmalı, DNS'te proxied "*" kaydı gerekir):
-  // "vars": { "BASE_DOMAIN": "belediyeplaj.com" },
-  // "routes": [
-  //   { "pattern": "belediyeplaj.com", "custom_domain": true },
-  //   { "pattern": "*.belediyeplaj.com/*", "zone_name": "belediyeplaj.com" }
-  // ]
+  "observability": { "enabled": true },
+  "workers_dev": true, // alan adı aktif olana kadar ve yedek erişim için açık kalsın
+  // DNS'te "@" ve "*" için proxied AAAA 100:: yer tutucu kayıtları var
+  "vars": { "BASE_DOMAIN": "sirangeldi.com" },
+  "routes": [
+    { "pattern": "sirangeldi.com/*", "zone_name": "sirangeldi.com" },
+    { "pattern": "*.sirangeldi.com/*", "zone_name": "sirangeldi.com" }
+  ]
 }
