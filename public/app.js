@@ -26,3 +26,16 @@ function renderAccept(el, size) {
 }
 const readAccept = (el) => [...el.querySelectorAll("input:checked")].map((i) => +i.value);
 const orList = (a) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} veya ${a.at(-1)}` : String(a[0]));
+
+// Google Analytics (GA4) — tüm sayfalar app.js'i yüklediği için tek yerden
+const GA_ID = "G-BPEZ8M7B76";
+if (!GA_ID.includes("X") && location.hostname !== "localhost") {
+  const s = document.createElement("script");
+  s.async = true;
+  s.src = `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`;
+  document.head.append(s);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { dataLayer.push(arguments); };
+  gtag("js", new Date());
+  gtag("config", GA_ID);
+}
