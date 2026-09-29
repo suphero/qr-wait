@@ -6,7 +6,8 @@ import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { api, mins, poll, tableName, type AdminState, type Entry } from "@/lib/api";
+import { api, mins, poll, type AdminState, type Entry } from "@/lib/api";
+import { lang, LANGS, pick, pl, tableLabel, type Lang } from "@/lib/i18n";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +16,205 @@ import { cn } from "@/lib/utils";
 const hash = location.hash.slice(1), dot = hash.indexOf(".");
 const ref = dot < 0 ? new URLSearchParams(location.search).get("r") ?? "" : hash.slice(0, dot), key = hash.slice(dot + 1);
 let room = ""; // açılışta çözülen oda id'si; slug sonradan değişse de açık panel çalışmaya devam eder
+
+// QR'ın altındaki çağrı ziyaretçiye: görevlinin dili önde, diğer diller altında küçük
+const SCAN: Record<Lang, string> = {
+  tr: "Sıraya girmek için telefon kameranızla okutun",
+  en: "Scan with your phone camera to join the queue",
+  de: "Mit der Handykamera scannen, um sich anzustellen",
+  ru: "Отсканируйте камерой телефона, чтобы встать в очередь",
+};
+
+const T = pick({
+  tr: {
+    title: "Görevli paneli",
+    badLink: (m: string) => `Geçersiz görevli bağlantısı: ${m}`,
+    people: (n: number) => `${n} kişi`,
+    seats: (n: number) => `${n} kişilik`,
+    places: (n: number) => `${n} yer`,
+    acceptOk: (list: string) => `${list} yer olur`,
+    manual: "elle",
+    ago: (n: number) => `${n} dk önce`,
+    min: (n: number) => `${n} dk`,
+    waitingSum: (g: number, p: number) => `${g} grup / ${p} kişi bekliyor`,
+    added: (n: number) => `Sıra numarası: ${n}`,
+    tellThem: "Kişiye söyleyin.",
+    seated: (t: string, n: number) => `${t} → #${n} çağrıldı.`,
+    noFit: (t: string) => `${t} için uygun grup yok. Boş masalarda bekliyor, uygun grup gelince otomatik çağrılır.`,
+    staticQr: "Bu QR sabittir, değişmez. Yazdırıp sıranın başına asabilirsiniz.",
+    fullscreen: "Tam ekran QR",
+    print: "Yazdır",
+    tableFreed: "Masa boşaldı",
+    tableName: "Masa adı / no (isteğe bağlı, ör. 7 veya Bahçe 3)",
+    capPh: "kişi",
+    freed: "Boşaldı",
+    tableHint: "Sıradaki gruplardan masaya sığan ilk grup çağrılır.",
+    maxEmpty: (n: number) => ` Masada en fazla ${n} boş sandalye kalacak şekilde.`,
+    joinTables: "Birleştirdiğiniz masaları toplam kişi sayısıyla girin.",
+    freeTables: "Boş masalar (uygun grup bekliyor)",
+    remove: "Kaldır",
+    freedSeats: "Boşalan yer sayısı",
+    callNext: "Yer boşaldı, sıradakileri çağır",
+    available: (n: number) => <>Ayrılmayı bekleyen boş yer: <b>{n}</b> (sıradaki grup sığmıyor)</>,
+    reset: "Sıfırla",
+    called: "Çağrılanlar",
+    arrived: "Geldi",
+    noShow: "Gelmedi",
+    none: "Yok",
+    waiting: "Bekleyenler",
+    call: "Çağır",
+    del: "Sil",
+    empty: "Sıra boş",
+    addTitle: "Elle ekle (telefonu olmayanlar için)",
+    notePh: "Not (ör. şapkalı amca)",
+    acceptQ: "Kaç yer olursa kabul ediyorlar?",
+    add: "Sıraya ekle",
+    resetTitle: "Sırayı sıfırla",
+    resetAsk: "Tüm sıra silinecek. Emin misiniz?",
+    resetBtn: "Sırayı sıfırla (gün sonu)",
+  },
+  en: {
+    title: "Attendant panel",
+    badLink: (m: string) => `Invalid attendant link: ${m}`,
+    people: (n: number) => pl(n, { one: "person", other: "people" }),
+    seats: (n: number) => `seats ${n}`,
+    places: (n: number) => pl(n, { one: "place", other: "places" }),
+    acceptOk: (list: string) => `${list} places OK`,
+    manual: "added manually",
+    ago: (n: number) => `${n} min ago`,
+    min: (n: number) => `${n} min`,
+    waitingSum: (g: number, p: number) => `${pl(g, { one: "group", other: "groups" })} / ${pl(p, { one: "person", other: "people" })} waiting`,
+    added: (n: number) => `Queue number: ${n}`,
+    tellThem: "Tell the person their number.",
+    seated: (t: string, n: number) => `${t} → #${n} called.`,
+    noFit: (t: string) => `No suitable group for ${t}. It waits among the free tables and is assigned automatically when a suitable group arrives.`,
+    staticQr: "This QR code is fixed and doesn't change. You can print it and post it at the queue.",
+    fullscreen: "Full-screen QR",
+    print: "Print",
+    tableFreed: "Table freed",
+    tableName: "Table name / no. (optional, e.g. 7 or Garden 3)",
+    capPh: "seats",
+    freed: "Freed",
+    tableHint: "The first waiting group that fits the table is called.",
+    maxEmpty: (n: number) => ` Leaving at most ${n} empty ${n === 1 ? "chair" : "chairs"} at the table.`,
+    joinTables: "For tables pushed together, enter the total number of seats.",
+    freeTables: "Free tables (waiting for a suitable group)",
+    remove: "Remove",
+    freedSeats: "Places freed",
+    callNext: "Places freed, call the next ones",
+    available: (n: number) => <>Free places not yet assigned: <b>{n}</b> (the next group doesn't fit)</>,
+    reset: "Reset",
+    called: "Called",
+    arrived: "Arrived",
+    noShow: "No-show",
+    none: "None",
+    waiting: "Waiting",
+    call: "Call",
+    del: "Delete",
+    empty: "Queue is empty",
+    addTitle: "Add manually (for people without a phone)",
+    notePh: "Note (e.g. man with the hat)",
+    acceptQ: "How many places would they accept?",
+    add: "Add to queue",
+    resetTitle: "Reset queue",
+    resetAsk: "The whole queue will be deleted. Are you sure?",
+    resetBtn: "Reset queue (end of day)",
+  },
+  de: {
+    title: "Personal-Panel",
+    badLink: (m: string) => `Ungültiger Personal-Link: ${m}`,
+    people: (n: number) => pl(n, { one: "Person", other: "Personen" }),
+    seats: (n: number) => `für ${n}`,
+    places: (n: number) => pl(n, { one: "Platz", other: "Plätze" }),
+    acceptOk: (list: string) => `${list} Plätze möglich`,
+    manual: "manuell",
+    ago: (n: number) => `vor ${n} Min.`,
+    min: (n: number) => `${n} Min.`,
+    waitingSum: (g: number, p: number) => `${pl(g, { one: "Gruppe", other: "Gruppen" })} / ${pl(p, { one: "Person", other: "Personen" })} warten`,
+    added: (n: number) => `Wartenummer: ${n}`,
+    tellThem: "Nennen Sie der Person ihre Nummer.",
+    seated: (t: string, n: number) => `${t} → Nr. ${n} aufgerufen.`,
+    noFit: (t: string) => `Keine passende Gruppe für ${t}. Der Tisch wartet bei den freien Tischen und wird automatisch vergeben, sobald eine passende Gruppe kommt.`,
+    staticQr: "Dieser QR-Code ist fest und ändert sich nicht. Sie können ihn ausdrucken und an der Warteschlange aushängen.",
+    fullscreen: "QR im Vollbild",
+    print: "Drucken",
+    tableFreed: "Tisch frei geworden",
+    tableName: "Tischname / Nr. (optional, z. B. 7 oder Garten 3)",
+    capPh: "Pers.",
+    freed: "Frei",
+    tableHint: "Die erste wartende Gruppe, die an den Tisch passt, wird aufgerufen.",
+    maxEmpty: (n: number) => ` Dabei bleiben höchstens ${n} ${n === 1 ? "Stuhl" : "Stühle"} leer.`,
+    joinTables: "Bei zusammengestellten Tischen die Gesamtzahl der Plätze eingeben.",
+    freeTables: "Freie Tische (warten auf eine passende Gruppe)",
+    remove: "Entfernen",
+    freedSeats: "Frei gewordene Plätze",
+    callNext: "Plätze frei, Nächste aufrufen",
+    available: (n: number) => <>Noch nicht vergebene freie Plätze: <b>{n}</b> (die nächste Gruppe passt nicht)</>,
+    reset: "Zurücksetzen",
+    called: "Aufgerufen",
+    arrived: "Gekommen",
+    noShow: "Nicht erschienen",
+    none: "Keine",
+    waiting: "Wartend",
+    call: "Aufrufen",
+    del: "Löschen",
+    empty: "Warteschlange ist leer",
+    addTitle: "Manuell hinzufügen (für Personen ohne Handy)",
+    notePh: "Notiz (z. B. Mann mit Hut)",
+    acceptQ: "Wie viele Plätze würden sie akzeptieren?",
+    add: "Hinzufügen",
+    resetTitle: "Warteschlange zurücksetzen",
+    resetAsk: "Die gesamte Warteschlange wird gelöscht. Sind Sie sicher?",
+    resetBtn: "Warteschlange zurücksetzen (Tagesende)",
+  },
+  ru: {
+    title: "Панель сотрудника",
+    badLink: (m: string) => `Недействительная ссылка сотрудника: ${m}`,
+    people: (n: number) => pl(n, { one: "человек", few: "человека", many: "человек", other: "человека" }),
+    seats: (n: number) => `на ${n}`,
+    places: (n: number) => pl(n, { one: "место", few: "места", many: "мест", other: "места" }),
+    acceptOk: (list: string) => `подойдёт мест: ${list}`,
+    manual: "добавлен вручную",
+    ago: (n: number) => `${n} мин назад`,
+    min: (n: number) => `${n} мин`,
+    waitingSum: (g: number, p: number) => `Ждут: ${pl(g, { one: "группа", few: "группы", many: "групп", other: "группы" })} / ${pl(p, { one: "человек", few: "человека", many: "человек", other: "человека" })}`,
+    added: (n: number) => `Номер в очереди: ${n}`,
+    tellThem: "Сообщите человеку его номер.",
+    seated: (t: string, n: number) => `${t} → вызван № ${n}.`,
+    noFit: (t: string) => `Для «${t}» нет подходящей группы. Стол ждёт среди свободных и будет отдан автоматически, когда придёт подходящая группа.`,
+    staticQr: "Этот QR-код постоянный и не меняется. Его можно распечатать и повесить у очереди.",
+    fullscreen: "QR на весь экран",
+    print: "Печать",
+    tableFreed: "Стол освободился",
+    tableName: "Название / № стола (необязательно, напр. 7 или Сад 3)",
+    capPh: "мест",
+    freed: "Свободен",
+    tableHint: "Вызывается первая ожидающая группа, которая помещается за стол.",
+    maxEmpty: (n: number) => ` При этом свободными остаётся не более ${pl(n, { one: "стула", few: "стульев", many: "стульев", other: "стула" })}.`,
+    joinTables: "Для составленных вместе столов укажите общее число мест.",
+    freeTables: "Свободные столы (ждут подходящую группу)",
+    remove: "Убрать",
+    freedSeats: "Освободилось мест",
+    callNext: "Места освободились, вызвать следующих",
+    available: (n: number) => <>Свободные нераспределённые места: <b>{n}</b> (следующая группа не помещается)</>,
+    reset: "Сбросить",
+    called: "Вызванные",
+    arrived: "Пришёл",
+    noShow: "Не пришёл",
+    none: "Нет",
+    waiting: "Ожидают",
+    call: "Вызвать",
+    del: "Удалить",
+    empty: "Очередь пуста",
+    addTitle: "Добавить вручную (для тех, у кого нет телефона)",
+    notePh: "Заметка (напр. мужчина в шляпе)",
+    acceptQ: "Какое количество мест им подойдёт?",
+    add: "Добавить в очередь",
+    resetTitle: "Сбросить очередь",
+    resetAsk: "Вся очередь будет удалена. Вы уверены?",
+    resetBtn: "Сбросить очередь (конец дня)",
+  },
+});
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -32,18 +232,20 @@ function Row({ e, children }: { e: Entry; children: ReactNode }) {
     <div className="flex items-center gap-2 border-b py-2 last:border-0">
       <b className="min-w-[3.5em] tabular-nums">#{e.no}</b>
       <span className="flex-1">
-        {e.size} kişi
-        {e.table ? <> · <b>{tableName(e.table)}</b>{e.table.name && ` (${e.table.cap} kişilik)`}</>
-          : e.status === "called" ? e.alloc != null && <> · <b>{e.alloc} yer</b></>
-          : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${e.accept.join("/")} yer olur` : ""}
-        {e.src === "manual" && " · elle"}
+        {T.people(e.size)}
+        {e.table ? <> · <b>{tableLabel(e.table)}</b>{e.table.name && ` (${T.seats(e.table.cap)})`}</>
+          : e.status === "called" ? e.alloc != null && <> · <b>{T.places(e.alloc)}</b></>
+          : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${T.acceptOk(e.accept.join("/"))}` : ""}
+        {e.src === "manual" && ` · ${T.manual}`}
         {e.note && ` · ${e.note}`}
-        {e.calledAt && <> · <span className={cn(late && "font-bold text-destructive")}>{mins(e.calledAt)} dk önce</span></>}
+        {e.calledAt && <> · <span className={cn(late && "font-bold text-destructive")}>{T.ago(mins(e.calledAt))}</span></>}
       </span>
       {children}
     </div>
   );
 }
+
+if (lang !== "tr") document.title = T.title;
 
 function HostPage() {
   const confirm = useConfirm();
@@ -79,7 +281,7 @@ function HostPage() {
     let stop = () => {};
     api<{ room: string }>(`/api/resolve?r=${encodeURIComponent(ref)}`)
       .then((r) => { room = r.room; act(); stop = poll(act, 4000, true); })
-      .catch((e) => setErr(`Geçersiz görevli bağlantısı: ${e.message}`));
+      .catch((e) => setErr(T.badLink(e.message)));
     return () => stop();
   }, []);
 
@@ -93,17 +295,17 @@ function HostPage() {
     const st = await act({ action: "add", size: addSize, accept: addAccept, note: addNote });
     if (st?.added) {
       setAddNote("");
-      await confirm({ title: `Sıra numarası: ${st.added}`, description: "Kişiye söyleyin.", cancel: false });
+      await confirm({ title: T.added(st.added), description: T.tellThem, cancel: false });
     }
   }
 
   async function freeTable(n: number) {
     if (!(n >= 1)) return;
-    const label = tableName({ id: "", at: 0, cap: n, name: tName.trim() });
+    const label = tableLabel({ cap: n, name: tName.trim() });
     const st = await act({ action: "table", n, name: tName });
     if (!st) return;
     setTName(""); setTCap("");
-    setTMsg(st.seated ? `${label} → #${st.seated} çağrıldı.` : `${label} için uygun grup yok. Boş masalarda bekliyor, uygun grup gelince otomatik çağrılır.`);
+    setTMsg(st.seated ? T.seated(label, st.seated) : T.noFit(label));
   }
 
   const waiting = s?.entries.filter((e) => e.status === "waiting") ?? [];
@@ -112,47 +314,50 @@ function HostPage() {
 
   return (
     <Page>
-      <Title>{s?.name ?? "Görevli paneli"}</Title>
-      {s && <p className="text-sm text-muted-foreground print:hidden">{waiting.length} grup / {waiting.reduce((n, e) => n + e.size, 0)} kişi bekliyor</p>}
+      <Title>{s?.name ?? T.title}</Title>
+      {s && <p className="text-sm text-muted-foreground print:hidden">{T.waitingSum(waiting.length, waiting.reduce((n, e) => n + e.size, 0))}</p>}
       <ErrorText>{err}</ErrorText>
 
       <Card className={cn("print:shadow-none print:ring-0", full && "fixed inset-0 z-50 justify-center rounded-none")}>
         <CardContent className="flex flex-col items-center gap-3 text-center text-base">
           {qrUrl && <QRCodeCanvas value={qrUrl} size={360} level="M" marginSize={0} className="h-auto! max-w-full" />}
-          <p><b>Sıraya girmek için telefon kameranızla okutun</b></p>
-          {fixed && <p className="text-sm text-muted-foreground print:hidden">Bu QR sabittir, değişmez. Yazdırıp sıranın başına asabilirsiniz.</p>}
+          <div>
+            <p><b>{SCAN[lang]}</b></p>
+            {LANGS.filter((l) => l !== lang).map((l) => <p key={l} lang={l} className="text-sm text-muted-foreground">{SCAN[l]}</p>)}
+          </div>
+          {fixed && <p className="text-sm text-muted-foreground print:hidden">{T.staticQr}</p>}
           <div className="flex w-full gap-2 print:hidden">
-            <Button variant="secondary" className="flex-1" onClick={() => setFull(!full)}>Tam ekran QR</Button>
-            {fixed && <Button variant="secondary" className="flex-1" onClick={() => print()}>Yazdır</Button>}
+            <Button variant="secondary" className="flex-1" onClick={() => setFull(!full)}>{T.fullscreen}</Button>
+            {fixed && <Button variant="secondary" className="flex-1" onClick={() => print()}>{T.print}</Button>}
           </div>
         </CardContent>
       </Card>
 
       {s?.tables && (
-        <Section title="Masa boşaldı">
+        <Section title={T.tableFreed}>
           <div className="flex flex-col gap-3">
-            <Input placeholder="Masa adı / no (isteğe bağlı, ör. 7 veya Bahçe 3)" maxLength={20} value={tName} onChange={(e) => setTName(e.target.value)} />
+            <Input placeholder={T.tableName} maxLength={20} value={tName} onChange={(e) => setTName(e.target.value)} />
             <div className="flex flex-wrap gap-2 *:flex-auto">
-              {[2, 4, 6].map((n) => <Button key={n} onClick={() => freeTable(n)}>{n} kişilik</Button>)}
+              {[2, 4, 6].map((n) => <Button key={n} onClick={() => freeTable(n)}>{T.seats(n)}</Button>)}
               <div className="flex gap-2">
-                <Input className="w-20" type="number" min={1} max={50} inputMode="numeric" placeholder="kişi" value={tCap} onChange={(e) => setTCap(e.target.value)} />
-                <Button variant="secondary" onClick={() => freeTable(+tCap)}>Boşaldı</Button>
+                <Input className="w-20" type="number" min={1} max={50} inputMode="numeric" placeholder={T.capPh} value={tCap} onChange={(e) => setTCap(e.target.value)} />
+                <Button variant="secondary" onClick={() => freeTable(+tCap)}>{T.freed}</Button>
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Sıradaki gruplardan masaya sığan ilk grup çağrılır.
-              {s.maxEmpty !== null && ` Masada en fazla ${s.maxEmpty} boş sandalye kalacak şekilde.`}
-              {" "}Birleştirdiğiniz masaları toplam kişi sayısıyla girin.
+              {T.tableHint}
+              {s.maxEmpty !== null && T.maxEmpty(s.maxEmpty)}
+              {" "}{T.joinTables}
             </p>
             {tMsg && <p className="text-sm font-semibold">{tMsg}</p>}
           </div>
           {!!s.freeTables.length && (
             <div className="mt-3">
-              <p className="text-sm text-muted-foreground">Boş masalar (uygun grup bekliyor)</p>
+              <p className="text-sm text-muted-foreground">{T.freeTables}</p>
               {s.freeTables.map((t) => (
                 <div key={t.id} className="flex items-center gap-2 border-b py-2 last:border-0">
-                  <span className="flex-1"><b>{tableName(t)}</b>{t.name && ` · ${t.cap} kişilik`} · {mins(t.at)} dk</span>
-                  <Button variant="secondary" size="sm" onClick={() => act({ action: "untable", id: t.id })}>Kaldır</Button>
+                  <span className="flex-1"><b>{tableLabel(t)}</b>{t.name && ` · ${T.seats(t.cap)}`} · {T.min(mins(t.at))}</span>
+                  <Button variant="secondary" size="sm" onClick={() => act({ action: "untable", id: t.id })}>{T.remove}</Button>
                 </div>
               ))}
             </div>
@@ -160,58 +365,58 @@ function HostPage() {
         </Section>
       )}
 
-      {s && !s.tables && <Section title="Boşalan yer sayısı">
+      {s && !s.tables && <Section title={T.freedSeats}>
         <div className="flex gap-2">
           <Input className="w-24" type="number" min={1} max={500} inputMode="numeric" value={freeN} onChange={(e) => setFreeN(e.target.value)} />
-          <Button className="flex-1 whitespace-normal" onClick={() => act({ action: "free", n: +freeN })}>Yer boşaldı, sıradakileri çağır</Button>
+          <Button className="flex-1 whitespace-normal" onClick={() => act({ action: "free", n: +freeN })}>{T.callNext}</Button>
         </div>
         {!!s?.available && (
           <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="flex-1">Ayrılmayı bekleyen boş yer: <b>{s.available}</b> (sıradaki grup sığmıyor)</span>
-            <Button variant="secondary" size="sm" onClick={() => act({ action: "setAvailable", n: 0 })}>Sıfırla</Button>
+            <span className="flex-1">{T.available(s.available)}</span>
+            <Button variant="secondary" size="sm" onClick={() => act({ action: "setAvailable", n: 0 })}>{T.reset}</Button>
           </p>
         )}
       </Section>}
 
-      <Section title="Çağrılanlar">
+      <Section title={T.called}>
         {called.map((e) => (
           <Row key={e.id} e={e}>
-            <Button variant="success" size="sm" onClick={() => act({ action: "arrived", id: e.id })}>Geldi</Button>
-            <Button variant="destructive" size="sm" onClick={() => act({ action: "drop", id: e.id })}>Gelmedi</Button>
+            <Button variant="success" size="sm" onClick={() => act({ action: "arrived", id: e.id })}>{T.arrived}</Button>
+            <Button variant="destructive" size="sm" onClick={() => act({ action: "drop", id: e.id })}>{T.noShow}</Button>
           </Row>
         ))}
-        {!called.length && <p className="text-muted-foreground">Yok</p>}
+        {!called.length && <p className="text-muted-foreground">{T.none}</p>}
       </Section>
 
-      <Section title="Bekleyenler">
+      <Section title={T.waiting}>
         {waiting.map((e) => (
           <Row key={e.id} e={e}>
-            <Button variant="secondary" size="sm" onClick={() => act({ action: "call", id: e.id })}>Çağır</Button>
-            <Button variant="secondary" size="sm" onClick={() => act({ action: "drop", id: e.id })}>Sil</Button>
+            <Button variant="secondary" size="sm" onClick={() => act({ action: "call", id: e.id })}>{T.call}</Button>
+            <Button variant="secondary" size="sm" onClick={() => act({ action: "drop", id: e.id })}>{T.del}</Button>
           </Row>
         ))}
-        {!waiting.length && <p className="text-muted-foreground">Sıra boş</p>}
+        {!waiting.length && <p className="text-muted-foreground">{T.empty}</p>}
       </Section>
 
-      <Section title="Elle ekle (telefonu olmayanlar için)">
+      <Section title={T.addTitle}>
         <div className="flex flex-col gap-3">
           <div className="flex gap-2">
             <SizeSelect className="w-24 shrink-0" max={s?.maxGroup ?? 8} value={addSize} onChange={(n) => { setAddSize(n); setAddAccept([n]); }} />
-            <Input placeholder="Not (ör. şapkalı amca)" maxLength={60} value={addNote} onChange={(e) => setAddNote(e.target.value)} />
+            <Input placeholder={T.notePh} maxLength={60} value={addNote} onChange={(e) => setAddNote(e.target.value)} />
           </div>
           {s?.flex && (
             <div>
-              <p className="text-sm text-muted-foreground">Kaç yer olursa kabul ediyorlar?</p>
+              <p className="text-sm text-muted-foreground">{T.acceptQ}</p>
               <AcceptPicker size={addSize} value={addAccept} onChange={setAddAccept} />
             </div>
           )}
-          <Button onClick={add}>Sıraya ekle</Button>
+          <Button onClick={add}>{T.add}</Button>
         </div>
       </Section>
 
       <Button variant="destructive" className="print:hidden" onClick={async () => {
-        if (await confirm({ title: "Sırayı sıfırla", description: "Tüm sıra silinecek. Emin misiniz?", action: "Sıfırla", destructive: true })) act({ action: "reset" });
-      }}>Sırayı sıfırla (gün sonu)</Button>
+        if (await confirm({ title: T.resetTitle, description: T.resetAsk, action: T.reset, destructive: true })) act({ action: "reset" });
+      }}>{T.resetBtn}</Button>
     </Page>
   );
 }

@@ -3,6 +3,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { S } from "@/lib/i18n";
 
 type Opts = {
   title: ReactNode;
@@ -32,9 +33,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             {opts?.description && <AlertDialogDescription>{opts.description}</AlertDialogDescription>}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            {opts?.cancel !== false && <AlertDialogCancel onClick={() => close(false)}>{opts?.cancel ?? "Vazgeç"}</AlertDialogCancel>}
+            {opts?.cancel !== false && <AlertDialogCancel onClick={() => close(false)}>{opts?.cancel ?? S.cancel}</AlertDialogCancel>}
             <AlertDialogAction variant={opts?.destructive ? "destructive" : "default"} onClick={() => close(true)}>
-              {opts?.action ?? "Tamam"}
+              {opts?.action ?? S.ok}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

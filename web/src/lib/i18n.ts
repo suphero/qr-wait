@@ -17,8 +17,12 @@ type Forms = Partial<Record<Intl.LDMLPluralRule, string>> & { other: string };
 export const word = (n: number, f: Forms) => f[rules.select(n)] ?? f.other;
 export const pl = (n: number, f: Forms) => `${n} ${word(n, f)}`;
 
-const S = pick({
+export const S = pick({
   tr: {
+    cancel: "Vazgeç",
+    ok: "Tamam",
+    network: "Bağlantı hatası",
+    categories: { plaj: "Plaj", iskele: "İskele / ulaşım", gise: "Gişe", restoran: "Restoran / kafe", saglik: "Sağlık", resmi: "Resmi daire", etkinlik: "Etkinlik", diger: "Diğer" },
     waiting: (r: PublicRoom) => `${r.waiting} grup, ${r.people} kişi bekliyor`,
     empty: "Şu an sıra yok",
     or: "veya",
@@ -28,6 +32,10 @@ const S = pick({
     geoDenied: "Konum izni gerekli. Tarayıcı ayarlarından bu siteye konum izni verin.",
   },
   en: {
+    cancel: "Cancel",
+    ok: "OK",
+    network: "Connection error",
+    categories: { plaj: "Beach", iskele: "Pier / transport", gise: "Ticket office", restoran: "Restaurant / café", saglik: "Health", resmi: "Public office", etkinlik: "Event", diger: "Other" },
     waiting: (r: PublicRoom) => `${pl(r.waiting, { one: "group", other: "groups" })}, ${pl(r.people, { one: "person", other: "people" })} waiting`,
     empty: "No queue right now",
     or: "or",
@@ -37,6 +45,10 @@ const S = pick({
     geoDenied: "Location access is required. Allow this site to use your location in your browser settings.",
   },
   de: {
+    cancel: "Abbrechen",
+    ok: "OK",
+    network: "Verbindungsfehler",
+    categories: { plaj: "Strand", iskele: "Anleger / Verkehr", gise: "Kasse", restoran: "Restaurant / Café", saglik: "Gesundheit", resmi: "Behörde", etkinlik: "Veranstaltung", diger: "Sonstiges" },
     waiting: (r: PublicRoom) => `${pl(r.waiting, { one: "Gruppe", other: "Gruppen" })}, ${pl(r.people, { one: "Person", other: "Personen" })} warten`,
     empty: "Derzeit keine Warteschlange",
     or: "oder",
@@ -46,6 +58,10 @@ const S = pick({
     geoDenied: "Die Standortfreigabe ist erforderlich. Erlauben Sie dieser Seite in den Browsereinstellungen den Zugriff auf Ihren Standort.",
   },
   ru: {
+    cancel: "Отмена",
+    ok: "ОК",
+    network: "Ошибка соединения",
+    categories: { plaj: "Пляж", iskele: "Пристань / транспорт", gise: "Касса", restoran: "Ресторан / кафе", saglik: "Здоровье", resmi: "Госучреждение", etkinlik: "Мероприятие", diger: "Другое" },
     waiting: (r: PublicRoom) => `Ждут: ${pl(r.waiting, { one: "группа", few: "группы", many: "групп", other: "группы" })}, ${pl(r.people, { one: "человек", few: "человека", many: "человек", other: "человека" })}`,
     empty: "Сейчас очереди нет",
     or: "или",
@@ -60,7 +76,7 @@ export const waitText = (r: PublicRoom) => (r.waiting ? S.waiting(r) : S.empty);
 // "2, 3 veya 4"
 export const orList = (a: number[]) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} ${S.or} ${a.at(-1)}` : String(a[0]));
 // src/i18n.js'teki tableLabel ile aynı
-export const tableLabel = (t: Table) => (/^\d+$/.test(t.name) ? S.table(t.name) : t.name || S.tableFor(t.cap));
+export const tableLabel = (t: Pick<Table, "name" | "cap">) => (/^\d+$/.test(t.name) ? S.table(t.name) : t.name || S.tableFor(t.cap));
 export const geoErrors = { unsupported: S.noGeo, denied: S.geoDenied };
 // 850 m, 1,2 km / 1.2 km
 export const fmtDistL = (m: number) => (m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m`

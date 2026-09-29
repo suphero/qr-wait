@@ -1,6 +1,8 @@
 // Web Push (RFC 8291 aes128gcm şifreleme + RFC 8292 VAPID), yalnızca WebCrypto ile.
 // Anahtarlar: VAPID_PUBLIC_KEY (65 baytlık sıkıştırılmamış P-256 noktası), VAPID_PRIVATE_KEY (32 baytlık d), ikisi de base64url.
 
+import { fail } from "./i18n.js";
+
 const SUBJECT = "mailto:info@sirangeldi.com";
 const te = new TextEncoder();
 
@@ -73,6 +75,6 @@ export function cleanSub(sub) {
   const u = URL.parse(endpoint);
   const ok = u?.protocol === "https:" && endpoint.length < 1000 && PUSH_HOSTS.test(u.hostname) &&
     /^[\w-]{80,100}$/.test(keys?.p256dh ?? "") && /^[\w-]{16,32}$/.test(keys?.auth ?? "");
-  if (!ok) throw new Error("Geçersiz bildirim aboneliği");
+  if (!ok) throw fail("badPush");
   return { endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } };
 }

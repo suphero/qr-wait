@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { langOf, msg, tableLabel } from "./i18n.js";
+import { fail, failed, langOf, localize, msg, tableLabel } from "./i18n.js";
 import { cleanSub, sendPush } from "./push.js";
 
 const TTLS = [60, 90, 180, 300]; // seçilebilir QR geçerlilik süreleri (sn); görevli ekranı süre/4'te bir yeni kod gösterir
@@ -29,17 +29,16 @@ function meters(a, b) {
   return 2 * 6371e3 * Math.asin(Math.sqrt(h));
 }
 
-const int = (v, min, max, msg) => {
+// key, args: aralık dışında atılan çevrilebilir hata (src/i18n.js)
+const int = (v, min, max, key, ...args) => {
   const n = Math.trunc(Number(v));
-  if (!(n >= min && n <= max)) throw new Error(msg);
+  if (!(n >= min && n <= max)) throw fail(key, ...args);
   return n;
 };
 
 // Grubun kabul ettiği yer sayıları (ör. 4 kişi: [2, 4]). Esnek olmayan sırada ve eski kayıtlarda yalnızca grup büyüklüğü.
 const acceptOf = (e) => e.accept ?? [e.size];
 
-// "7" → "Masa 7", "Bahçe 3" olduğu gibi; web/src/lib/api.ts'teki tableName ile aynı
-const tableName = (t) => (/^\d+$/.test(t.name) ? `Masa ${t.name}` : t.name || `${t.cap} kişilik masa`);
 
 // Sonradan eklenen oda ayarları; eski kayıtlarda alan yoksa varsayılan.
 // Sıra türü: "seats" boş yer havuzu (plaj, iskele), "tables" masalar (restoran); masada esnek yer seçimi anlamsız.
@@ -60,10 +59,10 @@ function fit(e, available) {
   return ok.length ? Math.max(...ok) : null;
 }
 
-function acceptList(accept, size, flex, lang) {
+function acceptList(accept, size, flex) {
   if (!flex) return [size];
   const list = [...new Set([].concat(accept ?? size).map(Number))].filter((a) => Number.isInteger(a) && a >= 1 && a <= size);
-  if (!list.length) throw new Error(msg(lang, "accept"));
+  if (!list.length) throw fail("accept");
   return list.sort((a, b) => a - b);
 }
 
@@ -75,8 +74,8 @@ export class Room extends DurableObject {
     ctx.blockConcurrencyWhile(async () => { this.s = await ctx.storage.get("s"); });
   }
 
-  need(lang) {
-    if (!this.s) throw new Error(msg(lang, "notFound"));
+  need() {
+    if (!this.s) throw fail("notFound");
     return this.s;
   }
 
@@ -133,24 +132,24 @@ export class Room extends DurableObject {
     return `${ts}.${await sign(s.key, ts)}`;
   }
 
-  // lang: ziyaretçinin dili; hata mesajları ve push bildirimi bu dilde
+  // lang: ziyaretçinin dili; "sıra size geldi" push bildirimi bu dilde gider
   async join({ t, lat, lng, size, accept, device, lang }) {
     lang = langOf(lang);
-    const s = this.need(lang), c = conf(s);
+    const s = this.need(), c = conf(s);
     const [ts, sig] = String(t).split(".");
     if (ts === "s") {
       if (c.qr !== "static" || !same(sig, await sign(s.key, "static")))
-        throw new Error(msg(lang, "qrInvalid"));
+        throw fail("qrInvalid");
     } else {
       const age = Date.now() - Number(ts);
       if (!(age > -5000 && age < c.ttl * 1000) || !same(sig, await sign(s.key, ts)))
-        throw new Error(msg(lang, "qrExpired"));
+        throw fail("qrExpired");
     }
     if (!(meters(s, { lat: Number(lat), lng: Number(lng) }) <= s.radius))
-      throw new Error(msg(lang, "far"));
-    if (typeof device !== "string" || device.length < 16) throw new Error(msg(lang, "device"));
-    size = int(size, 1, c.maxGroup, msg(lang, "group", c.maxGroup));
-    accept = acceptList(accept, size, c.flex, lang);
+      throw fail("far");
+    if (typeof device !== "string" || device.length < 16) throw fail("device");
+    size = int(size, 1, c.maxGroup, "group", c.maxGroup);
+    accept = acceptList(accept, size, c.flex);
     // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner
     const e = s.entries.find((x) => x.device === device) ?? this.add(size, accept, "qr", device, "", lang);
     this.fill(); // boş yer / bekleyen masa varsa hemen çağrılır
@@ -160,7 +159,7 @@ export class Room extends DurableObject {
   }
 
   add(size, accept, src, device = null, note = "", lang = "tr") {
-    if (this.s.entries.length >= MAX_ENTRIES) throw new Error(msg(lang, "full"));
+    if (this.s.entries.length >= MAX_ENTRIES) throw fail("full");
     const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, accept, src, device, note, lang, status: "waiting", at: Date.now() };
     this.s.entries.push(e);
     return e;
@@ -190,7 +189,7 @@ export class Room extends DurableObject {
   // Sayfa kapalıyken / ekran kilitliyken haber verebilmek için tarayıcının push aboneliği
   async subscribe(id, sub) {
     const e = this.need().entries.find((x) => x.id === id);
-    if (!e) throw new Error("Sıra kaydı bulunamadı");
+    if (!e) throw fail("entryNotFound");
     e.push = cleanSub(sub);
     await this.save();
     return { ok: true };
@@ -204,14 +203,14 @@ export class Room extends DurableObject {
     const s = this.s;
     let dead = false;
     await Promise.all(list.map(async (e) => {
-      const msg = {
+      const note = {
         title: msg(e.lang, e.table ? "tableReady" : "yourTurn"),
         body: msg(e.lang, "pushBody", s.name, e.no, e.table?.name && tableLabel(e.table, e.lang)),
         tag: `called-${e.id}`,
         url: s.slug ? `/join?r=${s.slug}` : "/",
       };
       try {
-        if (!(await sendPush(e.push, msg, this.env))) { delete e.push; dead = true; }
+        if (!(await sendPush(e.push, note, this.env))) { delete e.push; dead = true; }
       } catch (err) { console.error("push", err.message); }
     }));
     if (dead) await this.save();
@@ -275,18 +274,18 @@ export class Room extends DurableObject {
 
   async admin(key, { action, id, n, size, accept, note, name }) {
     const s = this.need(), c = conf(s);
-    if (!same(key, s.key)) throw new Error("Yetkisiz");
+    if (!same(key, s.key)) throw fail("unauthorized");
     s.tables ??= [];
     const e = s.entries.find((x) => x.id === id);
     let added, table;
     switch (action) {
-      case "free": s.available += int(n, 1, 500, "Geçersiz sayı"); break;
-      case "setAvailable": s.available = int(n, 0, 500, "Geçersiz sayı"); break;
+      case "free": s.available += int(n, 1, 500, "badNumber"); break;
+      case "setAvailable": s.available = int(n, 0, 500, "badNumber"); break;
       case "table": {
-        if (!c.tables) throw new Error("Bu sırada masa yok");
+        if (!c.tables) throw fail("noTables");
         const nm = String(name ?? "").trim().slice(0, 20);
-        if (nm && s.tables.some((t) => t.name === nm)) throw new Error(`${tableName({ name: nm })} zaten boş masalarda`);
-        table = { id: crypto.randomUUID().slice(0, 8), cap: int(n, 1, TABLE_LIMIT, `Masa 1-${TABLE_LIMIT} kişilik olmalı`), name: nm, at: Date.now() };
+        if (nm && s.tables.some((t) => t.name === nm)) throw fail("tableTaken", nm);
+        table = { id: crypto.randomUUID().slice(0, 8), cap: int(n, 1, TABLE_LIMIT, "tableCap", TABLE_LIMIT), name: nm, at: Date.now() };
         s.tables.push(table);
         break;
       }
@@ -296,7 +295,7 @@ export class Room extends DurableObject {
       case "arrived": s.entries = s.entries.filter((x) => x !== e); break;
       case "drop": this.drop(id); break;
       case "add": {
-        const sz = int(size, 1, conf(s).maxGroup, "Geçersiz grup");
+        const sz = int(size, 1, conf(s).maxGroup, "badGroup");
         added = this.add(sz, acceptList(accept, sz, c.flex), "manual", null, String(note ?? "").slice(0, 60));
         break;
       }
@@ -340,7 +339,7 @@ export class Registry extends DurableObject {
   // DO girdi kapısı sayesinde oku-yaz arasında başka istek araya giremez: bir kullanıcıda aynı slug iki odaya verilemez
   async claim(owner, slug, id, old) {
     const k = `slug:${owner}/${slug}`, taken = await this.value(k);
-    if (taken && taken !== id) throw new Error("Bu adres başka bir sırada kullanılıyor");
+    if (taken && taken !== id) throw fail("slugTaken");
     if (old && old !== slug) await this.ctx.storage.delete(`slug:${owner}/${old}`);
     await this.ctx.storage.put(k, id);
   }
@@ -364,14 +363,14 @@ export class Registry extends DurableObject {
 
   async user(name) {
     const u = await this.value(`user:${name}`);
-    if (!u) throw new Error("Kullanıcı bulunamadı");
+    if (!u) throw fail("userNotFound");
     return u;
   }
 
   async createUser(name, cred) {
-    if (await this.value(`user:${name}`)) throw new Error("Bu kullanıcı adı alınmış");
+    if (await this.value(`user:${name}`)) throw fail("userTaken");
     // Eski sıra adresiyle aynı ad olursa eski adres yönlendirmesi bozulur
-    if ((await this.value(`legacy:${name}`)) || (await this.value(`slug:${name}`))) throw new Error("Bu ad eski bir sıranın adresi, başka bir ad seçin");
+    if ((await this.value(`legacy:${name}`)) || (await this.value(`slug:${name}`))) throw fail("userLegacy");
     await this.ctx.storage.put(`user:${name}`, { ...cred, at: Date.now() });
   }
 
@@ -382,7 +381,7 @@ export class Registry extends DurableObject {
 
   async deleteUser(name) {
     await this.user(name);
-    if ((await this.rooms(name)).length) throw new Error("Kullanıcının sıraları var, önce sıraları silin");
+    if ((await this.rooms(name)).length) throw fail("userHasRooms");
     await this.ctx.storage.delete([`user:${name}`, `fail:${name}`]);
   }
 
@@ -393,7 +392,7 @@ export class Registry extends DurableObject {
     const slugs = [...(await s.list({ prefix: "slug:" }))].filter(([k]) => !k.includes("/")).map(([k, id]) => [k.slice(5), id]);
     for (const [slug, id] of slugs) {
       const taken = await s.get(`slug:${name}/${slug}`);
-      if (taken && taken !== id) throw new Error(`"${slug}" adresi bu kullanıcıda zaten kullanılıyor`);
+      if (taken && taken !== id) throw fail("adoptConflict", slug);
     }
     for (const [slug, id] of slugs) {
       await s.delete(`slug:${slug}`);
@@ -407,12 +406,12 @@ export class Registry extends DurableObject {
   // admin: süper yönetici için ADMIN_PASSWORD. Dönen değer oturum imza anahtarıdır.
   async login(name, password, admin) {
     const fk = `fail:${name}`, f = await this.value(fk), now = Date.now();
-    if (f?.n >= 10 && now - f.at < 15 * 60e3) throw new Error("Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.");
+    if (f?.n >= 10 && now - f.at < 15 * 60e3) throw fail("locked");
     const u = name === SUPER ? admin && { hash: admin } : await this.value(`user:${name}`);
     const ok = u && (name === SUPER ? same(password, admin) : same(await pbkdf2(password, u.salt), u.hash));
     if (!ok) {
       if (u) await this.ctx.storage.put(fk, { n: (f && now - f.at < 15 * 60e3 ? f.n : 0) + 1, at: now });
-      throw new Error("Kullanıcı adı ya da şifre hatalı");
+      throw fail("badLogin");
     }
     if (f) await this.ctx.storage.delete(fk);
     return u.hash;
@@ -424,7 +423,6 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
 // Alt alan adı, kullanıcı adı ya da sıra adresi olamaz: sayfa ve dosya yollarıyla çakışır (antalyabb.sirangeldi.com/join)
 const RESERVED = new Set(["www", "api", "admin", "yonetim", "mail", "join", "host", "status", "home", "assets", "icons"]);
 const SUPER = "admin"; // süper yönetici girişi: kullanıcı adı "admin", şifre ADMIN_PASSWORD
-const AUTH_ERR = "Oturum geçersiz, yeniden giriş yapın";
 const SESSION_MS = 30 * 864e5;
 
 // antalyabb.sirangeldi.com → "antalyabb"; ana alan adı ve www için "". Geliştirmede antalyabb.localhost:8787 de çalışır.
@@ -444,7 +442,7 @@ async function pbkdf2(password, salt) {
 
 async function credential(password) {
   password = String(password ?? "");
-  if (password.length < 8 || password.length > 200) throw new Error("Şifre en az 8 karakter olmalı");
+  if (password.length < 8 || password.length > 200) throw fail("shortPassword");
   const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
   return { salt, hash: await pbkdf2(password, salt) };
 }
@@ -452,7 +450,7 @@ async function credential(password) {
 function userName(v) {
   const name = String(v ?? "").trim().toLowerCase();
   if (!NAME_RE.test(name) || ID_RE.test(name) || RESERVED.has(name))
-    throw new Error("Geçersiz kullanıcı adı: 3-40 karakter, küçük harf, rakam ve tire");
+    throw fail("badUser");
   return name;
 }
 
@@ -464,9 +462,9 @@ async function session(name, secret) {
 
 async function auth(req, env, reg) {
   const [name, exp, sig] = (req.headers.get("authorization") ?? "").replace(/^Bearer /, "").split(".");
-  if (!name || !(Number(exp) > Date.now())) throw new Error(AUTH_ERR);
+  if (!name || !(Number(exp) > Date.now())) throw fail("auth");
   const secret = name === SUPER ? env.ADMIN_PASSWORD : (await reg.value(`user:${name}`))?.hash;
-  if (!secret || !same(sig, await sign(secret, `${name}.${exp}`))) throw new Error(AUTH_ERR);
+  if (!secret || !same(sig, await sign(secret, `${name}.${exp}`))) throw fail("auth");
   return name;
 }
 
@@ -479,21 +477,21 @@ function secretSlug() {
 // prev: düzenlenen odanın mevcut bilgisi. Gizli oda gizli kaldıkça adresi korunur, gizliye geçerken yenisi üretilir.
 function roomFields(b, prev) {
   const lat = Number(b.lat), lng = Number(b.lng);
-  if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) throw new Error("Geçersiz konum");
+  if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) throw fail("badLocation");
   const hidden = b.private === true || b.private === "on"; // haritada/listede görünmez, adresi rastgele
   const slug = hidden ? (prev?.private && prev.slug) || secretSlug() : String(b.slug ?? "").trim();
   if (!NAME_RE.test(slug) || ID_RE.test(slug) || RESERVED.has(slug))
-    throw new Error("Geçersiz adres: 3-40 karakter, küçük harf, rakam ve tire");
+    throw fail("badSlug");
   return {
     private: hidden,
     name: String(b.name ?? "").trim().slice(0, 60) || "Sıra",
-    slug, lat, lng, radius: int(b.radius, 50, 2000, "Yarıçap 50-2000 m olmalı"),
+    slug, lat, lng, radius: int(b.radius, 50, 2000, "radius"),
     flex: b.flex === true || b.flex === "on", // grup, kişi sayısından az yeri de kabul edebilir (plaj şezlongu gibi)
     category: CATEGORIES.has(b.category) ? b.category : "diger",
     mode: b.mode === "tables" ? "tables" : "seats",
     // Masa modunda masada boş kalabilecek en fazla sandalye; boş: sınır yok
-    maxEmpty: b.maxEmpty === "" || b.maxEmpty == null ? null : int(b.maxEmpty, 0, TABLE_LIMIT, `Boş sandalye 0-${TABLE_LIMIT} olmalı`),
-    maxGroup: int(b.maxGroup ?? MAX_GROUP, 1, GROUP_LIMIT, `Grup büyüklüğü 1-${GROUP_LIMIT} kişi olmalı`),
+    maxEmpty: b.maxEmpty === "" || b.maxEmpty == null ? null : int(b.maxEmpty, 0, TABLE_LIMIT, "maxEmpty", TABLE_LIMIT),
+    maxGroup: int(b.maxGroup ?? MAX_GROUP, 1, GROUP_LIMIT, "maxGroup", GROUP_LIMIT),
     qr: b.qr === "static" ? "static" : "dynamic", // sabit: basılı QR, giriş yalnızca konumla sınırlı
     ttl: TTLS.includes(Number(b.ttl)) ? Number(b.ttl) : 90,
   };
@@ -517,7 +515,7 @@ function statusLink(url, env, owner, ref) {
 // Süper yönetici: kullanıcı açar, şifre sıfırlar, siler; hesaplardan önceki sıraları bir kullanıcıya taşır
 async function usersApi(req, env, reg, url, body) {
   const m = url.pathname.match(/^\/api\/admin\/users(?:\/([a-z0-9-]+)(?:\/(adopt))?)?$/);
-  if (!m) throw new Error("Geçersiz istek");
+  if (!m) throw fail("badRequest");
   const [, name, op] = m;
   if (!name && req.method === "GET") {
     const users = (await reg.users()).map((u) => ({ ...u, link: accountLink(url, env, u.name) }));
@@ -527,7 +525,7 @@ async function usersApi(req, env, reg, url, body) {
   else if (op === "adopt" && req.method === "POST") return { moved: await reg.adopt(name) };
   else if (!op && req.method === "PUT") await reg.setPassword(name, await credential(body.password));
   else if (!op && req.method === "DELETE") await reg.deleteUser(name);
-  else throw new Error("Geçersiz istek");
+  else throw fail("badRequest");
   return { ok: true };
 }
 
@@ -536,7 +534,7 @@ async function adminApi(req, env, url, body) {
   if (url.pathname === "/api/admin/me") return { user: owner, super: owner === SUPER, home: owner !== SUPER && accountLink(url, env, owner) };
   if (owner === SUPER) {
     if (url.pathname.startsWith("/api/admin/users")) return usersApi(req, env, reg, url, body);
-    throw new Error("Sıraları yönetmek için kullanıcı hesabıyla giriş yapın");
+    throw fail("superNoRooms");
   }
   if (url.pathname === "/api/admin/password" && req.method === "POST") {
     await reg.login(owner, String(body.old ?? ""));
@@ -545,7 +543,7 @@ async function adminApi(req, env, url, body) {
     return session(owner, cred.hash); // eski oturumlar düştü, bu tarayıcı girişli kalsın
   }
   const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import|reslug))?)?$/);
-  if (!m) throw new Error("Geçersiz istek");
+  if (!m) throw fail("badRequest");
   const [, id, op] = m;
   if (!id && req.method === "GET") {
     const list = await reg.rooms(owner);
@@ -564,17 +562,17 @@ async function adminApi(req, env, url, body) {
   if (op === "import" && req.method === "POST") {
     // Listede olmayan mevcut bir odayı (ör. görevli linkinden ID ile) listeye geri ekler; başka kullanıcının odası alınamaz
     const { slug } = await room.info(); // oda yoksa "Sıra bulunamadı" fırlatır
-    if (await reg.value(id)) throw new Error("Sıra zaten listede");
+    if (await reg.value(id)) throw fail("alreadyListed");
     if (slug) await reg.claim(owner, slug, id);
     await reg.add(id, owner);
     return { ok: true };
   }
-  if (!(await reg.owns(id, owner))) throw new Error("Sıra bulunamadı");
+  if (!(await reg.owns(id, owner))) throw fail("notFound");
   if (op === "rotate" && req.method === "POST") return { key: await room.rotate() };
   if (op === "reslug" && req.method === "POST") {
     // Gizli sıranın adresi sızarsa: yeni rastgele adres, eski adres ve ziyaretçi linkleri anında geçersiz olur
     const prev = await room.info();
-    if (!prev.private) throw new Error("Yalnızca gizli sıraların adresi yenilenebilir");
+    if (!prev.private) throw fail("onlyPrivate");
     const slug = secretSlug();
     await reg.claim(owner, slug, id, prev.slug);
     await room.update({ slug });
@@ -589,7 +587,7 @@ async function adminApi(req, env, url, body) {
     const { slug } = await room.info().catch(() => ({}));
     await room.destroy();
     await reg.remove(id, owner, slug);
-  } else throw new Error("Geçersiz istek");
+  } else throw fail("badRequest");
   return { ok: true };
 }
 
@@ -616,7 +614,7 @@ async function page(req, env, url) {
 
 export default {
   async fetch(req, env) {
-    const url = new URL(req.url);
+    const url = new URL(req.url), lang = langOf(req.headers.get("x-lang")); // hata mesajlarının dili (web/src/lib/api.ts gönderir)
     try {
       if (!url.pathname.startsWith("/api/")) {
         // Buraya yalnızca PAGES, kök ve eşleşen dosyası olmayan yollar gelir
@@ -633,7 +631,7 @@ export default {
         try {
           return Response.json(await adminApi(req, env, url, body));
         } catch (e) {
-          return Response.json({ error: e.message }, { status: e.message === AUTH_ERR ? 401 : 400 });
+          return Response.json({ error: localize(e.message, lang) }, { status: failed(e, "auth") ? 401 : 400 });
         }
       }
       if (url.pathname === "/api/rooms") {
@@ -650,7 +648,7 @@ export default {
         // ?r= oda id'si ya da slug, ?u= kullanıcı (yoksa alt alan adından: antalyabb.sirangeldi.com).
         // r'siz kullanıcı adresi { account } döner: sayfa kullanıcının sıralarını listeler.
         const r = await reg.resolve(url.searchParams.get("u") || subdomain(url, env), url.searchParams.get("r") ?? "");
-        if (!r.room && !r.account) throw new Error("Sıra bulunamadı");
+        if (!r.room && !r.account) throw fail("notFound");
         return Response.json(r.account ? { account: r.account } : { room: r.room });
       }
       const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|push|admin|status)$/);
@@ -665,7 +663,7 @@ export default {
         case "status": return Response.json(await room.status());
       }
     } catch (e) {
-      return Response.json({ error: e.message }, { status: 400 });
+      return Response.json({ error: localize(e.message, lang) }, { status: 400 });
     }
   },
 };

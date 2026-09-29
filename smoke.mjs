@@ -1,5 +1,6 @@
 // `npm run dev` açıkken çalıştırın: node smoke.mjs  (.dev.vars içinde ADMIN_PASSWORD=test)
 import assert from "node:assert/strict";
+import { createECDH, randomBytes } from "node:crypto";
 
 const B = process.env.BASE ?? "http://localhost:8787";
 const req = async (method, p, body, h = {}) => {
@@ -49,6 +50,8 @@ assert.match((await req("GET", "/api/admin/rooms", undefined, PW2)).error, /Otur
 
 const admin = (body = {}) => post(`/api/r/${room}/admin`, body, { "x-key": key });
 assert.equal((await post(`/api/r/${room}/admin`, {}, { "x-key": "x" })).error, "Yetkisiz");
+assert.equal((await post(`/api/r/${room}/admin`, {}, { "x-key": "x", "x-lang": "en" })).error, "Unauthorized", "hata isteğin dilinde");
+assert.equal((await post("/api/login", { user: U, password: "yanlis" }, { "x-lang": "ru" })).error, "Неверное имя пользователя или пароль");
 const { token } = await admin();
 
 const join = (device, size, pos = spot, t = token) => post(`/api/r/${room}/join`, { t, ...pos, size, device });
@@ -61,7 +64,7 @@ assert.match((await join("device-dddddddddddd", 2, { lat: 36.9, lng: 30.7056 }))
 assert.match((await join("device-dddddddddddd", 2, spot, `${Date.now() - 120000}.abc`)).error, /süresi dolmuş/);
 assert.match((await join("device-dddddddddddd", 2, spot, `${token.split(".")[0]}.${"0".repeat(20)}`)).error, /süresi dolmuş/, "sahte imza");
 // Ziyaretçinin dili: hata mesajları o dilde, desteklenmeyen dilde Türkçe
-const ljoin = (lang, body = {}) => post(`/api/r/${room}/join`, { t: `${Date.now() - 120000}.x`, ...spot, size: 2, device: "device-lang-000000001", lang, ...body });
+const ljoin = (lang, body = {}) => post(`/api/r/${room}/join`, { t: `${Date.now() - 120000}.x`, ...spot, size: 2, device: "device-lang-000000001", lang, ...body }, { "x-lang": lang });
 assert.match((await ljoin("en")).error, /QR code has expired/);
 assert.match((await ljoin("de")).error, /QR-Code ist abgelaufen/);
 assert.match((await ljoin("ru")).error, /QR-кода истёк/);
@@ -71,8 +74,15 @@ assert.match((await ljoin("en", { t: token, size: 99 })).error, /1–8 people/);
 const me = async (id) => (await fetch(`${B}/api/r/${room}/me?id=${id}`)).json();
 assert.equal((await me(c.id)).aheadPeople, 6);
 
+// #1 bildirim açık: çağrılınca push gönderilir (sahte abonelik, gönderim hatası isteği bozmamalı)
+const ec = createECDH("prime256v1"); ec.generateKeys();
+const sub = { endpoint: `https://fcm.googleapis.com/fcm/send/${"x".repeat(40)}`, keys: { p256dh: ec.getPublicKey().toString("base64url"), auth: randomBytes(16).toString("base64url") } };
+assert.deepEqual(await post(`/api/r/${room}/push`, { id: a.id, sub }), { ok: true });
+assert.equal((await post(`/api/r/${room}/push`, { id: a.id, sub: { endpoint: "https://evil.example/x" } }, { "x-lang": "de" })).error, "Ungültiges Benachrichtigungsabonnement");
+
 // 3 kişi kalktı: #1 (2 kişi) çağrılır, 1 yer artar
 let s = await admin({ action: "free", n: 3 });
+assert.equal(s.error, undefined, "push gönderimi çağırmayı bozmaz");
 assert.equal((await me(a.id)).status, "called");
 assert.equal((await me(b.id)).status, "waiting");
 console.log("fill sonrası boş yer:", s.available, "| #3 durumu:", (await me(c.id)).status);

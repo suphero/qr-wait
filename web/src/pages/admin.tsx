@@ -15,18 +15,21 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, CATEGORIES, catIcon, locate, poll, type RoomInfo } from "@/lib/api";
-import { baseMap, fmtDist, L, meters } from "@/lib/leaflet";
+import { fmtDistL, lang } from "@/lib/i18n";
+import { baseMap, L, meters } from "@/lib/leaflet";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
+import { T } from "./admin.i18n";
 
 // Oturum anahtarı /api/login'den; 30 gün geçerli, şifre değişince düşer
 let token = localStorage.getItem("session");
-const AUTH_ERR = "Oturum geçersiz, yeniden giriş yapın"; // src/index.js ile aynı
 const call = <T = any,>(path: string, body?: unknown, method?: string) => api<T>(path, body, { authorization: `Bearer ${token ?? ""}` }, method);
 const adm = <T = any,>(path: string, body?: unknown, method?: string) => call<T>("/api/admin/rooms" + path, body, method);
 const bare = (link: string) => link.replace(/^https?:\/\//, "");
+// Sıra adından adres önerisi: Türkçe ve Kiril harfler Latin'e, diğer aksanlar atılır
+const CYR = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".split(""), LAT = "a b v g d e e zh z i y k l m n o p r s t u f kh ts ch sh shch  y  e yu ya".split(" ");
 const slugify = (t: string) => t.toLocaleLowerCase("tr").replace(/[çğıöşü]/g, (c) => "cgiosu"["çğıöşü".indexOf(c)])
-  .normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  .replace(/[а-яё]/g, (c) => LAT[CYR.indexOf(c)] ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 
 type Pt = { lat: number; lng: number };
 type Form = {
@@ -59,7 +62,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
   const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
   const slugTouched = useRef(!!room?.slug && !room.private); // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
   const [pt, setPt] = useState<Pt | null>(room && { lat: room.lat, lng: room.lng });
-  const [pos, setPos] = useState(room ? "" : "Haritada sıranın kurulacağı yerin ortasına dokunun. İşaretçiyi sürükleyerek ince ayar yapabilirsiniz.");
+  const [pos, setPos] = useState(room ? "" : T.pickSpot);
   const [q, setQ] = useState("");
   const mapEl = useRef<HTMLDivElement>(null), formEl = useRef<HTMLFormElement>(null);
   const m = useRef<{ map?: L.Map; marker?: L.Marker; circle?: L.Circle }>({});
@@ -86,7 +89,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     c.marker.setLatLng(pt);
     c.circle!.setLatLng(pt).setRadius(radius);
     if (fitNext.current) { fitNext.current = false; c.map.fitBounds(c.circle!.getBounds()); }
-    setPos(`Seçilen nokta: ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}`);
+    setPos(T.picked(`${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}`));
   }, [pt, radius]);
 
   const pickAndFit = (p: Pt) => { fitNext.current = true; setPt(p); };
@@ -95,19 +98,19 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     if (!q.trim()) return;
     try {
       const [r] = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tr&q=${encodeURIComponent(q.trim())}`).then((x) => x.json());
-      if (!r) return setPos("Adres bulunamadı, farklı yazmayı deneyin.");
+      if (!r) return setPos(T.addrNotFound);
       pickAndFit({ lat: +r.lat, lng: +r.lon });
-    } catch { setPos("Adres araması şu an çalışmıyor, haritadan seçin."); }
+    } catch { setPos(T.searchDown); }
   }
 
   async function submit(ev: FormEvent) {
     ev.preventDefault();
-    if (!pt) return onError("Haritadan sıranın konumunu seçin.");
+    if (!pt) return onError(T.pickOnMap);
     const { slug, ...rest } = f;
     const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, ...pt };
     const prev = rooms.find((r) => r.room === room?.room);
     const changed = prev?.slug && (f.private ? !prev.private : prev.slug !== slug);
-    if (changed && !(await confirm({ title: "Adres değişecek", description: "Adres değişirse eski görevli linki ve ekrandaki QR çalışmaz. Görevlilere yeni linki göndermeniz gerekir. Devam?", action: "Devam" }))) return;
+    if (changed && !(await confirm({ title: T.slugChangeTitle, description: T.slugChangeDesc, action: T.cont }))) return;
     try {
       await (room ? adm(`/${room.room}`, body, "PUT") : adm("", body));
       onDone();
@@ -116,16 +119,16 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
 
   return (
     <Card>
-      <CardHeader><CardTitle className="text-lg font-semibold">{room ? `Düzenle: ${room.name}` : "Yeni sıra"}</CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-lg font-semibold">{room ? T.edit(room.name) : T.newRoom}</CardTitle></CardHeader>
       <CardContent>
         <form ref={formEl} onSubmit={submit} className="flex flex-col gap-5 text-base">
           <Field>
-            <FieldLabel htmlFor="name">Sıra adı</FieldLabel>
-            <Input id="name" required maxLength={60} placeholder="ör. Konyaaltı Halk Plajı, Kadıköy İskelesi" value={f.name}
+            <FieldLabel htmlFor="name">{T.name}</FieldLabel>
+            <Input id="name" required maxLength={60} placeholder={T.namePh} value={f.name}
               onChange={(e) => { set("name", e.target.value); if (!slugTouched.current) set("slug", slugify(e.target.value)); }} />
           </Field>
           <Field>
-            <FieldLabel htmlFor="category">Kategori</FieldLabel>
+            <FieldLabel htmlFor="category">{T.category}</FieldLabel>
             <NativeSelect id="category" value={f.category} onChange={(e) => {
               set("category", e.target.value);
               if (!modeTouched.current) set("mode", e.target.value === "restoran" ? "tables" : "seats");
@@ -133,111 +136,111 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
               {Object.entries(CATEGORIES).map(([k, [i, t]]) => <NativeSelectOption key={k} value={k}>{i} {t}</NativeSelectOption>)}
             </NativeSelect>
           </Field>
-          <Check title="Gizli sıra" checked={f.private} onChange={(v) => set("private", v)}>
-            Tanıtım sitesindeki haritada ve listede görünmez. Web adresi tahmin edilemeyecek rastgele bir değer olur; yalnızca linki paylaştığınız kişiler ulaşabilir.
+          <Check title={T.hidden} checked={f.private} onChange={(v) => set("private", v)}>
+            {T.hiddenDesc}
           </Check>
           {f.private ? (
-            <p className="text-sm text-muted-foreground">{room?.private ? `Mevcut gizli adres korunur: ${room.slug}` : "Kaydedince rastgele bir adres üretilir."}</p>
+            <p className="text-sm text-muted-foreground">{room?.private ? T.keepSecret(room.slug ?? "") : T.secretNew}</p>
           ) : (
             <Field>
-              <FieldLabel htmlFor="slug">Web adresi (slug)</FieldLabel>
+              <FieldLabel htmlFor="slug">{T.slug}</FieldLabel>
               <Input id="slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve" value={f.slug}
                 onChange={(e) => { slugTouched.current = true; set("slug", e.target.value); }} />
-              <FieldDescription>Küçük harf, rakam ve tire. Sıranın web adresi olur: <b>{bare(home)}{f.slug || "…"}</b></FieldDescription>
+              <FieldDescription>{T.slugDesc(`${bare(home)}${f.slug || "…"}`)}</FieldDescription>
             </Field>
           )}
           <Field>
-            <FieldLabel htmlFor="q">Adres ara</FieldLabel>
+            <FieldLabel htmlFor="q">{T.searchAddr}</FieldLabel>
             <div className="flex gap-2">
-              <Input id="q" placeholder="ör. Konyaaltı, Antalya" value={q} onChange={(e) => setQ(e.target.value)}
+              <Input id="q" placeholder={T.searchPh} value={q} onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(); } }} />
-              <Button type="button" onClick={search}>Ara</Button>
+              <Button type="button" onClick={search}>{T.search}</Button>
             </div>
           </Field>
           <div className="flex flex-col gap-2">
             <div ref={mapEl} className="z-0 h-[360px] rounded-lg" />
             <Button type="button" variant="secondary" onClick={async () => {
               try { const c = await locate(); pickAndFit({ lat: c.latitude, lng: c.longitude }); } catch (e: any) { setPos(e.message); }
-            }}>Şu anki konumumu kullan</Button>
+            }}>{T.useMyLoc}</Button>
             <p className="text-sm text-muted-foreground">{pos}</p>
           </div>
           <Field>
-            <FieldLabel htmlFor="radius">Kabul yarıçapı (metre)</FieldLabel>
+            <FieldLabel htmlFor="radius">{T.radius}</FieldLabel>
             <Input id="radius" type="number" min={50} max={2000} required value={f.radius} onChange={(e) => set("radius", e.target.value)} />
-            <FieldDescription>Ziyaretçiler yalnızca dairenin içindeyken sıraya girebilir. Telefon GPS'i 20-50 m sapabilir, daireyi alandan biraz geniş tutun.</FieldDescription>
+            <FieldDescription>{T.radiusDesc}</FieldDescription>
           </Field>
           <FieldSet className="rounded-lg border p-4">
-            <FieldLegend>Sıra türü</FieldLegend>
+            <FieldLegend>{T.mode}</FieldLegend>
             <RadioGroup value={f.mode} onValueChange={(v) => { modeTouched.current = true; set("mode", v as Form["mode"]); }} className="gap-4">
               <Field orientation="horizontal">
                 <RadioGroupItem value="seats" id="mode-seats" />
                 <FieldContent>
-                  <FieldLabel htmlFor="mode-seats" className="text-base font-semibold">Yer sayısı</FieldLabel>
-                  <FieldDescription>Görevli boşalan yer sayısını girer, sıradaki gruplar sığdıkça çağrılır. Plaj, iskele, gişe, bekleme salonu.</FieldDescription>
+                  <FieldLabel htmlFor="mode-seats" className="text-base font-semibold">{T.seats}</FieldLabel>
+                  <FieldDescription>{T.seatsDesc}</FieldDescription>
                 </FieldContent>
               </Field>
               {f.mode === "seats" && (
                 <div className="pl-6">
-                  <Check title="Esnek yer seçimi" checked={f.flex} onChange={(v) => set("flex", v)}>
-                    Gruplar kişi sayısından az yeri de kabul edebilir. Örneğin plajda 4 kişilik grup 2 veya 4 şezlonga razı olabilir. Otobüs ya da gişe sıralarında kapalı bırakın.
+                  <Check title={T.flex} checked={f.flex} onChange={(v) => set("flex", v)}>
+                    {T.flexDesc}
                   </Check>
                 </div>
               )}
               <Field orientation="horizontal">
                 <RadioGroupItem value="tables" id="mode-tables" />
                 <FieldContent>
-                  <FieldLabel htmlFor="mode-tables" className="text-base font-semibold">Masa</FieldLabel>
-                  <FieldDescription>Görevli "4 kişilik masa boşaldı" der, masaya sığan ilk grup masa adıyla çağrılır. Masa bölünmez; uygun grup yoksa masa bekler. Restoran, kafe.</FieldDescription>
+                  <FieldLabel htmlFor="mode-tables" className="text-base font-semibold">{T.tables}</FieldLabel>
+                  <FieldDescription>{T.tablesDesc}</FieldDescription>
                 </FieldContent>
               </Field>
               {f.mode === "tables" && (
                 <Field className="pl-6">
-                  <FieldLabel htmlFor="maxEmpty">Masada en fazla kaç boş sandalye kalabilir?</FieldLabel>
-                  <Input id="maxEmpty" type="number" min={0} max={50} inputMode="numeric" placeholder="Sınır yok" value={f.maxEmpty} onChange={(e) => set("maxEmpty", e.target.value)} />
-                  <FieldDescription>Örneğin 1: 4 kişilik masaya 3-4 kişi, 2 kişilik masaya 1-2 kişi alınır. Boş bırakırsanız masaya sığan her grup alınır. Görevli "Çağır" ile bu sınırı aşabilir.</FieldDescription>
+                  <FieldLabel htmlFor="maxEmpty">{T.maxEmptyQ}</FieldLabel>
+                  <Input id="maxEmpty" type="number" min={0} max={50} inputMode="numeric" placeholder={T.noLimit} value={f.maxEmpty} onChange={(e) => set("maxEmpty", e.target.value)} />
+                  <FieldDescription>{T.maxEmptyDesc}</FieldDescription>
                 </Field>
               )}
             </RadioGroup>
           </FieldSet>
           <Field>
-            <FieldLabel htmlFor="maxGroup">Bir grupta en fazla kaç kişi olabilir?</FieldLabel>
+            <FieldLabel htmlFor="maxGroup">{T.maxGroupQ}</FieldLabel>
             <Input id="maxGroup" type="number" min={1} max={20} required inputMode="numeric" value={f.maxGroup} onChange={(e) => set("maxGroup", e.target.value)} />
-            <FieldDescription>Sıraya girerken ve elle eklerken 1'den bu sayıya kadar seçilebilir. Tek kişilik sıralarda (gişe, muayene) 1 yapın.</FieldDescription>
+            <FieldDescription>{T.maxGroupDesc}</FieldDescription>
           </Field>
           <FieldSet className="rounded-lg border p-4">
-            <FieldLegend>QR kodu</FieldLegend>
+            <FieldLegend>{T.qr}</FieldLegend>
             <RadioGroup value={f.qr} onValueChange={(v) => set("qr", v as Form["qr"])} className="gap-4">
               <Field orientation="horizontal">
                 <RadioGroupItem value="dynamic" id="qr-dynamic" />
                 <FieldContent>
-                  <FieldLabel htmlFor="qr-dynamic" className="text-base font-semibold">Değişen QR (önerilen)</FieldLabel>
-                  <FieldDescription>Görevli ekranında gösterilir ve sürekli yenilenir. Fotoğrafı çekilip sonradan kullanılamaz.</FieldDescription>
+                  <FieldLabel htmlFor="qr-dynamic" className="text-base font-semibold">{T.dynamic}</FieldLabel>
+                  <FieldDescription>{T.dynamicDesc}</FieldDescription>
                 </FieldContent>
               </Field>
               {f.qr === "dynamic" && (
                 <Field className="pl-6">
-                  <FieldLabel htmlFor="ttl">Her kod ne kadar geçerli?</FieldLabel>
+                  <FieldLabel htmlFor="ttl">{T.ttlQ}</FieldLabel>
                   <NativeSelect id="ttl" value={f.ttl} onChange={(e) => set("ttl", e.target.value)}>
-                    <NativeSelectOption value="60">60 saniye</NativeSelectOption>
-                    <NativeSelectOption value="90">90 saniye</NativeSelectOption>
-                    <NativeSelectOption value="180">3 dakika</NativeSelectOption>
-                    <NativeSelectOption value="300">5 dakika</NativeSelectOption>
+                    <NativeSelectOption value="60">{T.sec(60)}</NativeSelectOption>
+                    <NativeSelectOption value="90">{T.sec(90)}</NativeSelectOption>
+                    <NativeSelectOption value="180">{T.min(3)}</NativeSelectOption>
+                    <NativeSelectOption value="300">{T.min(5)}</NativeSelectOption>
                   </NativeSelect>
-                  <FieldDescription>Ekran, sürenin dörtte birinde yeni kod gösterir. Okutan kişiye formu doldurmak için en az sürenin dörtte üçü kalır. İnternet ya da konum yavaşsa uzatın.</FieldDescription>
+                  <FieldDescription>{T.ttlDesc}</FieldDescription>
                 </Field>
               )}
               <Field orientation="horizontal">
                 <RadioGroupItem value="static" id="qr-static" />
                 <FieldContent>
-                  <FieldLabel htmlFor="qr-static" className="text-base font-semibold">Sabit QR</FieldLabel>
-                  <FieldDescription>Görevli ekranı gerekmez: kodu yazdırıp asabilirsiniz. Kod değişmez, bu yüzden sıraya girişi yalnızca konum kontrolü sınırlar. "Linki yenile" eski basılı kodu geçersiz kılar.</FieldDescription>
+                  <FieldLabel htmlFor="qr-static" className="text-base font-semibold">{T.static}</FieldLabel>
+                  <FieldDescription>{T.staticDesc}</FieldDescription>
                 </FieldContent>
               </Field>
             </RadioGroup>
           </FieldSet>
           <div className="flex gap-2">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onCancel}>Vazgeç</Button>
-            <Button className="flex-1">Kaydet</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onCancel}>{T.cancel}</Button>
+            <Button className="flex-1">{T.save}</Button>
           </div>
         </form>
       </CardContent>
@@ -254,7 +257,7 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
   }
   async function copy() {
     try { await navigator.clipboard.writeText(r.link); } catch {
-      return confirm({ title: "Bağlantıyı kopyalayın", description: <span className="break-all select-all">{r.link}</span>, cancel: false });
+      return confirm({ title: T.copyTitle, description: <span className="break-all select-all">{r.link}</span>, cancel: false });
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
@@ -265,38 +268,39 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
       <TableCell className="whitespace-normal">
         <b>{catIcon(r.category)} {r.name}</b>
         <div className="text-sm text-muted-foreground">
-          {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? "🔒 gizli" : bare(r.page)}</a> : "⚠ adres yok, Düzenle ile ekleyin"}
+          {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? T.hiddenTag : bare(r.page)}</a> : T.noSlug}
         </div>
         <div className="text-xs text-muted-foreground">
-          {r.radius} m · en fazla {r.maxGroup} kişi{r.tables ? ` · masa${r.maxEmpty !== null ? ` (en fazla ${r.maxEmpty} boş)` : ""}` : r.flex ? " · esnek yer" : ""} · {r.qr === "static" ? "sabit QR" : `QR ${r.ttl} sn`}
+          {[`${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag,
+            r.qr === "static" ? T.staticTag : T.ttlTag(r.ttl)].filter(Boolean).join(" · ")}
         </div>
       </TableCell>
-      <TableCell className="text-right tabular-nums">{r.waiting} <span className="text-muted-foreground">/ {r.people} kişi</span></TableCell>
+      <TableCell className="text-right tabular-nums">{r.waiting} <span className="text-muted-foreground">{T.peopleOf(r.people)}</span></TableCell>
       <TableCell className="text-right tabular-nums">{r.called}</TableCell>
-      {dist !== undefined && <TableCell className="text-right tabular-nums">{fmtDist(dist)}</TableCell>}
+      {dist !== undefined && <TableCell className="text-right tabular-nums">{fmtDistL(dist)}</TableCell>}
       <TableCell>
         <div className="flex justify-end gap-1">
-          <Button size="icon-sm" variant="ghost" title="Görevli linkini kopyala" onClick={copy}>{copied ? <CheckIcon /> : <CopyIcon />}</Button>
-          <Button size="icon-sm" variant="ghost" title="Paneli aç" asChild><a href={r.link} target="_blank"><ExternalLinkIcon /></a></Button>
-          <Button size="icon-sm" variant="ghost" title="Düzenle" onClick={onEdit}><PencilIcon /></Button>
+          <Button size="icon-sm" variant="ghost" title={T.copyLink} onClick={copy}>{copied ? <CheckIcon /> : <CopyIcon />}</Button>
+          <Button size="icon-sm" variant="ghost" title={T.openPanel} asChild><a href={r.link} target="_blank"><ExternalLinkIcon /></a></Button>
+          <Button size="icon-sm" variant="ghost" title={T.editBtn} onClick={onEdit}><PencilIcon /></Button>
           <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title="Diğer"><EllipsisIcon /></Button></DropdownMenuTrigger>
+            <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title={T.more}><EllipsisIcon /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={async () => {
-                if (await confirm({ title: "Görevli linki yenilensin mi?", description: `"${r.name}" için yeni görevli linki oluşturulacak. Eski link ve ${r.qr === "static" ? "basılı QR'lar" : "ekrandaki QR"} hemen çalışmaz hale gelir. Devam?`, action: "Yenile" }))
+                if (await confirm({ title: T.rotateTitle, description: T.rotateDesc(r.name, r.qr === "static"), action: T.renew }))
                   run(() => adm(`/${r.room}/rotate`, {}));
-              }}><RefreshCwIcon /> Linki yenile</DropdownMenuItem>
+              }}><RefreshCwIcon /> {T.rotate}</DropdownMenuItem>
               {r.private && (
                 <DropdownMenuItem onSelect={async () => {
-                  if (await confirm({ title: "Gizli adres yenilensin mi?", description: `"${r.name}" için yeni gizli adres oluşturulacak. Eski adres, görevli linki ve ekrandaki QR hemen çalışmaz hale gelir; sıradakilerin açık sayfaları çalışmaya devam eder. Devam?`, action: "Yenile" }))
+                  if (await confirm({ title: T.reslugTitle, description: T.reslugDesc(r.name), action: T.renew }))
                     run(() => adm(`/${r.room}/reslug`, {}));
-                }}><LockIcon /> Gizli adresi yenile</DropdownMenuItem>
+                }}><LockIcon /> {T.reslug}</DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={async () => {
-                if (await confirm({ title: "Sıra silinsin mi?", description: `"${r.name}" silinecek. Sıradaki herkes düşer. Emin misiniz?`, action: "Sil", destructive: true }))
+                if (await confirm({ title: T.delTitle, description: T.delDesc(r.name), action: T.del, destructive: true }))
                   run(() => adm(`/${r.room}`, undefined, "DELETE"));
-              }}><Trash2Icon /> Sil</DropdownMenuItem>
+              }}><Trash2Icon /> {T.del}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -307,7 +311,7 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
 
 type SortKey = "name" | "waiting" | "called" | "dist";
 const PAGE = 10;
-const norm = (t: string) => t.toLocaleLowerCase("tr");
+const norm = (t: string) => t.toLocaleLowerCase(lang);
 
 // Tıklanınca sıralayan başlık; aynı sütuna tekrar tıklamak yönü çevirir
 function SortHead({ k, sort, setSort, className, children }: { k: SortKey; sort: { key: SortKey; asc: boolean }; setSort: (s: { key: SortKey; asc: boolean }) => void; className?: string; children: ReactNode }) {
@@ -331,10 +335,10 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
 
   const words = norm(q).split(/\s+/).filter(Boolean);
   const rows = rooms
-    .map((r) => ({ r, d: me ? meters(me, r) : undefined, hay: norm(`${r.name} ${r.slug ?? ""} ${CATEGORIES[r.category]?.[1] ?? ""} ${r.private ? "gizli" : ""}`) }))
+    .map((r) => ({ r, d: me ? meters(me, r) : undefined, hay: norm(`${r.name} ${r.slug ?? ""} ${CATEGORIES[r.category]?.[1] ?? ""} ${r.private ? T.hiddenWord : ""}`) }))
     .filter((x) => words.every((w) => x.hay.includes(w)))
     .sort((a, b) => {
-      const v = sort.key === "name" ? a.r.name.localeCompare(b.r.name, "tr")
+      const v = sort.key === "name" ? a.r.name.localeCompare(b.r.name, lang)
         : sort.key === "dist" ? (a.d ?? 0) - (b.d ?? 0)
         : a.r[sort.key] - b.r[sort.key];
       return sort.asc ? v : -v;
@@ -359,19 +363,19 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
       <div className="flex flex-wrap gap-2">
         <div className="relative min-w-48 flex-1">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input type="search" className="pl-9" placeholder="Ad, adres veya kategori ara" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} />
+          <Input type="search" className="pl-9" placeholder={T.filterPh} value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} />
         </div>
-        <Button variant="secondary" disabled={locating} onClick={nearMe}><LocateFixedIcon /> {locating ? "Konum alınıyor…" : me ? "Konumu yenile" : "Yakınımdakiler"}</Button>
+        <Button variant="secondary" disabled={locating} onClick={nearMe}><LocateFixedIcon /> {locating ? T.locating : me ? T.relocate : T.nearMe}</Button>
       </div>
       <Card className="py-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <SortHead k="name" sort={sort} setSort={sortTo}>Sıra</SortHead>
-              <SortHead k="waiting" sort={sort} setSort={sortTo} className="text-right">Bekleyen</SortHead>
-              <SortHead k="called" sort={sort} setSort={sortTo} className="text-right">Çağrılan</SortHead>
-              {me && <SortHead k="dist" sort={sort} setSort={sortTo} className="text-right">Mesafe</SortHead>}
-              <TableHead className="text-right">İşlemler</TableHead>
+              <SortHead k="name" sort={sort} setSort={sortTo}>{T.colQueue}</SortHead>
+              <SortHead k="waiting" sort={sort} setSort={sortTo} className="text-right">{T.colWaiting}</SortHead>
+              <SortHead k="called" sort={sort} setSort={sortTo} className="text-right">{T.colCalled}</SortHead>
+              {me && <SortHead k="dist" sort={sort} setSort={sortTo} className="text-right">{T.colDist}</SortHead>}
+              <TableHead className="text-right">{T.colActions}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -379,7 +383,7 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
             {!shown.length && (
               <TableRow>
                 <TableCell colSpan={me ? 5 : 4} className="py-8 text-center text-muted-foreground">
-                  {rooms.length ? "Aramaya uyan sıra yok." : "Henüz sıra yok. + Yeni sıra ile ilk sıranızı oluşturun."}
+                  {rooms.length ? T.noMatch : T.noRooms}
                 </TableCell>
               </TableRow>
             )}
@@ -389,9 +393,9 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
       {rows.length > PAGE && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span className="flex-1">{p * PAGE + 1}–{p * PAGE + shown.length} / {rows.length}</span>
-          <Button size="sm" variant="secondary" disabled={p === 0} onClick={() => setPage(p - 1)}><ChevronLeftIcon /> Önceki</Button>
+          <Button size="sm" variant="secondary" disabled={p === 0} onClick={() => setPage(p - 1)}><ChevronLeftIcon /> {T.prev}</Button>
           <span className="tabular-nums">{p + 1} / {pages}</span>
-          <Button size="sm" variant="secondary" disabled={p >= pages - 1} onClick={() => setPage(p + 1)}>Sonraki <ChevronRightIcon /></Button>
+          <Button size="sm" variant="secondary" disabled={p >= pages - 1} onClick={() => setPage(p + 1)}>{T.next} <ChevronRightIcon /></Button>
         </div>
       )}
     </div>
@@ -414,21 +418,21 @@ function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: st
   }
   return (
     <Card>
-      <CardHeader><CardTitle className="text-lg font-semibold">Şifre değiştir</CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-lg font-semibold">{T.changePw}</CardTitle></CardHeader>
       <CardContent>
         <form onSubmit={submit} className="flex flex-col gap-4 text-base">
           <Field>
-            <FieldLabel htmlFor="old">Mevcut şifre</FieldLabel>
+            <FieldLabel htmlFor="old">{T.oldPw}</FieldLabel>
             <Input id="old" type="password" required autoComplete="current-password" value={old} onChange={(e) => setOld(e.target.value)} />
           </Field>
           <Field>
-            <FieldLabel htmlFor="new">Yeni şifre</FieldLabel>
+            <FieldLabel htmlFor="new">{T.newPw}</FieldLabel>
             <Input id="new" type="password" required minLength={8} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
-            <FieldDescription>En az 8 karakter. Diğer cihazlardaki oturumlar kapanır.</FieldDescription>
+            <FieldDescription>{T.newPwDesc}</FieldDescription>
           </Field>
           <div className="flex gap-2">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onDone}>Vazgeç</Button>
-            <Button className="flex-1">Kaydet</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={onDone}>{T.cancel}</Button>
+            <Button className="flex-1">{T.save}</Button>
           </div>
         </form>
       </CardContent>
@@ -449,7 +453,7 @@ function RoomsPanel({ me, logout }: { me: Me; logout: (msg?: string) => void }) 
       setRooms(await adm<RoomInfo[]>(""));
       setErr("");
     } catch (e: any) {
-      if (e.message === AUTH_ERR) return logout(e.message);
+      if (e.status === 401) return logout(e.message);
       setErr(e.message);
     }
   }
@@ -463,12 +467,12 @@ function RoomsPanel({ me, logout }: { me: Me; logout: (msg?: string) => void }) 
     <Page className="max-w-5xl">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex-1">
-          <Title>Sıralar</Title>
+          <Title>{T.queues}</Title>
           {me.home && <a className="text-sm text-muted-foreground underline-offset-2 hover:underline" href={me.home} target="_blank">{bare(me.home)}</a>}
         </div>
-        <Button onClick={() => setEditing(null)}>+ Yeni sıra</Button>
-        <Button variant="secondary" title="Şifre değiştir" onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> Şifre</Button>
-        <Button variant="secondary" onClick={() => logout()}>Çıkış</Button>
+        <Button onClick={() => setEditing(null)}>{T.addRoom}</Button>
+        <Button variant="secondary" title={T.changePw} onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> {T.pwBtn}</Button>
+        <Button variant="secondary" onClick={() => logout()}>{T.logout}</Button>
       </div>
       {pwOpen && <PasswordForm onDone={() => setPwOpen(false)} onError={setErr} />}
       <RoomTable rooms={rooms} onChange={load} onEdit={setEditing} onError={setErr} />
@@ -493,7 +497,7 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
       setData(await call("/api/admin/users"));
       setErr("");
     } catch (e: any) {
-      if (e.message === AUTH_ERR) return logout(e.message);
+      if (e.status === 401) return logout(e.message);
       setErr(e.message);
     }
   }
@@ -514,23 +518,22 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
   return (
     <Page className="max-w-3xl">
       <div className="flex items-center gap-2">
-        <Title className="flex-1">Kullanıcılar</Title>
-        <Button onClick={() => setForm({ user: "", password: "" })}>+ Yeni kullanıcı</Button>
-        <Button variant="secondary" onClick={() => logout()}>Çıkış</Button>
+        <Title className="flex-1">{T.users}</Title>
+        <Button onClick={() => setForm({ user: "", password: "" })}>{T.addUser}</Button>
+        <Button variant="secondary" onClick={() => logout()}>{T.logout}</Button>
       </div>
       {data.unowned > 0 && (
         <p className="rounded-lg border p-3 text-sm">
-          Hesaplardan önce açılmış <b>{data.unowned}</b> sıra bir kullanıcıya bağlı değil. Kullanıcının menüsünden "Sahipsiz sıraları taşı" ile taşıyın.
-          Eski adresleri (<i>sıra.sirangeldi.com</i>) kullanıcının adresine yönlenir.
+          {T.unowned(data.unowned)}
         </p>
       )}
       <Card className="py-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Kullanıcı</TableHead>
-              <TableHead className="text-right">Sıra</TableHead>
-              <TableHead className="text-right">İşlemler</TableHead>
+              <TableHead>{T.colUser}</TableHead>
+              <TableHead className="text-right">{T.colQueue}</TableHead>
+              <TableHead className="text-right">{T.colActions}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -544,20 +547,20 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
                 <TableCell>
                   <div className="flex justify-end">
                     <DropdownMenu modal={false}>
-                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title="Diğer"><EllipsisIcon /></Button></DropdownMenuTrigger>
+                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title={T.more}><EllipsisIcon /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => setForm({ user: u.name, password: "", reset: u.name })}><KeyRoundIcon /> Şifre belirle</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setForm({ user: u.name, password: "", reset: u.name })}><KeyRoundIcon /> {T.setPw}</DropdownMenuItem>
                         {data.unowned > 0 && (
                           <DropdownMenuItem onSelect={async () => {
-                            if (await confirm({ title: "Sahipsiz sıralar taşınsın mı?", description: `${data.unowned} sıra "${u.name}" kullanıcısına geçecek ve adresleri ${bare(u.link)}<sıra> olacak. Eski adresler yeni adrese yönlenir. Devam?`, action: "Taşı" }))
+                            if (await confirm({ title: T.adoptTitle, description: T.adoptDesc(data.unowned, u.name, bare(u.link)), action: T.move }))
                               run(() => call(`/api/admin/users/${u.name}/adopt`, {}));
-                          }}><UsersIcon /> Sahipsiz sıraları taşı</DropdownMenuItem>
+                          }}><UsersIcon /> {T.adopt}</DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onSelect={async () => {
-                          if (await confirm({ title: "Kullanıcı silinsin mi?", description: `"${u.name}" silinecek. Yalnızca sırası olmayan kullanıcı silinebilir.`, action: "Sil", destructive: true }))
+                          if (await confirm({ title: T.delUserTitle, description: T.delUserDesc(u.name), action: T.del, destructive: true }))
                             run(() => call(`/api/admin/users/${u.name}`, undefined, "DELETE"));
-                        }}><Trash2Icon /> Sil</DropdownMenuItem>
+                        }}><Trash2Icon /> {T.del}</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -565,32 +568,32 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
               </TableRow>
             ))}
             {!data.users.length && (
-              <TableRow><TableCell colSpan={3} className="py-8 text-center text-muted-foreground">Henüz kullanıcı yok.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={3} className="py-8 text-center text-muted-foreground">{T.noUsers}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
       </Card>
       {form && (
         <Card>
-          <CardHeader><CardTitle className="text-lg font-semibold">{form.reset ? `Şifre belirle: ${form.reset}` : "Yeni kullanıcı"}</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-lg font-semibold">{form.reset ? T.setPwFor(form.reset) : T.newUser}</CardTitle></CardHeader>
           <CardContent>
             <form onSubmit={submit} className="flex flex-col gap-4 text-base">
               {!form.reset && (
                 <Field>
-                  <FieldLabel htmlFor="user">Kullanıcı adı</FieldLabel>
+                  <FieldLabel htmlFor="user">{T.username}</FieldLabel>
                   <Input id="user" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalyabb" autoComplete="off"
                     value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} />
-                  <FieldDescription>Küçük harf, rakam ve tire. Kullanıcının adresi olur: <b>{form.user || "…"}.{location.hostname.replace(/^www\./, "")}</b></FieldDescription>
+                  <FieldDescription>{T.userDesc(`${form.user || "…"}.${location.hostname.replace(/^www\./, "")}`)}</FieldDescription>
                 </Field>
               )}
               <Field>
-                <FieldLabel htmlFor="password">Şifre</FieldLabel>
+                <FieldLabel htmlFor="password">{T.password}</FieldLabel>
                 <Input id="password" type="text" required minLength={8} autoComplete="off" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-                <FieldDescription>En az 8 karakter. Kullanıcıya iletin; kendisi değiştirebilir.{form.reset && " Kullanıcının açık oturumları kapanır."}</FieldDescription>
+                <FieldDescription>{T.pwDesc}{form.reset && T.pwResetNote}</FieldDescription>
               </Field>
               <div className="flex gap-2">
-                <Button type="button" variant="secondary" className="flex-1" onClick={() => setForm(undefined)}>Vazgeç</Button>
-                <Button className="flex-1">Kaydet</Button>
+                <Button type="button" variant="secondary" className="flex-1" onClick={() => setForm(undefined)}>{T.cancel}</Button>
+                <Button className="flex-1">{T.save}</Button>
               </div>
             </form>
           </CardContent>
@@ -636,18 +639,18 @@ function AdminPage() {
   return (
     <Page>
       <Card className="mt-3">
-        <CardHeader><Title className="mt-0">Yönetim girişi</Title></CardHeader>
+        <CardHeader><Title className="mt-0">{T.loginTitle}</Title></CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4 text-base" onSubmit={login}>
             <Field>
-              <FieldLabel htmlFor="user">Kullanıcı adı</FieldLabel>
+              <FieldLabel htmlFor="user">{T.username}</FieldLabel>
               <Input id="user" required autoCapitalize="none" autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} />
             </Field>
             <Field>
-              <FieldLabel htmlFor="pw">Şifre</FieldLabel>
+              <FieldLabel htmlFor="pw">{T.password}</FieldLabel>
               <Input id="pw" type="password" required autoComplete="current-password" value={pwInput} onChange={(e) => setPwInput(e.target.value)} />
             </Field>
-            <Button>Giriş</Button>
+            <Button>{T.login}</Button>
           </form>
         </CardContent>
       </Card>
@@ -656,4 +659,5 @@ function AdminPage() {
   );
 }
 
+document.title = T.docTitle;
 mount(<AdminPage />);

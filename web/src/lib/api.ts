@@ -1,15 +1,14 @@
+import { geoErrors, lang, S } from "@/lib/i18n";
+
+// Hata mesajları x-lang dilinde gelir; hatanın status'u 401 ise oturum geçersizdir
 export async function api<T = any>(path: string, body?: unknown, headers: Record<string, string> = {}, method = body ? "POST" : "GET"): Promise<T> {
-  const r = await fetch(path, { method, headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const r = await fetch(path, { method, headers: { "content-type": "application/json", "x-lang": lang, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || "Bağlantı hatası");
+  if (!r.ok) throw Object.assign(new Error(j.error || S.network), { status: r.status });
   return j;
 }
 
-// msg: ziyaretçi sayfalarında lib/i18n.ts'teki geoErrors
-export function locate(msg = {
-  unsupported: "Tarayıcınız konum desteklemiyor.",
-  denied: "Konum izni gerekli. Tarayıcı ayarlarından bu siteye konum izni verin.",
-}): Promise<GeolocationCoordinates> {
+export function locate(msg = geoErrors): Promise<GeolocationCoordinates> {
   return new Promise((ok, fail) => {
     if (!navigator.geolocation) return fail(new Error(msg.unsupported));
     navigator.geolocation.getCurrentPosition((p) => ok(p.coords),
@@ -21,15 +20,12 @@ export function locate(msg = {
 export const mins = (t: number) => Math.floor((Date.now() - t) / 60000);
 export const range = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
-// Sıra kategorileri; anahtarlar src/index.js'teki CATEGORIES ile aynı
-export const CATEGORIES: Record<string, [string, string]> = {
-  plaj: ["🏖️", "Plaj"], iskele: ["⛴️", "İskele / ulaşım"], gise: ["🎫", "Gişe"], restoran: ["🍽️", "Restoran / kafe"],
-  saglik: ["🏥", "Sağlık"], resmi: ["🏛️", "Resmi daire"], etkinlik: ["🎪", "Etkinlik"], diger: ["📍", "Diğer"],
-};
+// Sıra kategorileri; anahtarlar src/index.js'teki CATEGORIES ile aynı, adlar lib/i18n.ts'te
+export const CATEGORIES: Record<string, [string, string]> = Object.fromEntries(Object.entries({
+  plaj: "🏖️", iskele: "⛴️", gise: "🎫", restoran: "🍽️", saglik: "🏥", resmi: "🏛️", etkinlik: "🎪", diger: "📍",
+}).map(([k, icon]) => [k, [icon, S.categories[k as keyof typeof S.categories]]]));
 export const catIcon = (c?: string) => (CATEGORIES[c ?? ""] ?? CATEGORIES.diger)[0];
 
-// "7" → "Masa 7", "Bahçe 3" olduğu gibi; src/index.js'teki tableName ile aynı
-export const tableName = (t: Table) => (/^\d+$/.test(t.name) ? `Masa ${t.name}` : t.name || `${t.cap} kişilik masa`);
 
 // Sayfa dönen `setInterval` yoklaması; sekme gizliyken atlanır, sekmeye dönünce hemen yenilenir
 export function poll(fn: () => void, ms: number, whenHidden = false) {
