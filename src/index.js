@@ -80,7 +80,7 @@ export class Room extends DurableObject {
   status() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
-      name: s.name, lat: s.lat, lng: s.lng, flex: !!s.flex,
+      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, flex: !!s.flex,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), next: w[0]?.no ?? null,
       called: s.entries.filter((e) => e.status === "called").map((e) => e.no), lastNo: s.lastNo ?? null,
     };
@@ -254,6 +254,11 @@ function hostLink(url, env, r) {
   return `${url.origin}/host#${r.slug ?? r.room}.${r.key}`;
 }
 
+// Ziyaretçiye açık sıra durumu sayfası: alt alan adı ya da ?r= ile
+function statusLink(url, env, ref) {
+  return env.BASE_DOMAIN && !ID_RE.test(ref) ? `https://${ref}.${env.BASE_DOMAIN}/` : `${url.origin}/status?r=${ref}`;
+}
+
 async function adminApi(req, env, url, body) {
   if (!env.ADMIN_PASSWORD || !same(req.headers.get("x-admin"), env.ADMIN_PASSWORD)) throw new Error("Hatalı şifre");
   const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import))?)?$/);
@@ -299,6 +304,14 @@ export default {
     try {
       const body = ["POST", "PUT"].includes(req.method) ? await req.json() : {};
       if (url.pathname.startsWith("/api/admin/")) return Response.json(await adminApi(req, env, url, body));
+      if (url.pathname === "/api/rooms") {
+        // Herkese açık sıra listesi (tanıtım sitesindeki harita): yalnızca status() alanları, anahtar yok
+        // ponytail: her istek tüm odalara sorar; yüzlerce sıra olursa listeyi Cache API ile 30 sn önbelleğe al
+        const ids = await env.REGISTRY.getByName("main").list();
+        const rooms = await Promise.all(ids.map((id) => env.ROOM.getByName(id).status()
+          .then((st) => ({ ...st, link: statusLink(url, env, st.slug ?? id) }), () => null)));
+        return Response.json(rooms.filter(Boolean));
+      }
       if (url.pathname === "/api/resolve") {
         // ?r= oda id'si ya da slug; yoksa alt alan adından (antalya-konserve.sirangeldi.com)
         const ref = url.searchParams.get("r") || subdomain(url, env);
