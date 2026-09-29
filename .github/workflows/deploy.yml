@@ -1,0 +1,55 @@
+# main'e her push: önce smoke testi (yerel wrangler dev), geçerse Cloudflare'e deploy.
+# Gerekli repo secret'ları: CLOUDFLARE_API_TOKEN ("Edit Cloudflare Workers" şablonu), CLOUDFLARE_ACCOUNT_ID.
+# ADMIN_PASSWORD ve VAPID_PRIVATE_KEY Cloudflare'de secret olarak durur, deploy onlara dokunmaz.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Üst üste push'larda deploy'lar sırayla çalışsın, yarıda kesilmesin
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Yerel test ortamı: smoke.mjs varsayılan şifresi "test"; VAPID anahtarı yok, push gönderimi atlanır
+      - run: echo 'ADMIN_PASSWORD=test' > .dev.vars
+      - name: Smoke test
+        run: |
+          npx wrangler dev --port 8787 > wrangler.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf localhost:8787/api/vapid > /dev/null && break; sleep 1; done
+          node smoke.mjs
+      - if: failure()
+        run: cat wrangler.log
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # wrangler.jsonc'taki build komutu (npm run build) deploy'dan önce çalışır
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
