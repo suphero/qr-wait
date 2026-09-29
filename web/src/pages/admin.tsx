@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsUpDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon,
-  ExternalLinkIcon, LocateFixedIcon, LockIcon, PencilIcon, RefreshCwIcon, SearchIcon, Trash2Icon,
+  ExternalLinkIcon, KeyRoundIcon, LocateFixedIcon, LockIcon, PencilIcon, RefreshCwIcon, SearchIcon, Trash2Icon, UsersIcon,
 } from "lucide-react";
 import { useConfirm } from "@/components/confirm";
 import { ErrorText, Page, Title } from "@/components/page";
@@ -19,8 +19,12 @@ import { baseMap, fmtDist, L, meters } from "@/lib/leaflet";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
-let pw = sessionStorage.getItem("pw");
-const adm = <T = any,>(path: string, body?: unknown, method?: string) => api<T>("/api/admin/rooms" + path, body, { "x-admin": pw ?? "" }, method);
+// Oturum anahtarı /api/login'den; 30 gün geçerli, şifre değişince düşer
+let token = localStorage.getItem("session");
+const AUTH_ERR = "Oturum geçersiz, yeniden giriş yapın"; // src/index.js ile aynı
+const call = <T = any,>(path: string, body?: unknown, method?: string) => api<T>(path, body, { authorization: `Bearer ${token ?? ""}` }, method);
+const adm = <T = any,>(path: string, body?: unknown, method?: string) => call<T>("/api/admin/rooms" + path, body, method);
+const bare = (link: string) => link.replace(/^https?:\/\//, "");
 const slugify = (t: string) => t.toLocaleLowerCase("tr").replace(/[çğıöşü]/g, (c) => "cgiosu"["çğıöşü".indexOf(c)])
   .normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 
@@ -44,7 +48,7 @@ function Check({ checked, onChange, title, children }: { checked: boolean; onCha
 }
 
 // Yeni + düzenle formu. room: düzenlenen oda, yoksa yeni oda.
-function RoomForm({ room, rooms, onDone, onCancel, onError }: { room: RoomInfo | null; rooms: RoomInfo[]; onDone: () => void; onCancel: () => void; onError: (m: string) => void }) {
+function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: RoomInfo | null; rooms: RoomInfo[]; home: string; onDone: () => void; onCancel: () => void; onError: (m: string) => void }) {
   const confirm = useConfirm();
   const [f, setF] = useState<Form>({
     name: room?.name ?? "", category: room?.category ?? "diger", private: !!room?.private,
@@ -139,7 +143,7 @@ function RoomForm({ room, rooms, onDone, onCancel, onError }: { room: RoomInfo |
               <FieldLabel htmlFor="slug">Web adresi (slug)</FieldLabel>
               <Input id="slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve" value={f.slug}
                 onChange={(e) => { slugTouched.current = true; set("slug", e.target.value); }} />
-              <FieldDescription>Küçük harf, rakam ve tire. Sıranın web adresi olur: <b>{f.slug || "…"}</b></FieldDescription>
+              <FieldDescription>Küçük harf, rakam ve tire. Sıranın web adresi olur: <b>{bare(home)}{f.slug || "…"}</b></FieldDescription>
             </Field>
           )}
           <Field>
@@ -260,7 +264,9 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
     <TableRow>
       <TableCell className="whitespace-normal">
         <b>{catIcon(r.category)} {r.name}</b>
-        <div className="text-sm text-muted-foreground">{r.private ? "🔒 gizli" : r.slug ? r.slug : "⚠ adres yok, Düzenle ile ekleyin"}</div>
+        <div className="text-sm text-muted-foreground">
+          {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? "🔒 gizli" : bare(r.page)}</a> : "⚠ adres yok, Düzenle ile ekleyin"}
+        </div>
         <div className="text-xs text-muted-foreground">
           {r.radius} m · en fazla {r.maxGroup} kişi{r.tables ? ` · masa${r.maxEmpty !== null ? ` (en fazla ${r.maxEmpty} boş)` : ""}` : r.flex ? " · esnek yer" : ""} · {r.qr === "static" ? "sabit QR" : `QR ${r.ttl} sn`}
         </div>
@@ -392,12 +398,49 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
   );
 }
 
-function AdminPage() {
-  const [authed, setAuthed] = useState(false);
+type Me = { user: string; super: boolean; home: string | false };
+type User = { name: string; at: number; rooms: number; link: string };
+
+// Kendi şifresini değiştirme; yeni oturum anahtarı döner (eski oturumlar düşer)
+function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
+  const [old, setOld] = useState(""), [pw, setPw] = useState("");
+  async function submit(ev: FormEvent) {
+    ev.preventDefault();
+    try {
+      const r = await call<{ token: string }>("/api/admin/password", { old, password: pw });
+      localStorage.setItem("session", (token = r.token));
+      onDone();
+    } catch (e: any) { onError(e.message); }
+  }
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-lg font-semibold">Şifre değiştir</CardTitle></CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="flex flex-col gap-4 text-base">
+          <Field>
+            <FieldLabel htmlFor="old">Mevcut şifre</FieldLabel>
+            <Input id="old" type="password" required autoComplete="current-password" value={old} onChange={(e) => setOld(e.target.value)} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="new">Yeni şifre</FieldLabel>
+            <Input id="new" type="password" required minLength={8} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+            <FieldDescription>En az 8 karakter. Diğer cihazlardaki oturumlar kapanır.</FieldDescription>
+          </Field>
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" className="flex-1" onClick={onDone}>Vazgeç</Button>
+            <Button className="flex-1">Kaydet</Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RoomsPanel({ me, logout }: { me: Me; logout: (msg?: string) => void }) {
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
   const [editing, setEditing] = useState<RoomInfo | null | undefined>(); // undefined: form kapalı, null: yeni oda
+  const [pwOpen, setPwOpen] = useState(false);
   const [err, setErr] = useState("");
-  const [pwInput, setPwInput] = useState("");
   const formOpen = useRef(false);
   formOpen.current = editing !== undefined;
 
@@ -405,58 +448,209 @@ function AdminPage() {
     try {
       setRooms(await adm<RoomInfo[]>(""));
       setErr("");
-      setAuthed(true);
     } catch (e: any) {
-      if (e.message === "Hatalı şifre") return logout(e.message);
+      if (e.message === AUTH_ERR) return logout(e.message);
       setErr(e.message);
     }
   }
 
-  function logout(msg = "") {
-    sessionStorage.removeItem("pw");
-    pw = null;
-    setAuthed(false);
-    setEditing(undefined);
-    setErr(msg);
-  }
-
   useEffect(() => {
-    if (pw) load();
-    return poll(() => pw && !formOpen.current && load(), 15000, true);
+    load();
+    return poll(() => !formOpen.current && load(), 15000, true);
   }, []);
-
-  if (!authed) {
-    return (
-      <Page>
-        <Card className="mt-3">
-          <CardHeader><Title className="mt-0">Yönetim girişi</Title></CardHeader>
-          <CardContent>
-            <form className="flex flex-col gap-4 text-base" onSubmit={(ev) => { ev.preventDefault(); sessionStorage.setItem("pw", (pw = pwInput)); load(); }}>
-              <Field>
-                <FieldLabel htmlFor="pw">Yönetici şifresi</FieldLabel>
-                <Input id="pw" type="password" required autoComplete="current-password" value={pwInput} onChange={(e) => setPwInput(e.target.value)} />
-              </Field>
-              <Button>Giriş</Button>
-            </form>
-          </CardContent>
-        </Card>
-        <ErrorText>{err}</ErrorText>
-      </Page>
-    );
-  }
 
   return (
     <Page className="max-w-5xl">
-      <div className="flex items-center gap-2">
-        <Title className="flex-1">Sıralar</Title>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex-1">
+          <Title>Sıralar</Title>
+          {me.home && <a className="text-sm text-muted-foreground underline-offset-2 hover:underline" href={me.home} target="_blank">{bare(me.home)}</a>}
+        </div>
         <Button onClick={() => setEditing(null)}>+ Yeni sıra</Button>
+        <Button variant="secondary" title="Şifre değiştir" onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> Şifre</Button>
         <Button variant="secondary" onClick={() => logout()}>Çıkış</Button>
       </div>
+      {pwOpen && <PasswordForm onDone={() => setPwOpen(false)} onError={setErr} />}
       <RoomTable rooms={rooms} onChange={load} onEdit={setEditing} onError={setErr} />
       {editing !== undefined && (
-        <RoomForm key={editing?.room ?? "new"} room={editing} rooms={rooms} onError={setErr}
+        <RoomForm key={editing?.room ?? "new"} room={editing} rooms={rooms} home={me.home || ""} onError={setErr}
           onDone={() => { setEditing(undefined); load(); }} onCancel={() => setEditing(undefined)} />
       )}
+      <ErrorText>{err}</ErrorText>
+    </Page>
+  );
+}
+
+// Süper yönetici: kullanıcıları açar, şifre sıfırlar, siler; hesaplardan önceki sıraları bir kullanıcıya taşır
+function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
+  const confirm = useConfirm();
+  const [data, setData] = useState<{ users: User[]; unowned: number }>({ users: [], unowned: 0 });
+  const [form, setForm] = useState<{ user: string; password: string; reset?: string }>();
+  const [err, setErr] = useState("");
+
+  async function load() {
+    try {
+      setData(await call("/api/admin/users"));
+      setErr("");
+    } catch (e: any) {
+      if (e.message === AUTH_ERR) return logout(e.message);
+      setErr(e.message);
+    }
+  }
+  async function run(fn: () => Promise<unknown>) {
+    try { await fn(); await load(); } catch (e: any) { setErr(e.message); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function submit(ev: FormEvent) {
+    ev.preventDefault();
+    const f = form!;
+    await run(async () => {
+      await (f.reset ? call(`/api/admin/users/${f.reset}`, { password: f.password }, "PUT") : call("/api/admin/users", f));
+      setForm(undefined);
+    });
+  }
+
+  return (
+    <Page className="max-w-3xl">
+      <div className="flex items-center gap-2">
+        <Title className="flex-1">Kullanıcılar</Title>
+        <Button onClick={() => setForm({ user: "", password: "" })}>+ Yeni kullanıcı</Button>
+        <Button variant="secondary" onClick={() => logout()}>Çıkış</Button>
+      </div>
+      {data.unowned > 0 && (
+        <p className="rounded-lg border p-3 text-sm">
+          Hesaplardan önce açılmış <b>{data.unowned}</b> sıra bir kullanıcıya bağlı değil. Kullanıcının menüsünden "Sahipsiz sıraları taşı" ile taşıyın.
+          Eski adresleri (<i>sıra.sirangeldi.com</i>) kullanıcının adresine yönlenir.
+        </p>
+      )}
+      <Card className="py-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Kullanıcı</TableHead>
+              <TableHead className="text-right">Sıra</TableHead>
+              <TableHead className="text-right">İşlemler</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.users.map((u) => (
+              <TableRow key={u.name}>
+                <TableCell>
+                  <b>{u.name}</b>
+                  <div className="text-sm text-muted-foreground"><a className="underline-offset-2 hover:underline" href={u.link} target="_blank">{bare(u.link)}</a></div>
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{u.rooms}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end">
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title="Diğer"><EllipsisIcon /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setForm({ user: u.name, password: "", reset: u.name })}><KeyRoundIcon /> Şifre belirle</DropdownMenuItem>
+                        {data.unowned > 0 && (
+                          <DropdownMenuItem onSelect={async () => {
+                            if (await confirm({ title: "Sahipsiz sıralar taşınsın mı?", description: `${data.unowned} sıra "${u.name}" kullanıcısına geçecek ve adresleri ${bare(u.link)}<sıra> olacak. Eski adresler yeni adrese yönlenir. Devam?`, action: "Taşı" }))
+                              run(() => call(`/api/admin/users/${u.name}/adopt`, {}));
+                          }}><UsersIcon /> Sahipsiz sıraları taşı</DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem variant="destructive" onSelect={async () => {
+                          if (await confirm({ title: "Kullanıcı silinsin mi?", description: `"${u.name}" silinecek. Yalnızca sırası olmayan kullanıcı silinebilir.`, action: "Sil", destructive: true }))
+                            run(() => call(`/api/admin/users/${u.name}`, undefined, "DELETE"));
+                        }}><Trash2Icon /> Sil</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {!data.users.length && (
+              <TableRow><TableCell colSpan={3} className="py-8 text-center text-muted-foreground">Henüz kullanıcı yok.</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+      {form && (
+        <Card>
+          <CardHeader><CardTitle className="text-lg font-semibold">{form.reset ? `Şifre belirle: ${form.reset}` : "Yeni kullanıcı"}</CardTitle></CardHeader>
+          <CardContent>
+            <form onSubmit={submit} className="flex flex-col gap-4 text-base">
+              {!form.reset && (
+                <Field>
+                  <FieldLabel htmlFor="user">Kullanıcı adı</FieldLabel>
+                  <Input id="user" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalyabb" autoComplete="off"
+                    value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} />
+                  <FieldDescription>Küçük harf, rakam ve tire. Kullanıcının adresi olur: <b>{form.user || "…"}.{location.hostname.replace(/^www\./, "")}</b></FieldDescription>
+                </Field>
+              )}
+              <Field>
+                <FieldLabel htmlFor="password">Şifre</FieldLabel>
+                <Input id="password" type="text" required minLength={8} autoComplete="off" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                <FieldDescription>En az 8 karakter. Kullanıcıya iletin; kendisi değiştirebilir.{form.reset && " Kullanıcının açık oturumları kapanır."}</FieldDescription>
+              </Field>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" className="flex-1" onClick={() => setForm(undefined)}>Vazgeç</Button>
+                <Button className="flex-1">Kaydet</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+      <ErrorText>{err}</ErrorText>
+    </Page>
+  );
+}
+
+function AdminPage() {
+  const [me, setMe] = useState<Me | null>(null);
+  const [err, setErr] = useState("");
+  const [user, setUser] = useState(""), [pwInput, setPwInput] = useState("");
+
+  async function start() {
+    try {
+      setMe(await call<Me>("/api/admin/me"));
+      setErr("");
+    } catch (e: any) { logout(e.message); }
+  }
+
+  function logout(msg = "") {
+    localStorage.removeItem("session");
+    token = null;
+    setMe(null);
+    setErr(msg);
+  }
+
+  async function login(ev: FormEvent) {
+    ev.preventDefault();
+    try {
+      const r = await api<{ token: string }>("/api/login", { user, password: pwInput });
+      localStorage.setItem("session", (token = r.token));
+      setPwInput("");
+      await start();
+    } catch (e: any) { setErr(e.message); }
+  }
+
+  useEffect(() => { if (token) start(); }, []);
+
+  if (me) return me.super ? <UsersPanel logout={logout} /> : <RoomsPanel me={me} logout={logout} />;
+  return (
+    <Page>
+      <Card className="mt-3">
+        <CardHeader><Title className="mt-0">Yönetim girişi</Title></CardHeader>
+        <CardContent>
+          <form className="flex flex-col gap-4 text-base" onSubmit={login}>
+            <Field>
+              <FieldLabel htmlFor="user">Kullanıcı adı</FieldLabel>
+              <Input id="user" required autoCapitalize="none" autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="pw">Şifre</FieldLabel>
+              <Input id="pw" type="password" required autoComplete="current-password" value={pwInput} onChange={(e) => setPwInput(e.target.value)} />
+            </Field>
+            <Button>Giriş</Button>
+          </form>
+        </CardContent>
+      </Card>
       <ErrorText>{err}</ErrorText>
     </Page>
   );

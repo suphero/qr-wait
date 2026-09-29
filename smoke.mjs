@@ -7,18 +7,45 @@ const req = async (method, p, body, h = {}) => {
   return r.json();
 };
 const post = (p, body, h) => req("POST", p, body, h);
-const PW = { "x-admin": process.env.PASSWORD ?? "test" };
+const bearer = async (user, password) => ({ authorization: `Bearer ${(await post("/api/login", { user, password })).token}` });
+// Süper yönetici bir test kullanıcısı açar; sıralar o kullanıcıyla yönetilir
+const SU = await bearer("admin", process.env.PASSWORD ?? "test");
+const U = `test${Date.now()}`, U2 = `${U}-b`;
+assert.deepEqual(await post("/api/admin/users", { user: U, password: "deneme123" }, SU), { ok: true });
+await post("/api/admin/users", { user: U2, password: "deneme123" }, SU);
+assert.match((await post("/api/admin/users", { user: U, password: "deneme123" }, SU)).error, /alınmış/);
+assert.match((await post("/api/admin/users", { user: "Kötü Ad", password: "deneme123" }, SU)).error, /Geçersiz kullanıcı/);
+assert.match((await post("/api/admin/users", { user: `${U}-c`, password: "kisa" }, SU)).error, /en az 8/);
+assert.match((await post("/api/login", { user: U, password: "yanlis-sifre" })).error, /hatalı/);
+const PW = await bearer(U, "deneme123"), PW2 = await bearer(U2, "deneme123");
+assert.equal((await req("GET", "/api/admin/me", undefined, PW)).user, U);
+assert.match((await req("GET", "/api/admin/rooms", undefined, SU)).error, /kullanıcı hesabıyla/, "süper yönetici sıra yönetmez");
+assert.match((await req("GET", "/api/admin/users", undefined, PW)).error, /Geçersiz istek/, "kullanıcı, kullanıcıları yönetemez");
 const spot = { lat: 36.8841, lng: 30.7056 };
 
 const slug = `test-${Date.now()}`;
 const { room, key } = await post("/api/admin/rooms", { name: "Test Sırası", slug, radius: 300, ...spot }, PW);
 assert.ok(room && key);
-const resolve = async (r, h) => (await req("GET", `/api/resolve?r=${r}`, undefined, h));
+const resolve = async (r, u = U) => (await req("GET", `/api/resolve?u=${u}&r=${r}`, undefined));
 assert.equal((await resolve(slug)).room, room, "slug oda id'sine çözülür");
 assert.equal((await resolve(room)).room, room, "eski id linkleri çalışır");
 assert.match((await post("/api/admin/rooms", { name: "X", slug, radius: 300, ...spot }, PW)).error, /kullanılıyor/, "aynı slug iki odaya verilemez");
 assert.match((await post("/api/admin/rooms", { name: "X", slug: "Kötü Adres", radius: 300, ...spot }, PW)).error, /Geçersiz adres/);
-assert.equal((await req("GET", "/api/admin/rooms", undefined, { "x-admin": "yanlis" })).error, "Hatalı şifre");
+assert.equal((await req("GET", "/api/admin/rooms", undefined, { authorization: "Bearer yanlis" })).error, "Oturum geçersiz, yeniden giriş yapın");
+// Kullanıcılar birbirinden ayrı: aynı adres başka kullanıcıda serbest, başkasının sırası görülmez ve değiştirilemez
+const other = await post("/api/admin/rooms", { name: "Öteki", slug, radius: 300, ...spot }, PW2);
+assert.ok(other.room, "aynı slug başka kullanıcıda kullanılabilir");
+assert.equal((await resolve(slug, U2)).room, other.room);
+assert.equal((await resolve(slug)).room, room);
+assert.equal((await req("GET", "/api/admin/rooms", undefined, PW2)).length, 1);
+assert.equal((await req("DELETE", `/api/admin/rooms/${room}`, undefined, PW2)).error, "Sıra bulunamadı", "başkasının sırası silinemez");
+assert.equal((await post(`/api/admin/rooms/${room}/rotate`, {}, PW2)).error, "Sıra bulunamadı");
+assert.deepEqual((await req("GET", `/api/rooms?u=${U2}`)).map((r) => r.name), ["Öteki"], "kullanıcı sayfası yalnızca onun sıraları");
+assert.deepEqual(await resolve("", U), { account: U }, "kullanıcı adresi");
+assert.match((await req("DELETE", `/api/admin/users/${U2}`, undefined, SU)).error, /sıraları var/);
+await req("DELETE", `/api/admin/rooms/${other.room}`, undefined, PW2);
+assert.deepEqual(await req("DELETE", `/api/admin/users/${U2}`, undefined, SU), { ok: true });
+assert.match((await req("GET", "/api/admin/rooms", undefined, PW2)).error, /Oturum geçersiz/, "silinen kullanıcının oturumu düşer");
 
 const admin = (body = {}) => post(`/api/r/${room}/admin`, body, { "x-key": key });
 assert.equal((await post(`/api/r/${room}/admin`, {}, { "x-key": "x" })).error, "Yetkisiz");
@@ -171,4 +198,10 @@ await tadmin({ action: "table", n: 2 });
 ts = await tadmin({ action: "untable", id: (await tadmin()).freeTables[0].id });
 assert.equal(ts.freeTables.length, 0);
 await req("DELETE", `/api/admin/rooms/${tr.room}`, undefined, PW);
+// Şifre değişince eski oturum düşer
+assert.match((await post("/api/admin/password", { old: "yanlis-sifre", password: "yenisifre123" }, PW)).error, /hatalı/);
+const PW3 = { authorization: `Bearer ${(await post("/api/admin/password", { old: "deneme123", password: "yenisifre123" }, PW)).token}` };
+assert.match((await req("GET", "/api/admin/rooms", undefined, PW)).error, /Oturum geçersiz/);
+assert.deepEqual(await req("GET", "/api/admin/rooms", undefined, PW3), []);
+await req("DELETE", `/api/admin/users/${U}`, undefined, SU);
 console.log("smoke OK");

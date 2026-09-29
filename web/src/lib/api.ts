@@ -59,5 +59,5 @@ export type AdminState = {
 };
 export type RoomInfo = {
   room: string; name: string; slug?: string; lat: number; lng: number; radius: number; flex: boolean; private: boolean; key: string;
-  category: string; mode: "seats" | "tables"; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; waiting: number; people: number; called: number; link: string;
+  category: string; mode: "seats" | "tables"; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; waiting: number; people: number; called: number; link: string; page: string;
 };

@@ -2,22 +2,30 @@ import { useEffect, useState } from "react";
 import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { api, catIcon, poll, type Status } from "@/lib/api";
+import { api, catIcon, poll, type PublicRoom, type Status } from "@/lib/api";
 import { mount } from "@/lib/mount";
 
-const ref = new URLSearchParams(location.search).get("r") ?? "";
+// antalyabb.sirangeldi.com/bambus ya da /status?r=bambus; kullanıcı alt alan adından (yoksa ?u=)
+const q = new URLSearchParams(location.search), path = location.pathname.slice(1);
+const ref = q.get("r") ?? (path === "status" ? "" : path), user = q.get("u") ?? "";
 const base = location.hostname.split(".").slice(1).join(".");
 const home = base.includes(".") ? `https://${base}/` : "/"; // alt alan adındaysak ana siteye
 
 function StatusPage() {
   const [s, setS] = useState<Status>();
+  const [list, setList] = useState<PublicRoom[]>(); // kullanıcı sayfası (antalyabb.sirangeldi.com): sıraları
   const [mine, setMine] = useState(false);
   const [updated, setUpdated] = useState("Yükleniyor…");
   const [err, setErr] = useState("");
 
   useEffect(() => {
     let stop = () => {};
-    api<{ room: string }>(`/api/resolve?r=${encodeURIComponent(ref)}`).then(({ room }) => {
+    api<{ room?: string; account?: string }>(`/api/resolve?r=${encodeURIComponent(ref)}&u=${encodeURIComponent(user)}`).then(({ room, account }) => {
+      if (account) {
+        api<PublicRoom[]>(`/api/rooms?u=${account}`).then(setList, (e) => setErr(e.message));
+        setUpdated("");
+        return;
+      }
       setMine(!!localStorage.getItem("ticket:" + room));
       const refresh = async () => {
         try {
@@ -39,8 +47,22 @@ function StatusPage() {
 
   return (
     <Page>
-      <Title>{s ? `${catIcon(s.category)} ${s.name}` : "Sıra durumu"}</Title>
-      <p className="text-sm text-muted-foreground">{updated}</p>
+      <Title>{s ? `${catIcon(s.category)} ${s.name}` : list ? "Sıralar" : "Sıra durumu"}</Title>
+      {updated && <p className="text-sm text-muted-foreground">{updated}</p>}
+
+      {list && (
+        <Card className="py-2">
+          <CardContent className="flex flex-col divide-y">
+            {list.map((r) => (
+              <a key={r.link} href={r.link} className="flex flex-col py-3">
+                <b>{catIcon(r.category)} {r.name}</b>
+                <span className="text-sm text-muted-foreground">{r.waiting ? `${r.waiting} grup, ${r.people} kişi bekliyor` : "Şu an sıra yok"}</span>
+              </a>
+            ))}
+            {!list.length && <p className="py-3 text-muted-foreground">Henüz sıra yok.</p>}
+          </CardContent>
+        </Card>
+      )}
 
       {mine && (
         <a href={ref ? `/join?r=${ref}` : "/join"} className="rounded-xl bg-success p-4 text-success-foreground">

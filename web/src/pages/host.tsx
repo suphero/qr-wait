@@ -10,9 +10,10 @@ import { api, mins, poll, tableName, type AdminState, type Entry } from "@/lib/a
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
-// Hash: "<slug veya id>.<anahtar>" ya da alt alan adında yalnızca "<anahtar>"
+// Hash: "<slug veya id>.<anahtar>" ya da yalnızca "<anahtar>". Eski <slug>.sirangeldi.com/host#<anahtar> linki
+// yeni adrese ?r=<slug> ile yönlenir.
 const hash = location.hash.slice(1), dot = hash.indexOf(".");
-const ref = dot < 0 ? "" : hash.slice(0, dot), key = hash.slice(dot + 1);
+const ref = dot < 0 ? new URLSearchParams(location.search).get("r") ?? "" : hash.slice(0, dot), key = hash.slice(dot + 1);
 let room = ""; // açılışta çözülen oda id'si; slug sonradan değişse de açık panel çalışmaya devam eder
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

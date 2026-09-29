@@ -314,35 +314,157 @@ export class Room extends DurableObject {
   }
 }
 
-// Oda listesi ve slug eşlemesi. DO'lar listelenemediği için buradadır; oda bilgisi odanın kendisindedir.
-// Anahtarlar: "<oda id>" → oluşturulma zamanı, "slug:<slug>" → oda id.
-// Sıcak yolda değil: sayfalar slug'ı açılışta bir kez çözer, sonra doğrudan odaya gider.
+// Kullanıcılar, oda listesi ve adres eşlemesi. DO'lar listelenemediği için buradadır; oda bilgisi odanın kendisindedir.
+// Anahtarlar:
+//   "<oda id>" → { at, owner }; eski kayıtlarda yalnızca oluşturulma zamanı (sahipsiz oda)
+//   "slug:<kullanıcı>/<slug>" → oda id; sahipsiz eski odalarda "slug:<slug>"
+//   "legacy:<slug>" → oda id: kullanıcıya taşınan eski odanın <slug>.sirangeldi.com adresi yeni adrese yönlenir
+//   "user:<ad>" → { salt, hash, at }, "fail:<ad>" → { n, at } başarısız giriş sayacı
+// Sıcak yolda değil: sayfalar adresi açılışta bir kez çözer, sonra doğrudan odaya gider.
 export class Registry extends DurableObject {
-  add(id) { return this.ctx.storage.put(id, Date.now()); }
-  remove(id, slug) { return this.ctx.storage.delete([id, `slug:${slug}`]); }
-  resolve(slug) { return this.ctx.storage.get(`slug:${slug}`); }
+  value(k) { return this.ctx.storage.get(k); }
 
-  async list() {
-    const all = [...(await this.ctx.storage.list())].filter(([k]) => !k.startsWith("slug:"));
-    return all.sort((a, b) => a[1] - b[1]).map(([id]) => id);
+  async rooms(owner) {
+    const all = [...(await this.ctx.storage.list())].filter(([k]) => ID_RE.test(k))
+      .map(([id, v]) => (typeof v === "number" ? { id, at: v, owner: null } : { id, ...v }));
+    return all.filter((r) => owner === undefined || r.owner === owner).sort((a, b) => a.at - b.at);
   }
 
-  // DO girdi kapısı sayesinde oku-yaz arasında başka istek araya giremez: aynı slug iki odaya verilemez
-  async claim(slug, id, old) {
-    const owner = await this.ctx.storage.get(`slug:${slug}`);
-    if (owner && owner !== id) throw new Error("Bu adres başka bir sırada kullanılıyor");
-    if (old && old !== slug) await this.ctx.storage.delete(`slug:${old}`);
-    await this.ctx.storage.put(`slug:${slug}`, id);
+  add(id, owner) { return this.ctx.storage.put(id, { at: Date.now(), owner }); }
+  remove(id, owner, slug) { return this.ctx.storage.delete([id, `slug:${owner}/${slug}`]); }
+  async owns(id, owner) { return (await this.value(id))?.owner === owner; }
+
+  // DO girdi kapısı sayesinde oku-yaz arasında başka istek araya giremez: bir kullanıcıda aynı slug iki odaya verilemez
+  async claim(owner, slug, id, old) {
+    const k = `slug:${owner}/${slug}`, taken = await this.value(k);
+    if (taken && taken !== id) throw new Error("Bu adres başka bir sırada kullanılıyor");
+    if (old && old !== slug) await this.ctx.storage.delete(`slug:${owner}/${old}`);
+    await this.ctx.storage.put(k, id);
+  }
+
+  // u: kullanıcı (alt alan adı ya da ?u=), r: slug ya da oda id'si.
+  // Kullanıcı değilse eski tek seviyeli adrestir (bambus.sirangeldi.com, ?r=bambus); owner varsa sayfa yeni adrese yönlenir.
+  async resolve(u, r) {
+    if (ID_RE.test(r)) return { room: r };
+    if (u && (await this.value(`user:${u}`))) return r ? { room: await this.value(`slug:${u}/${r}`) } : { account: u };
+    const name = r || u, room = name && ((await this.value(`legacy:${name}`)) ?? (await this.value(`slug:${name}`)));
+    return room ? { room, owner: (await this.value(room))?.owner ?? null } : {};
+  }
+
+  async users() {
+    const rooms = await this.rooms();
+    return [...(await this.ctx.storage.list({ prefix: "user:" }))].map(([k, v]) => {
+      const name = k.slice(5);
+      return { name, at: v.at, rooms: rooms.filter((r) => r.owner === name).length };
+    });
+  }
+
+  async user(name) {
+    const u = await this.value(`user:${name}`);
+    if (!u) throw new Error("Kullanıcı bulunamadı");
+    return u;
+  }
+
+  async createUser(name, cred) {
+    if (await this.value(`user:${name}`)) throw new Error("Bu kullanıcı adı alınmış");
+    // Eski sıra adresiyle aynı ad olursa eski adres yönlendirmesi bozulur
+    if ((await this.value(`legacy:${name}`)) || (await this.value(`slug:${name}`))) throw new Error("Bu ad eski bir sıranın adresi, başka bir ad seçin");
+    await this.ctx.storage.put(`user:${name}`, { ...cred, at: Date.now() });
+  }
+
+  async setPassword(name, cred) {
+    await this.ctx.storage.put(`user:${name}`, { ...(await this.user(name)), ...cred });
+    await this.ctx.storage.delete(`fail:${name}`);
+  }
+
+  async deleteUser(name) {
+    await this.user(name);
+    if ((await this.rooms(name)).length) throw new Error("Kullanıcının sıraları var, önce sıraları silin");
+    await this.ctx.storage.delete([`user:${name}`, `fail:${name}`]);
+  }
+
+  // Sahipsiz (hesaplardan önceki) tüm sıraları kullanıcıya verir; eski adresleri yeni adrese yönlenir
+  async adopt(name) {
+    await this.user(name);
+    const s = this.ctx.storage, rooms = await this.rooms(null);
+    const slugs = [...(await s.list({ prefix: "slug:" }))].filter(([k]) => !k.includes("/")).map(([k, id]) => [k.slice(5), id]);
+    for (const [slug, id] of slugs) {
+      const taken = await s.get(`slug:${name}/${slug}`);
+      if (taken && taken !== id) throw new Error(`"${slug}" adresi bu kullanıcıda zaten kullanılıyor`);
+    }
+    for (const [slug, id] of slugs) {
+      await s.delete(`slug:${slug}`);
+      await s.put({ [`slug:${name}/${slug}`]: id, [`legacy:${slug}`]: id });
+    }
+    for (const r of rooms) await s.put(r.id, { at: r.at, owner: name });
+    return rooms.length;
+  }
+
+  // Şifre kontrolü; kaba kuvvete karşı 15 dakikada 10 hatalı denemeden sonra kilitlenir.
+  // admin: süper yönetici için ADMIN_PASSWORD. Dönen değer oturum imza anahtarıdır.
+  async login(name, password, admin) {
+    const fk = `fail:${name}`, f = await this.value(fk), now = Date.now();
+    if (f?.n >= 10 && now - f.at < 15 * 60e3) throw new Error("Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.");
+    const u = name === SUPER ? admin && { hash: admin } : await this.value(`user:${name}`);
+    const ok = u && (name === SUPER ? same(password, admin) : same(await pbkdf2(password, u.salt), u.hash));
+    if (!ok) {
+      if (u) await this.ctx.storage.put(fk, { n: (f && now - f.at < 15 * 60e3 ? f.n : 0) + 1, at: now });
+      throw new Error("Kullanıcı adı ya da şifre hatalı");
+    }
+    if (f) await this.ctx.storage.delete(fk);
+    return u.hash;
   }
 }
 
 const ID_RE = /^[a-f0-9]{10}$/;
-const RESERVED = new Set(["www", "api", "admin", "yonetim", "mail"]);
+const NAME_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+// Alt alan adı, kullanıcı adı ya da sıra adresi olamaz: sayfa ve dosya yollarıyla çakışır (antalyabb.sirangeldi.com/join)
+const RESERVED = new Set(["www", "api", "admin", "yonetim", "mail", "join", "host", "status", "home", "assets", "icons"]);
+const SUPER = "admin"; // süper yönetici girişi: kullanıcı adı "admin", şifre ADMIN_PASSWORD
+const AUTH_ERR = "Oturum geçersiz, yeniden giriş yapın";
+const SESSION_MS = 30 * 864e5;
 
-// antalya-konserve.sirangeldi.com → "antalya-konserve"; ana alan adı ve www için ""
+// antalyabb.sirangeldi.com → "antalyabb"; ana alan adı ve www için "". Geliştirmede antalyabb.localhost:8787 de çalışır.
 function subdomain(url, env) {
-  const sub = env.BASE_DOMAIN && url.hostname.endsWith(`.${env.BASE_DOMAIN}`) ? url.hostname.slice(0, -env.BASE_DOMAIN.length - 1) : "";
+  const h = url.hostname, base = [env.BASE_DOMAIN, "localhost"].find((b) => b && h.endsWith(`.${b}`));
+  const sub = base ? h.slice(0, -base.length - 1) : "";
   return RESERVED.has(sub) ? "" : sub;
+}
+
+const hex = (b) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+
+// 100 000: Workers'ın PBKDF2'de izin verdiği en yüksek tur sayısı
+async function pbkdf2(password, salt) {
+  const k = await crypto.subtle.importKey("raw", enc(password), "PBKDF2", false, ["deriveBits"]);
+  return hex(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: enc(salt), iterations: 100000 }, k, 256));
+}
+
+async function credential(password) {
+  password = String(password ?? "");
+  if (password.length < 8 || password.length > 200) throw new Error("Şifre en az 8 karakter olmalı");
+  const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+  return { salt, hash: await pbkdf2(password, salt) };
+}
+
+function userName(v) {
+  const name = String(v ?? "").trim().toLowerCase();
+  if (!NAME_RE.test(name) || ID_RE.test(name) || RESERVED.has(name))
+    throw new Error("Geçersiz kullanıcı adı: 3-40 karakter, küçük harf, rakam ve tire");
+  return name;
+}
+
+// Oturum: "<kullanıcı>.<bitiş>.<imza>". İmza anahtarı kullanıcının şifre özeti; şifre değişince eski oturumlar düşer.
+async function session(name, secret) {
+  const exp = Date.now() + SESSION_MS;
+  return { token: `${name}.${exp}.${await sign(secret, `${name}.${exp}`)}`, user: name, super: name === SUPER };
+}
+
+async function auth(req, env, reg) {
+  const [name, exp, sig] = (req.headers.get("authorization") ?? "").replace(/^Bearer /, "").split(".");
+  if (!name || !(Number(exp) > Date.now())) throw new Error(AUTH_ERR);
+  const secret = name === SUPER ? env.ADMIN_PASSWORD : (await reg.value(`user:${name}`))?.hash;
+  if (!secret || !same(sig, await sign(secret, `${name}.${exp}`))) throw new Error(AUTH_ERR);
+  return name;
 }
 
 // Gizli sıranın adresi: 20 karakter [a-z0-9] (~103 bit), tahmin edilemez; slug kuralına uyar, ID_RE'ye uymaz
@@ -357,7 +479,7 @@ function roomFields(b, prev) {
   if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) throw new Error("Geçersiz konum");
   const hidden = b.private === true || b.private === "on"; // haritada/listede görünmez, adresi rastgele
   const slug = hidden ? (prev?.private && prev.slug) || secretSlug() : String(b.slug ?? "").trim();
-  if (!/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(slug) || ID_RE.test(slug) || RESERVED.has(slug))
+  if (!NAME_RE.test(slug) || ID_RE.test(slug) || RESERVED.has(slug))
     throw new Error("Geçersiz adres: 3-40 karakter, küçük harf, rakam ve tire");
   return {
     private: hidden,
@@ -374,87 +496,159 @@ function roomFields(b, prev) {
   };
 }
 
-// Görevli linki: alan adı tanımlıysa slug alt alan adı, değilse aynı origin + slug (yoksa id)
-function hostLink(url, env, r) {
-  if (env.BASE_DOMAIN && r.slug) return `https://${r.slug}.${env.BASE_DOMAIN}/host#${r.key}`;
-  return `${url.origin}/host#${r.slug ?? r.room}.${r.key}`;
+// Kullanıcının sayfası: antalyabb.sirangeldi.com; alan adı tanımlı değilse (workers.dev) aynı origin
+const accountLink = (url, env, user) => (env.BASE_DOMAIN ? `https://${user}.${env.BASE_DOMAIN}/` : `${url.origin}/status?u=${user}`);
+
+// Görevli linki: antalyabb.sirangeldi.com/host#bambus.<anahtar>; alan adı yoksa oda id'si ile
+function hostLink(url, env, owner, r) {
+  if (env.BASE_DOMAIN && r.slug) return `https://${owner}.${env.BASE_DOMAIN}/host#${r.slug}.${r.key}`;
+  return `${url.origin}/host#${r.room}.${r.key}`;
 }
 
-// Ziyaretçiye açık sıra durumu sayfası: alt alan adı ya da ?r= ile
-function statusLink(url, env, ref) {
-  return env.BASE_DOMAIN && !ID_RE.test(ref) ? `https://${ref}.${env.BASE_DOMAIN}/` : `${url.origin}/status?r=${ref}`;
+// Ziyaretçiye açık sıra durumu sayfası: antalyabb.sirangeldi.com/bambus; sahipsiz eski oda bambus.sirangeldi.com
+function statusLink(url, env, owner, ref) {
+  if (!env.BASE_DOMAIN || ID_RE.test(ref)) return `${url.origin}/status?r=${ref}`;
+  return owner ? `https://${owner}.${env.BASE_DOMAIN}/${ref}` : `https://${ref}.${env.BASE_DOMAIN}/`;
+}
+
+// Süper yönetici: kullanıcı açar, şifre sıfırlar, siler; hesaplardan önceki sıraları bir kullanıcıya taşır
+async function usersApi(req, env, reg, url, body) {
+  const m = url.pathname.match(/^\/api\/admin\/users(?:\/([a-z0-9-]+)(?:\/(adopt))?)?$/);
+  if (!m) throw new Error("Geçersiz istek");
+  const [, name, op] = m;
+  if (!name && req.method === "GET") {
+    const users = (await reg.users()).map((u) => ({ ...u, link: accountLink(url, env, u.name) }));
+    return { users, unowned: (await reg.rooms(null)).length };
+  }
+  if (!name && req.method === "POST") await reg.createUser(userName(body.user), await credential(body.password));
+  else if (op === "adopt" && req.method === "POST") return { moved: await reg.adopt(name) };
+  else if (!op && req.method === "PUT") await reg.setPassword(name, await credential(body.password));
+  else if (!op && req.method === "DELETE") await reg.deleteUser(name);
+  else throw new Error("Geçersiz istek");
+  return { ok: true };
 }
 
 async function adminApi(req, env, url, body) {
-  if (!env.ADMIN_PASSWORD || !same(req.headers.get("x-admin"), env.ADMIN_PASSWORD)) throw new Error("Hatalı şifre");
+  const reg = env.REGISTRY.getByName("main"), owner = await auth(req, env, reg);
+  if (url.pathname === "/api/admin/me") return { user: owner, super: owner === SUPER, home: owner !== SUPER && accountLink(url, env, owner) };
+  if (owner === SUPER) {
+    if (url.pathname.startsWith("/api/admin/users")) return usersApi(req, env, reg, url, body);
+    throw new Error("Sıraları yönetmek için kullanıcı hesabıyla giriş yapın");
+  }
+  if (url.pathname === "/api/admin/password" && req.method === "POST") {
+    await reg.login(owner, String(body.old ?? ""));
+    const cred = await credential(body.password);
+    await reg.setPassword(owner, cred);
+    return session(owner, cred.hash); // eski oturumlar düştü, bu tarayıcı girişli kalsın
+  }
   const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import|reslug))?)?$/);
   if (!m) throw new Error("Geçersiz istek");
-  const [, id, op] = m, reg = env.REGISTRY.getByName("main");
+  const [, id, op] = m;
   if (!id && req.method === "GET") {
-    const ids = await reg.list();
-    const rooms = await Promise.all(ids.map((room) => env.ROOM.getByName(room).info().then((x) => ({ room, ...x }), () => null)));
-    return rooms.filter(Boolean).map((r) => ({ ...r, link: hostLink(url, env, r) }));
+    const list = await reg.rooms(owner);
+    const rooms = await Promise.all(list.map(({ id: room }) => env.ROOM.getByName(room).info().then((x) => ({ room, ...x }), () => null)));
+    return rooms.filter(Boolean).map((r) => ({ ...r, link: hostLink(url, env, owner, r), page: statusLink(url, env, owner, r.slug ?? r.room) }));
   }
   if (!id && req.method === "POST") {
     const fields = roomFields(body);
     const room = crypto.randomUUID().replaceAll("-", "").slice(0, 10);
-    await reg.claim(fields.slug, room);
+    await reg.claim(owner, fields.slug, room);
     const key = await env.ROOM.getByName(room).create(fields);
-    await reg.add(room);
+    await reg.add(room, owner);
     return { room, key };
   }
   const room = env.ROOM.getByName(id);
+  if (op === "import" && req.method === "POST") {
+    // Listede olmayan mevcut bir odayı (ör. görevli linkinden ID ile) listeye geri ekler; başka kullanıcının odası alınamaz
+    const { slug } = await room.info(); // oda yoksa "Sıra bulunamadı" fırlatır
+    if (await reg.value(id)) throw new Error("Sıra zaten listede");
+    if (slug) await reg.claim(owner, slug, id);
+    await reg.add(id, owner);
+    return { ok: true };
+  }
+  if (!(await reg.owns(id, owner))) throw new Error("Sıra bulunamadı");
   if (op === "rotate" && req.method === "POST") return { key: await room.rotate() };
   if (op === "reslug" && req.method === "POST") {
     // Gizli sıranın adresi sızarsa: yeni rastgele adres, eski adres ve ziyaretçi linkleri anında geçersiz olur
     const prev = await room.info();
     if (!prev.private) throw new Error("Yalnızca gizli sıraların adresi yenilenebilir");
     const slug = secretSlug();
-    await reg.claim(slug, id, prev.slug);
+    await reg.claim(owner, slug, id, prev.slug);
     await room.update({ slug });
     return { slug };
   }
-  if (op === "import" && req.method === "POST") {
-    // Listede olmayan mevcut bir odayı (ör. görevli linkinden ID ile) listeye geri ekler
-    await room.info(); // oda yoksa "Sıra bulunamadı" fırlatır
-    await reg.add(id);
-  } else if (!op && req.method === "PUT") {
+  if (!op && req.method === "PUT") {
     const prev = await room.info();
     const fields = roomFields(body, prev);
-    await reg.claim(fields.slug, id, prev.slug);
+    await reg.claim(owner, fields.slug, id, prev.slug);
     await room.update(fields);
   } else if (!op && req.method === "DELETE") {
     const { slug } = await room.info().catch(() => ({}));
     await room.destroy();
-    await reg.remove(id, slug);
+    await reg.remove(id, owner, slug);
   } else throw new Error("Geçersiz istek");
   return { ok: true };
+}
+
+const PAGES = new Set(["/join", "/host", "/status"]); // wrangler.jsonc'ta run_worker_first: eski adres yönlendirmesi için
+
+// Sayfa istekleri. Kök: alt alan adında kullanıcının sayfası / sıra durumu, ana alan adında tanıtım sitesi.
+// antalyabb.sirangeldi.com/bambus → sıra durumu. Hesaplardan önceki bambus.sirangeldi.com adresleri
+// sıra bir kullanıcıya taşındıysa antalyabb.sirangeldi.com'a yönlenir (basılı QR'lar ve görevli linkleri çalışmaya devam eder).
+async function page(req, env, url) {
+  const sub = subdomain(url, env), path = url.pathname;
+  if (!sub) return path === "/" ? env.ASSETS.fetch(new Request(new URL("/home", url), req)) : env.ASSETS.fetch(req);
+  const r = await env.REGISTRY.getByName("main").resolve(sub, url.searchParams.get("r") ?? "");
+  if (r.owner) {
+    const { slug } = await env.ROOM.getByName(r.room).status();
+    const to = new URL(url);
+    to.hostname = `${r.owner}.${url.hostname.slice(sub.length + 1)}`;
+    if (path === "/") to.pathname = `/${slug}`;
+    else to.searchParams.set("r", slug);
+    return Response.redirect(to, 302);
+  }
+  if (PAGES.has(path)) return env.ASSETS.fetch(req);
+  return env.ASSETS.fetch(new Request(new URL(`/status${url.search}`, url), req));
 }
 
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    // Kök adres: alt alan adında sıra durumu, ana alan adında tanıtım sitesi
-    // (public/ altında index.html yok, bu yüzden "/" statik dosyayla eşleşmez ve buraya gelir)
-    if (url.pathname === "/") return env.ASSETS.fetch(new Request(new URL(subdomain(url, env) ? "/status" : "/home", url), req));
     try {
+      if (!url.pathname.startsWith("/api/")) {
+        // Buraya yalnızca PAGES, kök ve eşleşen dosyası olmayan yollar gelir
+        if (PAGES.has(url.pathname) || url.pathname === "/" || (subdomain(url, env) && NAME_RE.test(url.pathname.slice(1)))) return await page(req, env, url);
+        return new Response("Not found", { status: 404 });
+      }
       const body = ["POST", "PUT"].includes(req.method) ? await req.json() : {};
-      if (url.pathname.startsWith("/api/admin/")) return Response.json(await adminApi(req, env, url, body));
+      const reg = env.REGISTRY.getByName("main");
+      if (url.pathname === "/api/login" && req.method === "POST") {
+        const name = String(body.user ?? "").trim().toLowerCase();
+        return Response.json(await session(name, await reg.login(name, String(body.password ?? ""), env.ADMIN_PASSWORD)));
+      }
+      if (url.pathname.startsWith("/api/admin/")) {
+        try {
+          return Response.json(await adminApi(req, env, url, body));
+        } catch (e) {
+          return Response.json({ error: e.message }, { status: e.message === AUTH_ERR ? 401 : 400 });
+        }
+      }
       if (url.pathname === "/api/rooms") {
-        // Herkese açık sıra listesi (tanıtım sitesindeki harita): yalnızca status() alanları, anahtar yok, gizli sıralar hariç
+        // Herkese açık sıra listesi (tanıtım sitesindeki harita, kullanıcı sayfası): yalnızca status() alanları, anahtar yok, gizli sıralar hariç
+        // ?u=: yalnızca o kullanıcının sıraları
         // ponytail: her istek tüm odalara sorar; yüzlerce sıra olursa listeyi Cache API ile 30 sn önbelleğe al
-        const ids = await env.REGISTRY.getByName("main").list();
-        const rooms = await Promise.all(ids.map((id) => env.ROOM.getByName(id).status()
-          .then((st) => ({ ...st, link: statusLink(url, env, st.slug ?? id) }), () => null)));
+        const list = await reg.rooms(url.searchParams.get("u") || undefined);
+        const rooms = await Promise.all(list.map(({ id, owner }) => env.ROOM.getByName(id).status()
+          .then((st) => ({ ...st, link: statusLink(url, env, owner, st.slug ?? id) }), () => null)));
         return Response.json(rooms.filter((r) => r && !r.private));
       }
       if (url.pathname === "/api/vapid") return Response.json({ key: env.VAPID_PUBLIC_KEY ?? null });
       if (url.pathname === "/api/resolve") {
-        // ?r= oda id'si ya da slug; yoksa alt alan adından (antalya-konserve.sirangeldi.com)
-        const ref = url.searchParams.get("r") || subdomain(url, env);
-        const room = ID_RE.test(ref) ? ref : ref && (await env.REGISTRY.getByName("main").resolve(ref));
-        if (!room) throw new Error("Sıra bulunamadı");
-        return Response.json({ room });
+        // ?r= oda id'si ya da slug, ?u= kullanıcı (yoksa alt alan adından: antalyabb.sirangeldi.com).
+        // r'siz kullanıcı adresi { account } döner: sayfa kullanıcının sıralarını listeler.
+        const r = await reg.resolve(url.searchParams.get("u") || subdomain(url, env), url.searchParams.get("r") ?? "");
+        if (!r.room && !r.account) throw new Error("Sıra bulunamadı");
+        return Response.json(r.account ? { account: r.account } : { room: r.room });
       }
       const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|push|admin|status)$/);
       if (!m) return new Response("Not found", { status: 404 });
