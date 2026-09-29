@@ -1,8 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { cleanSub, sendPush } from "./push.js";
 
-const TOKEN_TTL = 90_000; // QR token ömrü; görevli ekranı her 20 sn'de yeni kod gösterir
-const MAX_GROUP = 8;
+const TTLS = [60, 90, 180, 300]; // seçilebilir QR geçerlilik süreleri (sn); görevli ekranı süre/4'te bir yeni kod gösterir
+const MAX_GROUP = 8; // varsayılan en büyük grup
+const GROUP_LIMIT = 20;
+const CATEGORIES = new Set(["plaj", "iskele", "gise", "restoran", "saglik", "resmi", "etkinlik", "diger"]); // ikonları public/app.js'te
 const MAX_ENTRIES = 1000;
 
 const enc = (s) => new TextEncoder().encode(String(s ?? ""));
@@ -33,6 +35,11 @@ const int = (v, min, max, msg) => {
 
 // Grubun kabul ettiği yer sayıları (ör. 4 kişi: [2, 4]). Esnek olmayan sırada ve eski kayıtlarda yalnızca grup büyüklüğü.
 const acceptOf = (e) => e.accept ?? [e.size];
+
+// Sonradan eklenen oda ayarları; eski kayıtlarda alan yoksa varsayılan
+const conf = (s) => ({
+  category: s.category ?? "diger", maxGroup: s.maxGroup ?? MAX_GROUP, qr: s.qr ?? "dynamic", ttl: s.ttl ?? 90,
+});
 
 // Boş yere sığan en büyük kabul edilen yer sayısı; hiçbiri sığmıyorsa null
 function fit(e, available) {
@@ -72,7 +79,7 @@ export class Room extends DurableObject {
   info() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
-      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, radius: s.radius, flex: !!s.flex, key: s.key,
+      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, radius: s.radius, flex: !!s.flex, private: !!s.private, key: s.key, ...conf(s),
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), called: s.entries.length - w.length,
     };
   }
@@ -81,7 +88,8 @@ export class Room extends DurableObject {
   status() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
-      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, flex: !!s.flex,
+      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, flex: !!s.flex, private: !!s.private,
+      category: conf(s).category, maxGroup: conf(s).maxGroup,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), next: w[0]?.no ?? null,
       called: s.entries.filter((e) => e.status === "called").map((e) => e.no), lastNo: s.lastNo ?? null,
     };
@@ -104,16 +112,29 @@ export class Room extends DurableObject {
     this.s = undefined;
   }
 
-  async join({ t, lat, lng, size, accept, device }) {
+  // Sabit QR: "s.<imza>", yazdırılıp asılabilir; yalnızca oda sabit moddayken ve anahtar değişmedikçe geçerli
+  async token() {
     const s = this.need();
+    if (conf(s).qr === "static") return `s.${await sign(s.key, "static")}`;
+    const ts = String(Date.now());
+    return `${ts}.${await sign(s.key, ts)}`;
+  }
+
+  async join({ t, lat, lng, size, accept, device }) {
+    const s = this.need(), c = conf(s);
     const [ts, sig] = String(t).split(".");
-    const age = Date.now() - Number(ts);
-    if (!(age > -5000 && age < TOKEN_TTL) || !same(sig, await sign(s.key, ts)))
-      throw new Error("QR kodunun süresi dolmuş. Görevlinin ekranındaki kodu yeniden okutun.");
+    if (ts === "s") {
+      if (c.qr !== "static" || !same(sig, await sign(s.key, "static")))
+        throw new Error("Bu QR kodu artık geçerli değil. Görevliden güncel kodu isteyin.");
+    } else {
+      const age = Date.now() - Number(ts);
+      if (!(age > -5000 && age < c.ttl * 1000) || !same(sig, await sign(s.key, ts)))
+        throw new Error("QR kodunun süresi dolmuş. Görevlinin ekranındaki kodu yeniden okutun.");
+    }
     if (!(meters(s, { lat: Number(lat), lng: Number(lng) }) <= s.radius))
       throw new Error("Sıranın bulunduğu yerde görünmüyorsunuz. Konum izniniz açık olmalı ve orada olmalısınız.");
     if (typeof device !== "string" || device.length < 16) throw new Error("Geçersiz cihaz");
-    size = int(size, 1, MAX_GROUP, `Grup 1-${MAX_GROUP} kişi olmalı`);
+    size = int(size, 1, c.maxGroup, `Grup 1-${c.maxGroup} kişi olmalı`);
     accept = acceptList(accept, size, s.flex);
     // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner
     const e = s.entries.find((x) => x.device === device) ?? this.add(size, accept, "qr", device);
@@ -220,7 +241,7 @@ export class Room extends DurableObject {
       case "arrived": s.entries = s.entries.filter((x) => x !== e); break;
       case "drop": this.drop(id); break;
       case "add": {
-        const sz = int(size, 1, MAX_GROUP, "Geçersiz grup");
+        const sz = int(size, 1, conf(s).maxGroup, "Geçersiz grup");
         added = this.add(sz, acceptList(accept, sz, s.flex), "manual", null, String(note ?? "").slice(0, 60));
         break;
       }
@@ -229,10 +250,10 @@ export class Room extends DurableObject {
     this.fill();
     if (action) await this.save();
     await this.notify();
-    const ts = String(Date.now());
+    const { qr, ttl, maxGroup } = conf(s);
     return {
-      name: s.name, flex: !!s.flex, available: s.available, added: added?.no,
-      token: `${ts}.${await sign(s.key, ts)}`,
+      name: s.name, flex: !!s.flex, available: s.available, added: added?.no, qr, ttl, maxGroup,
+      token: await this.token(),
       entries: s.entries.map(({ device, push, ...x }) => x),
     };
   }
@@ -269,16 +290,29 @@ function subdomain(url, env) {
   return RESERVED.has(sub) ? "" : sub;
 }
 
-function roomFields(b) {
+// Gizli sıranın adresi: 20 karakter [a-z0-9] (~103 bit), tahmin edilemez; slug kuralına uyar, ID_RE'ye uymaz
+function secretSlug() {
+  const abc = "abcdefghijklmnopqrstuvwxyz0123456789";
+  return [...crypto.getRandomValues(new Uint8Array(20))].map((b) => abc[b % 36]).join("");
+}
+
+// prev: düzenlenen odanın mevcut bilgisi. Gizli oda gizli kaldıkça adresi korunur, gizliye geçerken yenisi üretilir.
+function roomFields(b, prev) {
   const lat = Number(b.lat), lng = Number(b.lng);
   if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) throw new Error("Geçersiz konum");
-  const slug = String(b.slug ?? "").trim();
+  const hidden = b.private === true || b.private === "on"; // haritada/listede görünmez, adresi rastgele
+  const slug = hidden ? (prev?.private && prev.slug) || secretSlug() : String(b.slug ?? "").trim();
   if (!/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(slug) || ID_RE.test(slug) || RESERVED.has(slug))
     throw new Error("Geçersiz adres: 3-40 karakter, küçük harf, rakam ve tire");
   return {
+    private: hidden,
     name: String(b.name ?? "").trim().slice(0, 60) || "Sıra",
     slug, lat, lng, radius: int(b.radius, 50, 2000, "Yarıçap 50-2000 m olmalı"),
     flex: b.flex === true || b.flex === "on", // grup, kişi sayısından az yeri de kabul edebilir (plaj şezlongu gibi)
+    category: CATEGORIES.has(b.category) ? b.category : "diger",
+    maxGroup: int(b.maxGroup ?? MAX_GROUP, 1, GROUP_LIMIT, `Grup büyüklüğü 1-${GROUP_LIMIT} kişi olmalı`),
+    qr: b.qr === "static" ? "static" : "dynamic", // sabit: basılı QR, giriş yalnızca konumla sınırlı
+    ttl: TTLS.includes(Number(b.ttl)) ? Number(b.ttl) : 90,
   };
 }
 
@@ -295,7 +329,7 @@ function statusLink(url, env, ref) {
 
 async function adminApi(req, env, url, body) {
   if (!env.ADMIN_PASSWORD || !same(req.headers.get("x-admin"), env.ADMIN_PASSWORD)) throw new Error("Hatalı şifre");
-  const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import))?)?$/);
+  const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import|reslug))?)?$/);
   if (!m) throw new Error("Geçersiz istek");
   const [, id, op] = m, reg = env.REGISTRY.getByName("main");
   if (!id && req.method === "GET") {
@@ -313,13 +347,23 @@ async function adminApi(req, env, url, body) {
   }
   const room = env.ROOM.getByName(id);
   if (op === "rotate" && req.method === "POST") return { key: await room.rotate() };
+  if (op === "reslug" && req.method === "POST") {
+    // Gizli sıranın adresi sızarsa: yeni rastgele adres, eski adres ve ziyaretçi linkleri anında geçersiz olur
+    const prev = await room.info();
+    if (!prev.private) throw new Error("Yalnızca gizli sıraların adresi yenilenebilir");
+    const slug = secretSlug();
+    await reg.claim(slug, id, prev.slug);
+    await room.update({ slug });
+    return { slug };
+  }
   if (op === "import" && req.method === "POST") {
     // Listede olmayan mevcut bir odayı (ör. görevli linkinden ID ile) listeye geri ekler
     await room.info(); // oda yoksa "Sıra bulunamadı" fırlatır
     await reg.add(id);
   } else if (!op && req.method === "PUT") {
-    const fields = roomFields(body);
-    await reg.claim(fields.slug, id, (await room.info()).slug);
+    const prev = await room.info();
+    const fields = roomFields(body, prev);
+    await reg.claim(fields.slug, id, prev.slug);
     await room.update(fields);
   } else if (!op && req.method === "DELETE") {
     const { slug } = await room.info().catch(() => ({}));
@@ -339,12 +383,12 @@ export default {
       const body = ["POST", "PUT"].includes(req.method) ? await req.json() : {};
       if (url.pathname.startsWith("/api/admin/")) return Response.json(await adminApi(req, env, url, body));
       if (url.pathname === "/api/rooms") {
-        // Herkese açık sıra listesi (tanıtım sitesindeki harita): yalnızca status() alanları, anahtar yok
+        // Herkese açık sıra listesi (tanıtım sitesindeki harita): yalnızca status() alanları, anahtar yok, gizli sıralar hariç
         // ponytail: her istek tüm odalara sorar; yüzlerce sıra olursa listeyi Cache API ile 30 sn önbelleğe al
         const ids = await env.REGISTRY.getByName("main").list();
         const rooms = await Promise.all(ids.map((id) => env.ROOM.getByName(id).status()
           .then((st) => ({ ...st, link: statusLink(url, env, st.slug ?? id) }), () => null)));
-        return Response.json(rooms.filter(Boolean));
+        return Response.json(rooms.filter((r) => r && !r.private));
       }
       if (url.pathname === "/api/vapid") return Response.json({ key: env.VAPID_PUBLIC_KEY ?? null });
       if (url.pathname === "/api/resolve") {

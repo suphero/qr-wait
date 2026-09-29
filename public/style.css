@@ -42,10 +42,18 @@ a.button { display: inline-block; text-align: center; text-decoration: none; pad
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
 .chip { background: var(--ok); color: #fff; font-weight: 800; font-size: 1.6rem; padding: 6px 16px; border-radius: 10px; font-variant-numeric: tabular-nums; }
 .mine { display: block; background: var(--ok); color: #fff; text-decoration: none; }
-input[type=checkbox] { width: auto; margin: 0; }
+input[type=checkbox], input[type=radio] { width: auto; margin: 0; }
+fieldset { border: 1px solid #e2e8f0; border-radius: 10px; padding: 4px 12px; margin: 12px 0; }
+label > .muted { display: block; margin-top: 4px; }
 .picks { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
 .pick { display: inline-flex; align-items: center; gap: 8px; margin: 0; padding: 10px 16px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; font-weight: 600; cursor: pointer; }
 .pick:has(input:checked) { border-color: var(--sea); background: #e0f2fe; }
 .check { display: flex; gap: 10px; align-items: flex-start; }
 .check input { margin-top: 4px; }
 body.called #pushBtn { display: none; }
+/* Sabit QR yazdırma: yalnızca QR kartı */
+@media print {
+  body { background: #fff; }
+  main > :not(#qrCard, h1), #qrCard button, #qrNote { display: none !important; }
+  #qrCard { box-shadow: none; }
+}

@@ -17,7 +17,7 @@
 
   <section id="joinView" class="card" hidden>
     <label>Kaç kişisiniz?
-      <select id="size"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
+      <select id="size"></select>
     </label>
     <div id="acceptBox" hidden>
       <p><b>Kaç yer olursa kabul edersiniz?</b> Birden fazla seçebilirsiniz.</p>
@@ -46,7 +46,7 @@ const ref = q.get("r") ?? "", token = q.get("t");
 let room, slot; // açılışta slug/alt alan adından çözülür
 let device = localStorage.getItem("device");
 if (!device) localStorage.setItem("device", device = crypto.randomUUID());
-let notified = false, pushShown = false;
+let notified = false, pushShown = false, icon = "";
 navigator.serviceWorker?.register("sw.js");
 const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
@@ -119,7 +119,7 @@ async function refresh() {
   if (!id) return show(token ? "join" : null);
   try {
     const s = await api(`/api/r/${room}/me?id=${encodeURIComponent(id)}`);
-    $("#name").textContent = s.name;
+    $("#name").textContent = icon + s.name;
     $("#err").textContent = "";
     if (s.status === "gone") {
       localStorage.removeItem(slot);
@@ -175,8 +175,11 @@ api(`/api/resolve?r=${encodeURIComponent(ref)}`).then((r) => {
   slot = "ticket:" + room;
   // iOS ana ekran uygulaması ilk açılışta bileti adresten alır (bkz. pushUI)
   if (q.get("k") && !localStorage.getItem(slot)) localStorage.setItem(slot, q.get("k"));
+  renderSizes($("#size"), 8);
   api(`/api/r/${room}/status`).then((st) => {
-    $("#name").textContent = st.name;
+    icon = `${catIcon(st.category)} `;
+    $("#name").textContent = icon + st.name;
+    renderSizes($("#size"), st.maxGroup);
     if (!st.flex) return;
     $("#acceptBox").hidden = false;
     renderAccept($("#accept"), +$("#size").value);

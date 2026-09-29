@@ -30,8 +30,13 @@
     <form id="f" class="card" hidden>
       <h2 id="formTitle"></h2>
       <label>Sıra adı <input name="name" required maxlength="60" placeholder="ör. Konyaaltı Halk Plajı, Kadıköy İskelesi"></label>
+      <label>Kategori <select name="category" id="category"></select></label>
+      <label class="check"><input type="checkbox" name="private"> <span><b>Gizli sıra</b><br><span class="muted">Tanıtım sitesindeki haritada ve listede görünmez. Web adresi tahmin edilemeyecek rastgele bir değer olur; yalnızca linki paylaştığınız kişiler ulaşabilir.</span></span></label>
+      <div id="slugBox">
       <label>Web adresi (slug) <input name="slug" required minlength="3" maxlength="40" pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve"></label>
       <p class="muted">Küçük harf, rakam ve tire. Sıranın web adresi olur: <b id="slugPreview"></b></p>
+      </div>
+      <p id="secretNote" class="muted" hidden></p>
       <label>Adres ara
         <div class="row"><input id="q" placeholder="ör. Konyaaltı, Antalya"><button type="button" id="qBtn" style="flex:0 0 auto;width:auto">Ara</button></div>
       </label>
@@ -41,6 +46,17 @@
       <label>Kabul yarıçapı (metre) <input name="radius" type="number" value="300" min="50" max="2000" required></label>
       <label class="check"><input type="checkbox" name="flex"> <span><b>Esnek yer seçimi</b><br><span class="muted">Gruplar kişi sayısından az yeri de kabul edebilir. Örneğin plajda 4 kişilik grup 2 veya 4 şezlonga razı olabilir. Otobüs ya da gişe sıralarında kapalı bırakın.</span></span></label>
       <p class="muted">Ziyaretçiler yalnızca dairenin içindeyken sıraya girebilir. Telefon GPS'i 20-50 m sapabilir, daireyi alandan biraz geniş tutun.</p>
+      <label>Bir grupta en fazla kaç kişi olabilir? <input name="maxGroup" type="number" value="8" min="1" max="20" required inputmode="numeric"></label>
+      <p class="muted">Sıraya girerken ve elle eklerken 1'den bu sayıya kadar seçilebilir. Tek kişilik sıralarda (gişe, muayene) 1 yapın.</p>
+      <fieldset>
+        <legend><b>QR kodu</b></legend>
+        <label class="check"><input type="radio" name="qr" value="dynamic" checked> <span><b>Değişen QR (önerilen)</b><br><span class="muted">Görevli ekranında gösterilir ve sürekli yenilenir. Fotoğrafı çekilip sonradan kullanılamaz.</span></span></label>
+        <label id="ttlBox">Her kod ne kadar geçerli?
+          <select name="ttl"><option value="60">60 saniye</option><option value="90" selected>90 saniye</option><option value="180">3 dakika</option><option value="300">5 dakika</option></select>
+          <span class="muted">Ekran, sürenin dörtte birinde yeni kod gösterir. Okutan kişiye formu doldurmak için en az sürenin dörtte üçü kalır. İnternet ya da konum yavaşsa uzatın.</span>
+        </label>
+        <label class="check"><input type="radio" name="qr" value="static"> <span><b>Sabit QR</b><br><span class="muted">Görevli ekranı gerekmez: kodu yazdırıp asabilirsiniz. Kod değişmez, bu yüzden sıraya girişi yalnızca konum kontrolü sınırlar. "Linki yenile" eski basılı kodu geçersiz kılar.</span></span></label>
+      </fieldset>
       <div class="row">
         <button type="button" class="secondary" id="cancelBtn">Vazgeç</button>
         <button>Kaydet</button>
@@ -71,13 +87,14 @@ async function load() {
   $("#app").hidden = false;
   $("#list").innerHTML = rooms.map((r) => `
     <div class="card">
-      <b>${esc(r.name)}</b> <span class="muted">${r.slug ? esc(r.slug) : "⚠ adres yok, Düzenle ile ekleyin"}</span>
-      <p class="muted">${r.waiting} grup / ${r.people} kişi bekliyor · ${r.called} çağrıldı · ${r.radius} m${r.flex ? " · esnek yer" : ""}</p>
+      <b>${catIcon(r.category)} ${esc(r.name)}</b> <span class="muted">${r.private ? "🔒 gizli" : r.slug ? esc(r.slug) : "⚠ adres yok, Düzenle ile ekleyin"}</span>
+      <p class="muted">${r.waiting} grup / ${r.people} kişi bekliyor · ${r.called} çağrıldı · ${r.radius} m · en fazla ${r.maxGroup} kişi${r.flex ? " · esnek yer" : ""} · ${r.qr === "static" ? "sabit QR" : `QR ${r.ttl} sn`}</p>
       <div class="actions">
         <button data-act="copy" data-id="${r.room}">Görevli linkini kopyala</button>
         <a class="button secondary" href="${esc(r.link)}" target="_blank">Paneli aç</a>
         <button class="secondary" data-act="edit" data-id="${r.room}">Düzenle</button>
         <button class="secondary" data-act="rotate" data-id="${r.room}">Linki yenile</button>
+        ${r.private ? `<button class="secondary" data-act="reslug" data-id="${r.room}">Gizli adresi yenile</button>` : ""}
         <button class="bad" data-act="del" data-id="${r.room}">Sil</button>
       </div>
     </div>`).join("") || '<p class="muted">Henüz sıra yok. + Yeni sıra ile ilk sıranızı oluşturun.</p>';
@@ -108,8 +125,11 @@ $("#list").onclick = async (ev) => {
       b.textContent = "Kopyalandı ✓";
       setTimeout(() => (b.textContent = "Görevli linkini kopyala"), 1500);
     } else if (b.dataset.act === "edit") openForm(r);
-    else if (b.dataset.act === "rotate" && confirm(`"${r.name}" için yeni görevli linki oluşturulacak. Eski link ve ekrandaki QR hemen çalışmaz hale gelir. Devam?`)) {
+    else if (b.dataset.act === "rotate" && confirm(`"${r.name}" için yeni görevli linki oluşturulacak. Eski link ve ${r.qr === "static" ? "basılı QR'lar" : "ekrandaki QR"} hemen çalışmaz hale gelir. Devam?`)) {
       await adm(`/${r.room}/rotate`, {});
+      await load();
+    } else if (b.dataset.act === "reslug" && confirm(`"${r.name}" için yeni gizli adres oluşturulacak. Eski adres, görevli linki ve ekrandaki QR hemen çalışmaz hale gelir; sıradakilerin açık sayfaları çalışmaya devam eder. Devam?`)) {
+      await adm(`/${r.room}/reslug`, {});
       await load();
     } else if (b.dataset.act === "del" && confirm(`"${r.name}" silinecek. Sıradaki herkes düşer. Emin misiniz?`)) {
       await adm(`/${r.room}`, undefined, "DELETE");
@@ -139,11 +159,19 @@ function openForm(r) {
   editing = r?.room ?? null;
   $("#formTitle").textContent = r ? `Düzenle: ${r.name}` : "Yeni sıra";
   $("[name=name]").value = r?.name ?? "";
-  $("[name=slug]").value = r?.slug ?? "";
-  slugTouched = !!r; // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
+  $("[name=slug]").value = r?.private ? "" : r?.slug ?? ""; // gizli odanın rastgele adresi açık adrese taşınmasın
+  $("[name=private]").checked = !!r?.private;
+  $("#secretNote").textContent = r?.private ? `Mevcut gizli adres korunur: ${r.slug}` : "Kaydedince rastgele bir adres üretilir.";
+  toggleSlug();
+  slugTouched = !!r?.slug && !r.private; // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
   previewSlug();
   $("[name=radius]").value = r?.radius ?? 300;
   $("[name=flex]").checked = !!r?.flex;
+  $("[name=category]").value = r?.category ?? "diger";
+  $("[name=maxGroup]").value = r?.maxGroup ?? 8;
+  $(`[name=qr][value=${r?.qr ?? "dynamic"}]`).checked = true;
+  $("[name=ttl]").value = r?.ttl ?? 90;
+  toggleTtl();
   $("#q").value = "";
   $("#f").hidden = false;
   $("#f").scrollIntoView({ behavior: "smooth" });
@@ -175,6 +203,16 @@ $("#meBtn").onclick = async () => {
     map.fitBounds(circle.getBounds());
   } catch (e) { $("#pos").textContent = e.message; }
 };
+function toggleSlug() {
+  const hidden = $("[name=private]").checked;
+  $("#slugBox").hidden = hidden;
+  $("[name=slug]").disabled = hidden; // gizliyken zorunlu alan doğrulaması ve gönderim dışı
+  $("#secretNote").hidden = !hidden;
+}
+$("[name=private]").onchange = toggleSlug;
+function toggleTtl() { $("#ttlBox").hidden = $("[name=qr]:checked").value === "static"; }
+for (const el of document.querySelectorAll("[name=qr]")) el.onchange = toggleTtl;
+$("#category").innerHTML = Object.entries(CATEGORIES).map(([k, [i, t]]) => `<option value="${k}">${i} ${t}</option>`).join("");
 function previewSlug() { $("#slugPreview").textContent = $("[name=slug]").value || "…"; }
 $("[name=name]").oninput = () => { if (!slugTouched) $("[name=slug]").value = slugify($("[name=name]").value); previewSlug(); };
 $("[name=slug]").oninput = () => { slugTouched = true; previewSlug(); };
@@ -185,8 +223,9 @@ $("#f").onsubmit = async (ev) => {
   ev.preventDefault();
   if (!pt) return ($("#err").textContent = "Haritadan sıranın konumunu seçin.");
   const body = { ...Object.fromEntries(new FormData(ev.target)), ...pt };
-  const old = rooms.find((r) => r.room === editing)?.slug;
-  if (old && old !== body.slug && !confirm("Adres değişirse eski görevli linki ve ekrandaki QR çalışmaz. Görevlilere yeni linki göndermeniz gerekir. Devam?")) return;
+  const prev = rooms.find((r) => r.room === editing);
+  const changed = prev?.slug && (body.private ? !prev.private : prev.slug !== body.slug);
+  if (changed && !confirm("Adres değişirse eski görevli linki ve ekrandaki QR çalışmaz. Görevlilere yeni linki göndermeniz gerekir. Devam?")) return;
   try {
     await (editing ? adm(`/${editing}`, body, "PUT") : adm("", body));
     $("#f").hidden = true;

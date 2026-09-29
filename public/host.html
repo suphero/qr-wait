@@ -19,7 +19,11 @@
   <div id="qrCard" class="card center">
     <div id="qr"></div>
     <p><b>Sıraya girmek için telefon kameranızla okutun</b></p>
-    <button class="secondary" id="fullBtn">Tam ekran QR</button>
+    <p id="qrNote" class="muted" hidden>Bu QR sabittir, değişmez. Yazdırıp sıranın başına asabilirsiniz.</p>
+    <div class="row">
+      <button class="secondary" id="fullBtn">Tam ekran QR</button>
+      <button class="secondary" id="printBtn" hidden>Yazdır</button>
+    </div>
   </div>
 
   <div class="card">
@@ -44,7 +48,7 @@
   <div class="card">
     <h2>Elle ekle (telefonu olmayanlar için)</h2>
     <div class="row">
-      <select id="addSize"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
+      <select id="addSize"></select>
       <input id="addNote" placeholder="Not (ör. şapkalı amca)" maxlength="60">
     </div>
     <div id="addAcceptBox" hidden>
@@ -62,7 +66,7 @@
 const hash = location.hash.slice(1), dot = hash.indexOf(".");
 const ref = dot < 0 ? "" : hash.slice(0, dot), key = hash.slice(dot + 1);
 let room; // açılışta çözülen oda id'si; slug sonradan değişse de açık panel çalışmaya devam eder
-let qr, qrAt = 0;
+let qr, qrAt = 0, qrText, maxGroup;
 
 async function act(body = {}) {
   try {
@@ -75,10 +79,19 @@ async function act(body = {}) {
 
 function render(s) {
   $("#name").textContent = s.name;
-  if (Date.now() - qrAt > 20000) {
+  // Değişen QR: sürenin dörtte birinde bir yeni kod (okutana sürenin en az 3/4'ü kalır). Sabit QR: yalnızca değişirse.
+  const fixed = s.qr === "static";
+  if (fixed ? s.token !== qrText : qrText?.startsWith("s.") || Date.now() - qrAt > s.ttl * 250) {
     const url = `${location.origin}/join?${ref ? `r=${ref}&` : ""}t=${s.token}`;
     qr ? qr.makeCode(url) : (qr = new QRCode($("#qr"), { text: url, width: 360, height: 360, correctLevel: QRCode.CorrectLevel.M }));
     qrAt = Date.now();
+    qrText = s.token;
+  }
+  $("#qrNote").hidden = $("#printBtn").hidden = !fixed;
+  if (s.maxGroup !== maxGroup) {
+    maxGroup = s.maxGroup;
+    renderSizes($("#addSize"), maxGroup);
+    if (s.flex) renderAccept($("#addAccept"), +$("#addSize").value);
   }
   const waiting = s.entries.filter((e) => e.status === "waiting");
   const called = s.entries.filter((e) => e.status === "called");
@@ -115,6 +128,7 @@ $("#addBtn").onclick = async () => {
 };
 $("#resetBtn").onclick = () => confirm("Tüm sıra silinecek. Emin misiniz?") && act({ action: "reset" });
 $("#fullBtn").onclick = () => $("#qrCard").classList.toggle("full");
+$("#printBtn").onclick = () => print();
 
 api(`/api/resolve?r=${encodeURIComponent(ref)}`)
   .then((r) => { room = r.room; act(); setInterval(act, 4000); })

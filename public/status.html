@@ -50,7 +50,7 @@ async function refresh(room) {
   try {
     const s = await api(`/api/r/${room}/status`);
     document.title = `${s.name} · Sıra durumu`;
-    $("#name").textContent = s.name;
+    $("#name").textContent = `${catIcon(s.category)} ${s.name}`;
     $("#waiting").textContent = s.waiting;
     $("#waitingText").innerHTML = s.waiting ? `grup sırada bekliyor, toplam <b>${s.people}</b> kişi` : "Şu an sırada bekleyen yok.";
     $("#called").innerHTML = s.called.map((n) => `<span class="chip">${n}</span>`).join("") || '<p class="muted">Şu an çağrılan yok.</p>';

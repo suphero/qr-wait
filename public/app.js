@@ -24,6 +24,19 @@ function renderAccept(el, size) {
   el.innerHTML = Array.from({ length: size }, (_, i) => i + 1)
     .map((n) => `<label class="pick"><input type="checkbox" value="${n}"${n === size ? " checked" : ""}> ${n}</label>`).join("");
 }
+// Grup büyüklüğü seçimi: 1..max, varsayılan 2 (tek kişilik sırada 1)
+function renderSizes(el, max) {
+  const cur = +el.value || 2;
+  el.innerHTML = Array.from({ length: max }, (_, i) => i + 1)
+    .map((n) => `<option${n === Math.min(cur, max) ? " selected" : ""}>${n}</option>`).join("");
+}
+
+// Sıra kategorileri; anahtarlar src/index.js'teki CATEGORIES ile aynı
+const CATEGORIES = {
+  plaj: ["🏖️", "Plaj"], iskele: ["⛴️", "İskele / ulaşım"], gise: ["🎫", "Gişe"], restoran: ["🍽️", "Restoran / kafe"],
+  saglik: ["🏥", "Sağlık"], resmi: ["🏛️", "Resmi daire"], etkinlik: ["🎪", "Etkinlik"], diger: ["📍", "Diğer"],
+};
+const catIcon = (c) => (CATEGORIES[c] ?? CATEGORIES.diger)[0];
 const readAccept = (el) => [...el.querySelectorAll("input:checked")].map((i) => +i.value);
 const orList = (a) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} veya ${a.at(-1)}` : String(a[0]));
 
