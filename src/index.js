@@ -30,6 +30,22 @@ const int = (v, min, max, msg) => {
   return n;
 };
 
+// Grubun kabul ettiği yer sayıları (ör. 4 kişi: [2, 4]). Esnek olmayan sırada ve eski kayıtlarda yalnızca grup büyüklüğü.
+const acceptOf = (e) => e.accept ?? [e.size];
+
+// Boş yere sığan en büyük kabul edilen yer sayısı; hiçbiri sığmıyorsa null
+function fit(e, available) {
+  const ok = acceptOf(e).filter((a) => a <= available);
+  return ok.length ? Math.max(...ok) : null;
+}
+
+function acceptList(accept, size, flex) {
+  if (!flex) return [size];
+  const list = [...new Set([].concat(accept ?? size).map(Number))].filter((a) => Number.isInteger(a) && a >= 1 && a <= size);
+  if (!list.length) throw new Error("Kabul ettiğiniz en az bir yer sayısı seçin");
+  return list.sort((a, b) => a - b);
+}
+
 // Sıra başına bir oda (plaj, iskele, gişe…). Tüm durum tek bir kayıtta tutulur.
 // ponytail: tek kayıtta tüm durum, MAX_ENTRIES ile sınırlı; binlerce kişi olursa SQL tablolarına geç.
 export class Room extends DurableObject {
@@ -55,7 +71,7 @@ export class Room extends DurableObject {
   info() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
-      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, radius: s.radius, key: s.key,
+      name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, radius: s.radius, flex: !!s.flex, key: s.key,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), called: s.entries.length - w.length,
     };
   }
@@ -64,7 +80,7 @@ export class Room extends DurableObject {
   status() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
-      name: s.name, lat: s.lat, lng: s.lng,
+      name: s.name, lat: s.lat, lng: s.lng, flex: !!s.flex,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), next: w[0]?.no ?? null,
       called: s.entries.filter((e) => e.status === "called").map((e) => e.no), lastNo: s.lastNo ?? null,
     };
@@ -87,7 +103,7 @@ export class Room extends DurableObject {
     this.s = undefined;
   }
 
-  async join({ t, lat, lng, size, device }) {
+  async join({ t, lat, lng, size, accept, device }) {
     const s = this.need();
     const [ts, sig] = String(t).split(".");
     const age = Date.now() - Number(ts);
@@ -97,15 +113,16 @@ export class Room extends DurableObject {
       throw new Error("Sıranın bulunduğu yerde görünmüyorsunuz. Konum izniniz açık olmalı ve orada olmalısınız.");
     if (typeof device !== "string" || device.length < 16) throw new Error("Geçersiz cihaz");
     size = int(size, 1, MAX_GROUP, `Grup 1-${MAX_GROUP} kişi olmalı`);
+    accept = acceptList(accept, size, s.flex);
     // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner
-    const e = s.entries.find((x) => x.device === device) ?? this.add(size, "qr", device);
+    const e = s.entries.find((x) => x.device === device) ?? this.add(size, accept, "qr", device);
     await this.save();
     return { id: e.id, no: e.no };
   }
 
-  add(size, src, device = null, note = "") {
+  add(size, accept, src, device = null, note = "") {
     if (this.s.entries.length >= MAX_ENTRIES) throw new Error("Sıra dolu");
-    const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, src, device, note, status: "waiting", at: Date.now() };
+    const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, accept, src, device, note, status: "waiting", at: Date.now() };
     this.s.entries.push(e);
     return e;
   }
@@ -117,7 +134,7 @@ export class Room extends DurableObject {
     const e = s.entries[i];
     const ahead = s.entries.slice(0, i).filter((x) => x.status === "waiting");
     return {
-      name: s.name, no: e.no, size: e.size, status: e.status, calledAt: e.calledAt,
+      name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, status: e.status, calledAt: e.calledAt,
       aheadGroups: ahead.length, aheadPeople: ahead.reduce((n, x) => n + x.size, 0),
     };
   }
@@ -130,11 +147,13 @@ export class Room extends DurableObject {
     return { ok: true };
   }
 
+  // Sığan en büyük seçenek ayrılır; görevli sığmayan birini elle çağırırsa en küçük seçenek
   call(e) {
     e.status = "called";
     e.calledAt = Date.now();
+    e.alloc = fit(e, this.s.available) ?? Math.min(...acceptOf(e));
     this.s.lastNo = e.no;
-    this.s.available = Math.max(0, this.s.available - e.size);
+    this.s.available = Math.max(0, this.s.available - e.alloc);
   }
 
   // Sıradan çıkarma. Çağrılmış ama gelmemiş biri çıkarsa, ayrılan yerleri boşa döner.
@@ -142,7 +161,7 @@ export class Room extends DurableObject {
     const i = this.s.entries.findIndex((e) => e.id === id);
     if (i < 0) return;
     const [e] = this.s.entries.splice(i, 1);
-    if (e.status === "called") this.s.available += e.size;
+    if (e.status === "called") this.s.available += e.alloc ?? e.size;
   }
 
   // Boş yer (this.s.available) varken bekleyenleri çağırır.
@@ -151,12 +170,12 @@ export class Room extends DurableObject {
   fill() {
     for (const e of this.s.entries) {
       if (e.status !== "waiting") continue;
-      if (e.size > this.s.available) break;
+      if (fit(e, this.s.available) === null) break;
       this.call(e);
     }
   }
 
-  async admin(key, { action, id, n, size, note }) {
+  async admin(key, { action, id, n, size, accept, note }) {
     const s = this.need();
     if (!same(key, s.key)) throw new Error("Yetkisiz");
     const e = s.entries.find((x) => x.id === id);
@@ -167,14 +186,18 @@ export class Room extends DurableObject {
       case "call": if (e?.status === "waiting") this.call(e); break;
       case "arrived": s.entries = s.entries.filter((x) => x !== e); break;
       case "drop": this.drop(id); break;
-      case "add": added = this.add(int(size, 1, MAX_GROUP, "Geçersiz grup"), "manual", null, String(note ?? "").slice(0, 60)); break;
+      case "add": {
+        const sz = int(size, 1, MAX_GROUP, "Geçersiz grup");
+        added = this.add(sz, acceptList(accept, sz, s.flex), "manual", null, String(note ?? "").slice(0, 60));
+        break;
+      }
       case "reset": Object.assign(s, { seq: 0, available: 0, entries: [] }); break;
     }
     this.fill();
     if (action) await this.save();
     const ts = String(Date.now());
     return {
-      name: s.name, available: s.available, added: added?.no,
+      name: s.name, flex: !!s.flex, available: s.available, added: added?.no,
       token: `${ts}.${await sign(s.key, ts)}`,
       entries: s.entries.map(({ device, ...x }) => x),
     };
@@ -221,6 +244,7 @@ function roomFields(b) {
   return {
     name: String(b.name ?? "").trim().slice(0, 60) || "Sıra",
     slug, lat, lng, radius: int(b.radius, 50, 2000, "Yarıçap 50-2000 m olmalı"),
+    flex: b.flex === true || b.flex === "on", // grup, kişi sayısından az yeri de kabul edebilir (plaj şezlongu gibi)
   };
 }
 

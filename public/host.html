@@ -20,7 +20,7 @@
   </div>
 
   <div class="card">
-    <h2>Kalkan kişi sayısı</h2>
+    <h2>Boşalan yer sayısı</h2>
     <div class="row">
       <input id="freeN" type="number" min="1" max="500" value="1" inputmode="numeric">
       <button id="freeBtn">Yer boşaldı, sıradakileri çağır</button>
@@ -43,6 +43,10 @@
     <div class="row">
       <select id="addSize"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
       <input id="addNote" placeholder="Not (ör. şapkalı amca)" maxlength="60">
+    </div>
+    <div id="addAcceptBox" hidden>
+      <p class="muted">Kaç yer olursa kabul ediyorlar?</p>
+      <div id="addAccept" class="picks"></div>
     </div>
     <button id="addBtn">Sıraya ekle</button>
   </div>
@@ -79,7 +83,15 @@ function render(s) {
   $("#avail").innerHTML = s.available
     ? `Ayrılmayı bekleyen boş yer: <b>${s.available}</b> (sıradaki grup sığmıyor) <button class="secondary" data-act="setAvailable" style="width:auto">Sıfırla</button>`
     : "";
-  const row = (e, btns) => `<div class="item"><b>#${e.no}</b><span>${e.size} kişi${e.src === "manual" ? " · elle" : ""}${e.note ? " · " + esc(e.note) : ""}${btns[1]}</span>${btns[0]}</div>`;
+  // Yer bilgisi: çağrılanda ayrılan yer, bekleyende (kişi sayısından farklıysa) kabul edilen yerler
+  const spots = (e) => e.status === "called" ? ` · <b>${e.alloc ?? e.size} yer</b>`
+    : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${e.accept.join("/")} yer olur` : "";
+  const row = (e, btns) => `<div class="item"><b>#${e.no}</b><span>${e.size} kişi${spots(e)}${e.src === "manual" ? " · elle" : ""}${e.note ? " · " + esc(e.note) : ""}${btns[1]}</span>${btns[0]}</div>`;
+  if (s.flex && $("#addAcceptBox").hidden) {
+    $("#addAcceptBox").hidden = false;
+    renderAccept($("#addAccept"), +$("#addSize").value);
+    $("#addSize").onchange = () => renderAccept($("#addAccept"), +$("#addSize").value);
+  }
   $("#called").innerHTML = called.map((e) => row(e, [
     `<button class="ok" data-act="arrived" data-id="${e.id}">Geldi</button><button class="bad" data-act="drop" data-id="${e.id}">Gelmedi</button>`,
     ` · <span class="${mins(e.calledAt) >= 10 ? "late" : ""}">${mins(e.calledAt)} dk önce</span>`,
@@ -95,7 +107,7 @@ document.body.addEventListener("click", (ev) => {
 });
 $("#freeBtn").onclick = () => act({ action: "free", n: +$("#freeN").value });
 $("#addBtn").onclick = async () => {
-  const s = await act({ action: "add", size: +$("#addSize").value, note: $("#addNote").value });
+  const s = await act({ action: "add", size: +$("#addSize").value, accept: readAccept($("#addAccept")), note: $("#addNote").value });
   if (s?.added) { alert(`Sıra numarası: ${s.added}\nKişiye söyleyin.`); $("#addNote").value = ""; }
 };
 $("#resetBtn").onclick = () => confirm("Tüm sıra silinecek. Emin misiniz?") && act({ action: "reset" });

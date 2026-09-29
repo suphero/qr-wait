@@ -14,6 +14,11 @@
     <label>Kaç kişisiniz?
       <select id="size"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
     </label>
+    <div id="acceptBox" hidden>
+      <p><b>Kaç yer olursa kabul edersiniz?</b> Birden fazla seçebilirsiniz.</p>
+      <div id="accept" class="picks"></div>
+      <p class="muted">Daha az yeri de kabul ederseniz sıranız daha hızlı gelebilir.</p>
+    </div>
     <button id="joinBtn">Sıraya gir</button>
     <p class="muted">Sıraya girebilmek için sıranın bulunduğu yerde olmanız ve konum izni vermeniz gerekir. Konumunuz yalnızca bu kontrol için kullanılır, saklanmaz.</p>
   </section>
@@ -74,12 +79,14 @@ async function refresh() {
     $("#waitView").classList.toggle("soon", s.status === "waiting" && s.aheadGroups <= 2);
     if (s.status === "called") {
       const left = 10 - mins(s.calledAt);
-      $("#msg").innerHTML = `<b>Sıra size geldi!</b><br>Görevliye gidip bu numarayı gösterin.<br>${left > 0 ? `Yaklaşık ${left} dk içinde gelmezseniz sıranız düşebilir.` : "Lütfen hemen gelin."}`;
+      const spots = s.alloc && s.alloc !== s.size ? `<b>${s.alloc} yer</b> ayrıldı. ` : "";
+      $("#msg").innerHTML = `<b>Sıra size geldi!</b><br>${spots}Görevliye gidip bu numarayı gösterin.<br>${left > 0 ? `Yaklaşık ${left} dk içinde gelmezseniz sıranız düşebilir.` : "Lütfen hemen gelin."}`;
       if (!notified) { notified = true; alertUser(); }
     } else {
       $("#msg").innerHTML = s.aheadGroups === 0
         ? "<b>Sıradaki sizsiniz, hazır olun.</b>"
         : `Önünüzde <b>${s.aheadGroups}</b> grup (<b>${s.aheadPeople}</b> kişi) var.`;
+      if (s.accept.length > 1 || s.accept[0] !== s.size) $("#msg").innerHTML += `<br><span class="muted">${s.size} kişi, ${orList(s.accept)} yer kabul ediyorsunuz.</span>`;
     }
   } catch (e) { $("#err").textContent = e.message; }
 }
@@ -92,7 +99,7 @@ $("#joinBtn").onclick = async () => {
     navigator.serviceWorker?.register("sw.js");
     window.Notification?.requestPermission();
     const c = await locate();
-    const r = await api(`/api/r/${room}/join`, { t: token, lat: c.latitude, lng: c.longitude, size: +$("#size").value, device });
+    const r = await api(`/api/r/${room}/join`, { t: token, lat: c.latitude, lng: c.longitude, size: +$("#size").value, accept: readAccept($("#accept")), device });
     localStorage.setItem(slot, r.id);
     history.replaceState(null, "", ref ? `?r=${ref}` : location.pathname); // süresi dolacak token'ı adres çubuğundan kaldır
     await refresh();
@@ -110,7 +117,13 @@ $("#leaveBtn").onclick = async () => {
 api(`/api/resolve?r=${encodeURIComponent(ref)}`).then((r) => {
   room = r.room;
   slot = "ticket:" + room;
-  api(`/api/r/${room}/status`).then((st) => ($("#name").textContent = st.name)).catch(() => {});
+  api(`/api/r/${room}/status`).then((st) => {
+    $("#name").textContent = st.name;
+    if (!st.flex) return;
+    $("#acceptBox").hidden = false;
+    renderAccept($("#accept"), +$("#size").value);
+    $("#size").onchange = () => renderAccept($("#accept"), +$("#size").value);
+  }).catch(() => {});
   refresh();
   setInterval(refresh, 10000);
   document.addEventListener("visibilitychange", () => !document.hidden && refresh());

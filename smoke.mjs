@@ -75,4 +75,20 @@ assert.equal(await find(), undefined);
 assert.equal((await resolve(slug2)).error, "Sıra bulunamadı", "silinen odanın slug'ı serbest kalır");
 assert.equal((await me(c.id)).error, "Sıra bulunamadı");
 assert.equal((await post(`/api/admin/rooms/${room}/import`, {}, PW)).error, "Sıra bulunamadı", "silinmiş oda içe aktarılamaz");
+// Esnek yer seçimi: grup kişi sayısından az yeri de kabul edebilir
+const f = await post("/api/admin/rooms", { name: "Esnek", slug: `${slug}-esnek`, radius: 300, flex: true, ...spot }, PW);
+const fadmin = (body = {}) => post(`/api/r/${f.room}/admin`, body, { "x-key": f.key });
+const ft = (await fadmin()).token;
+const fjoin = (device, size, accept) => post(`/api/r/${f.room}/join`, { t: ft, ...spot, size, accept, device });
+const fme = async (id) => (await fetch(`${B}/api/r/${f.room}/me?id=${id}`)).json();
+const g1 = await fjoin("flex-device-000000001", 4, [4, 2]);
+const g2 = await fjoin("flex-device-000000002", 2, [2]);
+assert.deepEqual((await fme(g1.id)).accept, [2, 4]);
+assert.match((await fjoin("flex-device-000000003", 2, [5])).error, /en az bir yer/, "kişi sayısından fazla yer seçilemez");
+let fs = await fadmin({ action: "free", n: 3 }); // #1 "2 veya 4": 2 yer alır, 1 artar; #2 (2 yer) sığmaz
+assert.deepEqual([(await fme(g1.id)).status, (await fme(g1.id)).alloc, fs.available], ["called", 2, 1]);
+assert.equal((await fme(g2.id)).status, "waiting");
+fs = await fadmin({ action: "drop", id: g1.id }); // gelmedi: ayrılan 2 yer (4 değil) geri döner → 3 → #2 çağrılır
+assert.deepEqual([(await fme(g2.id)).status, (await fme(g2.id)).alloc, fs.available], ["called", 2, 1]);
+await req("DELETE", `/api/admin/rooms/${f.room}`, undefined, PW);
 console.log("smoke OK");

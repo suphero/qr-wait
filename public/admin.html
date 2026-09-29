@@ -36,6 +36,7 @@
       <button type="button" class="secondary" id="meBtn">Şu anki konumumu kullan</button>
       <p id="pos" class="muted"></p>
       <label>Kabul yarıçapı (metre) <input name="radius" type="number" value="300" min="50" max="2000" required></label>
+      <label class="check"><input type="checkbox" name="flex"> <span><b>Esnek yer seçimi</b><br><span class="muted">Gruplar kişi sayısından az yeri de kabul edebilir. Örneğin plajda 4 kişilik grup 2 veya 4 şezlonga razı olabilir. Otobüs ya da gişe sıralarında kapalı bırakın.</span></span></label>
       <p class="muted">Ziyaretçiler yalnızca dairenin içindeyken sıraya girebilir. Telefon GPS'i 20-50 m sapabilir, daireyi alandan biraz geniş tutun.</p>
       <div class="row">
         <button type="button" class="secondary" id="cancelBtn">Vazgeç</button>
@@ -68,7 +69,7 @@ async function load() {
   $("#list").innerHTML = rooms.map((r) => `
     <div class="card">
       <b>${esc(r.name)}</b> <span class="muted">${r.slug ? esc(r.slug) : "⚠ adres yok, Düzenle ile ekleyin"}</span>
-      <p class="muted">${r.waiting} grup / ${r.people} kişi bekliyor · ${r.called} çağrıldı · ${r.radius} m</p>
+      <p class="muted">${r.waiting} grup / ${r.people} kişi bekliyor · ${r.called} çağrıldı · ${r.radius} m${r.flex ? " · esnek yer" : ""}</p>
       <div class="actions">
         <button data-act="copy" data-id="${r.room}">Görevli linkini kopyala</button>
         <a class="button secondary" href="${esc(r.link)}" target="_blank">Paneli aç</a>
@@ -139,6 +140,7 @@ function openForm(r) {
   slugTouched = !!r; // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
   previewSlug();
   $("[name=radius]").value = r?.radius ?? 300;
+  $("[name=flex]").checked = !!r?.flex;
   $("#q").value = "";
   $("#f").hidden = false;
   $("#f").scrollIntoView({ behavior: "smooth" });
