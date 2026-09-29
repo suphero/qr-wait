@@ -52,6 +52,9 @@ assert.equal((await me(b.id)).status, "called", "#2 (4 kişi) artık sığıyor"
 
 s = await admin({ action: "add", size: 2, note: "telefonsuz" });
 assert.equal(s.added, 4);
+const st = await (await fetch(`${B}/api/r/${room}/status`)).json();
+assert.deepEqual([st.waiting, st.called, st.lastNo, st.next], [2, [b.no], b.no, c.no]);
+assert.ok(!JSON.stringify(st).includes("telefonsuz") && !("entries" in st), "herkese açık durumda not ve bilet bilgisi yok");
 await admin({ action: "arrived", id: b.id });
 assert.equal((await me(b.id)).status, "gone");
 // Oda CRUD

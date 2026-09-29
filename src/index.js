@@ -60,6 +60,16 @@ export class Room extends DurableObject {
     };
   }
 
+  // Herkese açık sıra durumu: yalnızca sayılar ve numaralar, kişisel bilgi (not, cihaz, bilet id) yok
+  status() {
+    const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
+    return {
+      name: s.name, lat: s.lat, lng: s.lng,
+      waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), next: w[0]?.no ?? null,
+      called: s.entries.filter((e) => e.status === "called").map((e) => e.no), lastNo: s.lastNo ?? null,
+    };
+  }
+
   async update(fields) {
     Object.assign(this.need(), fields);
     await this.save();
@@ -123,6 +133,7 @@ export class Room extends DurableObject {
   call(e) {
     e.status = "called";
     e.calledAt = Date.now();
+    this.s.lastNo = e.no;
     this.s.available = Math.max(0, this.s.available - e.size);
   }
 
@@ -195,6 +206,12 @@ export class Registry extends DurableObject {
 const ID_RE = /^[a-f0-9]{10}$/;
 const RESERVED = new Set(["www", "api", "admin", "yonetim", "mail"]);
 
+// antalya-konserve.sirangeldi.com → "antalya-konserve"; ana alan adı ve www için ""
+function subdomain(url, env) {
+  const sub = env.BASE_DOMAIN && url.hostname.endsWith(`.${env.BASE_DOMAIN}`) ? url.hostname.slice(0, -env.BASE_DOMAIN.length - 1) : "";
+  return RESERVED.has(sub) ? "" : sub;
+}
+
 function roomFields(b) {
   const lat = Number(b.lat), lng = Number(b.lng);
   if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) throw new Error("Geçersiz konum");
@@ -252,18 +269,20 @@ async function adminApi(req, env, url, body) {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+    // Kök adres: alt alan adında sıra durumu, ana alan adında tanıtım sitesi
+    // (public/ altında index.html yok, bu yüzden "/" statik dosyayla eşleşmez ve buraya gelir)
+    if (url.pathname === "/") return env.ASSETS.fetch(new Request(new URL(subdomain(url, env) ? "/status" : "/home", url), req));
     try {
       const body = ["POST", "PUT"].includes(req.method) ? await req.json() : {};
       if (url.pathname.startsWith("/api/admin/")) return Response.json(await adminApi(req, env, url, body));
       if (url.pathname === "/api/resolve") {
         // ?r= oda id'si ya da slug; yoksa alt alan adından (antalya-konserve.belediyeplaj.com)
-        const sub = env.BASE_DOMAIN && url.hostname.endsWith(`.${env.BASE_DOMAIN}`) ? url.hostname.slice(0, -env.BASE_DOMAIN.length - 1) : "";
-        const ref = url.searchParams.get("r") || sub;
+        const ref = url.searchParams.get("r") || subdomain(url, env);
         const room = ID_RE.test(ref) ? ref : ref && (await env.REGISTRY.getByName("main").resolve(ref));
         if (!room) throw new Error("Plaj bulunamadı");
         return Response.json({ room });
       }
-      const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|admin)$/);
+      const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|admin|status)$/);
       if (!m) return new Response("Not found", { status: 404 });
       const room = env.ROOM.getByName(m[1]);
       switch (m[2]) {
@@ -271,6 +290,7 @@ export default {
         case "me": return Response.json(await room.me(url.searchParams.get("id")));
         case "leave": return Response.json(await room.leave(body.id));
         case "admin": return Response.json(await room.admin(req.headers.get("x-key"), body));
+        case "status": return Response.json(await room.status());
       }
     } catch (e) {
       return Response.json({ error: e.message }, { status: 400 });

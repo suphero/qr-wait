@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sıra durumu</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1 id="name">Sıra durumu</h1>
+  <p class="muted" id="updated">Yükleniyor…</p>
+
+  <a id="mine" class="card mine" href="/join" hidden>
+    <b>Bu telefonla sıradasınız.</b><br>Sıranızı görmek için dokunun.
+  </a>
+
+  <section id="stats" hidden>
+    <div class="card center">
+      <div class="big" id="waiting"></div>
+      <p id="waitingText"></p>
+    </div>
+
+    <div class="card">
+      <h2>Şu an çağrılanlar</h2>
+      <div id="called" class="chips"></div>
+      <p class="muted" id="lastNext"></p>
+    </div>
+
+    <div class="card">
+      <h2>Nasıl sıraya girerim?</h2>
+      <p>Oraya vardığınızda görevlinin ekranındaki QR kodu telefonunuzun kamerasıyla okutun. Sıraya girmek için orada olmanız gerekir, uzaktan sıraya girilemez.</p>
+      <a id="route" class="button secondary" target="_blank" rel="noopener">Yol tarifi al</a>
+    </div>
+  </section>
+
+  <p id="err" class="err"></p>
+  <p class="muted center"><a id="home" href="/">Sıran Geldi</a> ile çalışır</p>
+</main>
+<script src="app.js"></script>
+<script>
+const ref = new URLSearchParams(location.search).get("r") ?? "";
+const base = location.hostname.split(".").slice(1).join(".");
+if (base.includes(".")) $("#home").href = `https://${base}/`; // alt alan adındaysak ana siteye
+
+async function refresh(room) {
+  try {
+    const s = await api(`/api/r/${room}/status`);
+    document.title = `${s.name} · Sıra durumu`;
+    $("#name").textContent = s.name;
+    $("#waiting").textContent = s.waiting;
+    $("#waitingText").innerHTML = s.waiting ? `grup sırada bekliyor, toplam <b>${s.people}</b> kişi` : "Şu an sırada bekleyen yok.";
+    $("#called").innerHTML = s.called.map((n) => `<span class="chip">${n}</span>`).join("") || '<p class="muted">Şu an çağrılan yok.</p>';
+    $("#lastNext").textContent = [s.lastNo && `Son çağrılan: ${s.lastNo}`, s.next && `Sıradaki: ${s.next}`].filter(Boolean).join(". ");
+    $("#route").href = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`;
+    $("#updated").textContent = `Son güncelleme ${new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}. Sayfa kendini yeniler.`;
+    $("#stats").hidden = false;
+    $("#err").textContent = "";
+  } catch (e) { $("#err").textContent = e.message; }
+}
+
+api(`/api/resolve?r=${encodeURIComponent(ref)}`).then(({ room }) => {
+  if (localStorage.getItem("ticket:" + room)) { $("#mine").hidden = false; if (ref) $("#mine").href = `/join?r=${ref}`; }
+  refresh(room);
+  setInterval(() => !document.hidden && refresh(room), 15000);
+  document.addEventListener("visibilitychange", () => !document.hidden && refresh(room));
+}).catch(() => {
+  $("#updated").textContent = "";
+  $("#err").textContent = "Bu adreste bir sıra bulunamadı. Adresi kontrol edin.";
+});
+</script>
+</body>
+</html>

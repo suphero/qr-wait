@@ -110,6 +110,7 @@ $("#leaveBtn").onclick = async () => {
 api(`/api/resolve?r=${encodeURIComponent(ref)}`).then((r) => {
   room = r.room;
   slot = "ticket:" + room;
+  api(`/api/r/${room}/status`).then((st) => ($("#beach").textContent = st.name)).catch(() => {});
   refresh();
   setInterval(refresh, 10000);
   document.addEventListener("visibilitychange", () => !document.hidden && refresh());
