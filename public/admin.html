@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Plaj Sırası · Yönetim</title>
+<title>Sıran Geldi · Yönetim</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -18,25 +18,25 @@
 
   <section id="app" hidden>
     <div class="row">
-      <h1>Plaj odaları</h1>
+      <h1>Sıralar</h1>
       <button class="secondary" id="logoutBtn" style="flex:0 0 auto;width:auto">Çıkış</button>
     </div>
-    <button id="newBtn">+ Yeni oda</button>
+    <button id="newBtn">+ Yeni sıra</button>
     <div id="list"></div>
 
     <form id="f" class="card" hidden>
       <h2 id="formTitle"></h2>
-      <label>Plaj adı <input name="name" required maxlength="60"></label>
+      <label>Sıra adı <input name="name" required maxlength="60" placeholder="ör. Konyaaltı Halk Plajı, Kadıköy İskelesi"></label>
       <label>Web adresi (slug) <input name="slug" required minlength="3" maxlength="40" pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve"></label>
-      <p class="muted">Küçük harf, rakam ve tire. Plajın adresi olur: <b id="slugPreview"></b></p>
+      <p class="muted">Küçük harf, rakam ve tire. Sıranın web adresi olur: <b id="slugPreview"></b></p>
       <label>Adres ara
-        <div class="row"><input id="q" placeholder="ör. Konyaaltı Plajı, Antalya"><button type="button" id="qBtn" style="flex:0 0 auto;width:auto">Ara</button></div>
+        <div class="row"><input id="q" placeholder="ör. Konyaaltı, Antalya"><button type="button" id="qBtn" style="flex:0 0 auto;width:auto">Ara</button></div>
       </label>
       <div id="map"></div>
       <button type="button" class="secondary" id="meBtn">Şu anki konumumu kullan</button>
       <p id="pos" class="muted"></p>
       <label>Kabul yarıçapı (metre) <input name="radius" type="number" value="300" min="50" max="2000" required></label>
-      <p class="muted">Ziyaretçiler yalnızca dairenin içindeyken sıraya girebilir. Telefon GPS'i 20-50 m sapabilir, daireyi plajdan biraz geniş tutun.</p>
+      <p class="muted">Ziyaretçiler yalnızca dairenin içindeyken sıraya girebilir. Telefon GPS'i 20-50 m sapabilir, daireyi alandan biraz geniş tutun.</p>
       <div class="row">
         <button type="button" class="secondary" id="cancelBtn">Vazgeç</button>
         <button>Kaydet</button>
@@ -76,7 +76,7 @@ async function load() {
         <button class="secondary" data-act="rotate" data-id="${r.room}">Linki yenile</button>
         <button class="bad" data-act="del" data-id="${r.room}">Sil</button>
       </div>
-    </div>`).join("") || '<p class="muted">Henüz oda yok.</p>';
+    </div>`).join("") || '<p class="muted">Henüz sıra yok. + Yeni sıra ile ilk sıranızı oluşturun.</p>';
 }
 
 function logout(msg = "") {
@@ -133,7 +133,7 @@ function pick(lat, lng) {
 
 function openForm(r) {
   editing = r?.room ?? null;
-  $("#formTitle").textContent = r ? `Düzenle: ${r.name}` : "Yeni oda";
+  $("#formTitle").textContent = r ? `Düzenle: ${r.name}` : "Yeni sıra";
   $("[name=name]").value = r?.name ?? "";
   $("[name=slug]").value = r?.slug ?? "";
   slugTouched = !!r; // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
@@ -145,7 +145,7 @@ function openForm(r) {
   map.invalidateSize(); // gizliyken oluşturulan harita boyutunu bilmez
   marker?.remove(); circle?.remove(); marker = circle = pt = null;
   if (r) { pick(r.lat, r.lng); map.fitBounds(circle.getBounds()); }
-  else { map.setView([39, 35], 6); $("#pos").textContent = "Haritada plajın ortasına dokunun. İşaretçiyi sürükleyerek ince ayar yapabilirsiniz."; }
+  else { map.setView([39, 35], 6); $("#pos").textContent = "Haritada sıranın kurulacağı yerin ortasına dokunun. İşaretçiyi sürükleyerek ince ayar yapabilirsiniz."; }
 }
 
 async function search() {
@@ -178,7 +178,7 @@ $("#cancelBtn").onclick = () => ($("#f").hidden = true);
 
 $("#f").onsubmit = async (ev) => {
   ev.preventDefault();
-  if (!pt) return ($("#err").textContent = "Haritadan plajın konumunu seçin.");
+  if (!pt) return ($("#err").textContent = "Haritadan sıranın konumunu seçin.");
   const body = { ...Object.fromEntries(new FormData(ev.target)), ...pt };
   const old = rooms.find((r) => r.room === editing)?.slug;
   if (old && old !== body.slug && !confirm("Adres değişirse eski görevli linki ve ekrandaki QR çalışmaz. Görevlilere yeni linki göndermeniz gerekir. Devam?")) return;

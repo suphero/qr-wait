@@ -30,7 +30,7 @@ const int = (v, min, max, msg) => {
   return n;
 };
 
-// Plaj başına bir oda. Tüm durum tek bir kayıtta tutulur.
+// Sıra başına bir oda (plaj, iskele, gişe…). Tüm durum tek bir kayıtta tutulur.
 // ponytail: tek kayıtta tüm durum, MAX_ENTRIES ile sınırlı; binlerce kişi olursa SQL tablolarına geç.
 export class Room extends DurableObject {
   constructor(ctx, env) {
@@ -39,7 +39,7 @@ export class Room extends DurableObject {
   }
 
   need() {
-    if (!this.s) throw new Error("Oda bulunamadı");
+    if (!this.s) throw new Error("Sıra bulunamadı");
     return this.s;
   }
 
@@ -94,7 +94,7 @@ export class Room extends DurableObject {
     if (!(age > -5000 && age < TOKEN_TTL) || !same(sig, await sign(s.key, ts)))
       throw new Error("QR kodunun süresi dolmuş. Görevlinin ekranındaki kodu yeniden okutun.");
     if (!(meters(s, { lat: Number(lat), lng: Number(lng) }) <= s.radius))
-      throw new Error("Plaj alanında görünmüyorsunuz. Konumunuz açık olmalı ve plajda olmalısınız.");
+      throw new Error("Sıranın bulunduğu yerde görünmüyorsunuz. Konum izniniz açık olmalı ve orada olmalısınız.");
     if (typeof device !== "string" || device.length < 16) throw new Error("Geçersiz cihaz");
     size = int(size, 1, MAX_GROUP, `Grup 1-${MAX_GROUP} kişi olmalı`);
     // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner
@@ -197,7 +197,7 @@ export class Registry extends DurableObject {
   // DO girdi kapısı sayesinde oku-yaz arasında başka istek araya giremez: aynı slug iki odaya verilemez
   async claim(slug, id, old) {
     const owner = await this.ctx.storage.get(`slug:${slug}`);
-    if (owner && owner !== id) throw new Error("Bu adres başka bir plajda kullanılıyor");
+    if (owner && owner !== id) throw new Error("Bu adres başka bir sırada kullanılıyor");
     if (old && old !== slug) await this.ctx.storage.delete(`slug:${old}`);
     await this.ctx.storage.put(`slug:${slug}`, id);
   }
@@ -219,7 +219,7 @@ function roomFields(b) {
   if (!/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(slug) || ID_RE.test(slug) || RESERVED.has(slug))
     throw new Error("Geçersiz adres: 3-40 karakter, küçük harf, rakam ve tire");
   return {
-    name: String(b.name ?? "").trim().slice(0, 60) || "Plaj",
+    name: String(b.name ?? "").trim().slice(0, 60) || "Sıra",
     slug, lat, lng, radius: int(b.radius, 50, 2000, "Yarıçap 50-2000 m olmalı"),
   };
 }
@@ -252,7 +252,7 @@ async function adminApi(req, env, url, body) {
   if (op === "rotate" && req.method === "POST") return { key: await room.rotate() };
   if (op === "import" && req.method === "POST") {
     // Listede olmayan mevcut bir odayı (ör. görevli linkinden ID ile) listeye geri ekler
-    await room.info(); // oda yoksa "Oda bulunamadı" fırlatır
+    await room.info(); // oda yoksa "Sıra bulunamadı" fırlatır
     await reg.add(id);
   } else if (!op && req.method === "PUT") {
     const fields = roomFields(body);
@@ -276,10 +276,10 @@ export default {
       const body = ["POST", "PUT"].includes(req.method) ? await req.json() : {};
       if (url.pathname.startsWith("/api/admin/")) return Response.json(await adminApi(req, env, url, body));
       if (url.pathname === "/api/resolve") {
-        // ?r= oda id'si ya da slug; yoksa alt alan adından (antalya-konserve.belediyeplaj.com)
+        // ?r= oda id'si ya da slug; yoksa alt alan adından (antalya-konserve.sirangeldi.com)
         const ref = url.searchParams.get("r") || subdomain(url, env);
         const room = ID_RE.test(ref) ? ref : ref && (await env.REGISTRY.getByName("main").resolve(ref));
-        if (!room) throw new Error("Plaj bulunamadı");
+        if (!room) throw new Error("Sıra bulunamadı");
         return Response.json({ room });
       }
       const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|admin|status)$/);

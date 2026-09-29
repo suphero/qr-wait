@@ -3,19 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Plaj Sırası</title>
+<title>Sıran Geldi</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
-  <h1 id="beach">Plaj sırası</h1>
+  <h1 id="name">Sıra</h1>
 
   <section id="joinView" class="card" hidden>
     <label>Kaç kişisiniz?
       <select id="size"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
     </label>
     <button id="joinBtn">Sıraya gir</button>
-    <p class="muted">Sıraya girebilmek için plajda olmanız ve konum izni vermeniz gerekir. Konumunuz yalnızca bu kontrol için kullanılır, saklanmaz.</p>
+    <p class="muted">Sıraya girebilmek için sıranın bulunduğu yerde olmanız ve konum izni vermeniz gerekir. Konumunuz yalnızca bu kontrol için kullanılır, saklanmaz.</p>
   </section>
 
   <section id="waitView" class="card center" hidden>
@@ -59,7 +59,7 @@ async function refresh() {
   if (!id) return show(token ? "join" : null);
   try {
     const s = await api(`/api/r/${room}/me?id=${encodeURIComponent(id)}`);
-    $("#beach").textContent = s.name;
+    $("#name").textContent = s.name;
     $("#err").textContent = "";
     if (s.status === "gone") {
       localStorage.removeItem(slot);
@@ -110,11 +110,11 @@ $("#leaveBtn").onclick = async () => {
 api(`/api/resolve?r=${encodeURIComponent(ref)}`).then((r) => {
   room = r.room;
   slot = "ticket:" + room;
-  api(`/api/r/${room}/status`).then((st) => ($("#beach").textContent = st.name)).catch(() => {});
+  api(`/api/r/${room}/status`).then((st) => ($("#name").textContent = st.name)).catch(() => {});
   refresh();
   setInterval(refresh, 10000);
   document.addEventListener("visibilitychange", () => !document.hidden && refresh());
-}).catch(() => ($("#err").textContent = "Plaj bulunamadı. Görevlinin QR kodunu yeniden okutun."));
+}).catch(() => ($("#err").textContent = "Sıra bulunamadı. Görevlinin QR kodunu yeniden okutun."));
 </script>
 </body>
 </html>
