@@ -574,7 +574,7 @@ const RESERVED = new Set([
   "app", "panel", "dashboard", "login", "giris", "signup", "kayit", "account", "hesap", "auth", "secure", "guvenlik",
   "billing", "pay", "odeme", "fatura", "support", "destek", "help", "yardim", "info", "blog", "docs", "cdn", "static",
   "root", "system", "sistem", "official", "resmi", "qrwait", "noreply", "no-reply", "bildirim", "security",
-  "gizlilik", "kosullar", "kvkk", "privacy", "terms", "legal", "hukuk",
+  "gizlilik", "kosullar", "kvkk", "privacy", "terms", "legal", "hukuk", "pricing", "fiyat", "fiyatlar", "ucret",
 ]);
 const SUPER = "admin"; // süper yönetici girişi: kullanıcı adı "admin", şifre ADMIN_PASSWORD
 const SESSION_MS = 30 * 864e5;

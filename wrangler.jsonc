@@ -39,14 +39,16 @@
     "VAPID_PUBLIC_KEY": "BMnLrY7VHICel9RZSt62UEiLxZymXnHinntTM-oeV88iHlXTfWZjrtjTJjE_XSx4_q25hNs9TftLofwDaH-UHC4",
     "MAIL_FROM": "notify@qrwait.app",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFKNZ22SRKQieffD", // widget "QRWait" (managed, qrwait.app); gizli anahtarı TURNSTILE_SECRET
-    "LEMON_STORE_ID": "486894", // siran-geldi.lemonsqueezy.com
+    "LEMON_STORE_ID": "487218", // qr-wait.lemonsqueezy.com
     // Satılan paketler: variant = Lemon Squeezy varyant id'si; price yalnızca gösterim, tahsilat Lemon Squeezy'deki fiyattan
-    // (mağaza para birimi TRY). Ürünün "Default" varyantı (2186515) satılmaz: webhook'ta bilinmeyen varyant yok sayılır.
+    // (mağaza para birimi USD). Ürünün "Default" varyantı (2188388) satılmaz: webhook'ta bilinmeyen varyant yok sayılır.
+    // Fiyatlar /pricing sayfasında ve yönetim ekranında bu listeden gösterilir; "$" ile başlarsa 1000 bilet başı fiyat da hesaplanır.
+    // name: paket adının anahtarı, dört dildeki adı web/src/lib/i18n.ts S.packs'te (Başlangıç, İşletme, Sezon, Kurumsal)
     "PACKAGES": [
-      { "variant": "2186480", "tickets": 5000, "price": "349 ₺" }, // Başlangıç
-      { "variant": "2186488", "tickets": 20000, "price": "999 ₺" }, // İşletme
-      { "variant": "2186495", "tickets": 50000, "price": "1.999 ₺" }, // Sezon
-      { "variant": "2186498", "tickets": 150000, "price": "4.499 ₺" } // Kurumsal
+      { "variant": "2188359", "name": "starter", "tickets": 5000, "price": "$9" },
+      { "variant": "2188376", "name": "business", "tickets": 20000, "price": "$25" },
+      { "variant": "2188384", "name": "season", "tickets": 50000, "price": "$49" },
+      { "variant": "2188386", "name": "enterprise", "tickets": 150000, "price": "$99" }
     ]
   },
   "routes": [

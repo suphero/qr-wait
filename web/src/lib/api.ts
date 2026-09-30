@@ -26,6 +26,16 @@ export const CATEGORIES: Record<string, [string, string]> = Object.fromEntries(O
 }).map(([k, icon]) => [k, [icon, S.categories[k as keyof typeof S.categories]]]));
 export const catIcon = (c?: string) => (CATEGORIES[c ?? ""] ?? CATEGORIES.diger)[0];
 
+// Bilet paketi (wrangler.jsonc PACKAGES, /api/config); price yalnızca gösterim metni, ör. "$9"
+export type Pkg = { variant: string; name: string; tickets: number; price: string };
+// Paketin bu dildeki adı ("starter" → "Başlangıç"); adı tanımsızsa null, yerine bilet sayısı gösterilir
+export const packName = (p: Pkg) => S.packs[p.name as keyof typeof S.packs] ?? null;
+// "$9", 5000 bilet → "$1.80" (1000 bilet başı); dolar değilse ya da ayrıştırılamazsa null
+export const perThousand = (p: Pkg) => {
+  const n = p.price.startsWith("$") ? Number(p.price.slice(1).replace(/,/g, "")) : NaN;
+  return n > 0 ? `$${((n * 1000) / p.tickets).toFixed(2)}` : null;
+};
+
 
 // Sayfa dönen `setInterval` yoklaması; sekme gizliyken atlanır, sekmeye dönünce hemen yenilenir
 export function poll(fn: () => void, ms: number, whenHidden = false) {

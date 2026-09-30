@@ -1,6 +1,6 @@
 // Bilet hakkı ve ödeme. Her yeni bilet (QR ile giriş ya da görevlinin elle eklemesi) sıra sahibinin bakiyesinden 1 düşer.
 // Hesap açan kullanıcıya FREE bilet ücretsiz; üstü Lemon Squeezy'den tek seferlik paketlerle alınır, kredi bitmez.
-// Paketler wrangler.jsonc'ta PACKAGES: [{ variant: "<Lemon Squeezy varyant id>", tickets: 5000, price: "$9" }].
+// Paketler wrangler.jsonc'ta PACKAGES: [{ variant: "<Lemon Squeezy varyant id>", name: "starter", tickets: 5000, price: "$9" }].
 // price yalnızca gösterim; tahsil edilen tutar Lemon Squeezy'deki varyant fiyatıdır.
 import { DurableObject } from "cloudflare:workers";
 import { fail } from "./i18n.js";
@@ -14,7 +14,7 @@ const LOW = 100; // kalan hak bu sayıya inince sahibine e-posta
 export function packages(env) {
   let list = env.PACKAGES;
   try { if (typeof list === "string") list = JSON.parse(list); } catch { list = []; }
-  return (Array.isArray(list) ? list : []).map((p) => ({ variant: String(p.variant), tickets: Number(p.tickets), price: String(p.price ?? "") }))
+  return (Array.isArray(list) ? list : []).map((p) => ({ variant: String(p.variant), name: String(p.name ?? ""), tickets: Number(p.tickets), price: String(p.price ?? "") }))
     .filter((p) => p.variant && p.tickets > 0);
 }
 

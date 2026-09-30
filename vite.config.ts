@@ -7,13 +7,21 @@ const web = resolve(import.meta.dirname, "web");
 
 // Sayfalar: her biri web/src/pages/<ad>.tsx'i yükleyen bir HTML'e derlenir (dist/<ad>.html).
 // HTML dosyası repoda yok; başlık ve <head> ekleri burada.
+// Tanıtım sitesi sayfalarının yazı tipi (components/site.tsx)
+const FONT = `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">`;
 const PAGES: Record<string, { title: string; head?: string; body?: string }> = {
   home: {
     title: "QRWait · QR kodlu sanal sıra sistemi",
     head: `<meta name="description" content="Plajlar, iskeleler, hizmet noktaları ve etkinlikler için QR kodlu sıra sistemi. Uygulama indirmeden sıraya gir, sıran gelince telefonun haber versin.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">`,
+${FONT}`,
+    body: "bg-paper",
+  },
+  pricing: {
+    title: "Fiyatlar · QRWait",
+    head: `<meta name="description" content="QRWait fiyatları: abonelik yok, ilk 1000 bilet ücretsiz. Bilet paketleri tek seferlik ödenir, süresi dolmaz.">
+${FONT}`,
     body: "bg-paper",
   },
   join: { title: "QRWait", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">` },

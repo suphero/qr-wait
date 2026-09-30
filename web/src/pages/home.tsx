@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, catIcon, locate, type PublicRoom } from "@/lib/api";
 import { fmtDistL, geoErrors, lang, pick, waitText } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
-import { LEGAL } from "@/components/legal";
+import { H2, pill, Section, Site, solid } from "@/components/site";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 import "./home.css";
@@ -13,7 +13,7 @@ const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.ch
 
 type Pair = [string, string];
 const T = pick<{
-  title: string; admin: string; signup: string; freeNote: string; heroTitle: string; heroText: string; findNear: string;
+  title: string; signup: string; freeNote: string; heroTitle: string; heroText: string; findNear: string;
   steps: string[]; done: string; ticketAria: string;
   nearTitle: string; sortByLoc: string; noteStart: string; noteNear: string; noneNear: (d: string) => string; here: string;
   mapAria: string; loadFail: string; loading: string; none: string; seeStatus: string;
@@ -22,7 +22,6 @@ const T = pick<{
 }>({
   tr: {
     title: "QRWait · QR kodlu sanal sıra sistemi",
-    admin: "Yönetici girişi",
     signup: "Ücretsiz hesap aç",
     freeNote: "Kendi sıranızı birkaç dakikada kurun. İlk 1000 bilet ücretsiz, kredi kartı gerekmez.",
     heroTitle: "Sıranı al, gerisini telefonun beklesin.",
@@ -76,7 +75,6 @@ const T = pick<{
   },
   en: {
     title: "QRWait · Virtual queue with a QR code, no app",
-    admin: "Admin login",
     signup: "Sign up for free",
     freeNote: "Set up your own queue in minutes. The first 1000 tickets are free, no credit card needed.",
     heroTitle: "Take your number, let your phone do the waiting.",
@@ -130,7 +128,6 @@ const T = pick<{
   },
   de: {
     title: "QRWait · Virtuelle Warteschlange per QR-Code",
-    admin: "Admin-Anmeldung",
     signup: "Kostenlos registrieren",
     freeNote: "Richten Sie Ihre eigene Warteschlange in wenigen Minuten ein. Die ersten 1000 Tickets sind kostenlos, keine Kreditkarte nötig.",
     heroTitle: "Nummer ziehen, das Warten übernimmt Ihr Handy.",
@@ -184,7 +181,6 @@ const T = pick<{
   },
   ru: {
     title: "QRWait · Электронная очередь по QR-коду",
-    admin: "Вход для администратора",
     signup: "Зарегистрироваться бесплатно",
     freeNote: "Создайте свою очередь за несколько минут. Первые 1000 билетов бесплатно, карта не нужна.",
     heroTitle: "Возьмите номер — ждать будет ваш телефон.",
@@ -238,17 +234,6 @@ const T = pick<{
   },
 });
 if (lang !== "tr") document.title = T.title;
-
-// Hap biçimli lacivert kenarlı butonlar
-const pill = "h-auto rounded-full border-2 border-ink bg-transparent px-5 py-3.5 text-base leading-none font-semibold text-ink hover:bg-ink/5";
-const solid = "bg-ink text-white hover:bg-ink/90";
-
-function Section({ id, className, children }: { id?: string; className?: string; children: ReactNode }) {
-  return <section id={id} className={cn("border-t border-line py-14 md:py-20", className)}>{children}</section>;
-}
-function H2({ className, children }: { className?: string; children: ReactNode }) {
-  return <h2 className={cn("mb-10 max-w-[20ch] text-[clamp(1.9rem,4vw,2.75rem)] leading-[1.1] font-extrabold tracking-[-0.03em]", className)}>{children}</h2>;
-}
 
 // Fişteki tek animasyon: sıra ilerler, sonunda yeşile döner. Hareket azaltma tercihinde son hali gösterilir.
 const STEPS = T.steps, DONE = T.done;
@@ -372,87 +357,69 @@ function Nearby() {
 
 function HomePage() {
   return (
-    <div className="mx-auto max-w-[1080px] px-5 font-display text-[1.0625rem] leading-relaxed text-ink [font-optical-sizing:auto] [&_:focus-visible]:rounded [&_:focus-visible]:outline-3 [&_:focus-visible]:outline-offset-3 [&_:focus-visible]:outline-success">
-      <header className="flex items-center justify-between py-5">
-        <a className="text-[1.35rem] font-extrabold tracking-[-0.02em] no-underline" href="/">
-          qrwait<span aria-hidden="true" className="ml-[.12em] inline-block size-[.5em] rounded-full bg-success" />
-        </a>
-        <Button asChild className={cn(pill, "px-4 py-2.5 text-[.95rem]")}><a href="/admin">{T.admin}</a></Button>
-      </header>
-
-      <main>
-        <div className="grid items-center gap-10 pt-12 pb-16 md:grid-cols-[1.15fr_1fr] md:gap-12 md:pb-24">
-          <div>
-            <h1 className="mb-6 text-[clamp(2.5rem,6vw,4.25rem)] leading-[1.02] font-extrabold tracking-[-0.035em]">{T.heroTitle}</h1>
-            <p className="mb-8 max-w-[34ch] text-xl text-ink-soft">{T.heroText}</p>
-            <div className="flex flex-wrap gap-3">
-              <Button asChild className={cn(pill, solid)}><a href="#yakin">{T.findNear}</a></Button>
-              <Button asChild className={pill}><a href="/admin#signup">{T.signup}</a></Button>
-            </div>
-            <p className="mt-4 max-w-[40ch] text-ink-soft">{T.freeNote}</p>
+    <Site>
+      <div className="grid items-center gap-10 pt-12 pb-16 md:grid-cols-[1.15fr_1fr] md:gap-12 md:pb-24">
+        <div>
+          <h1 className="mb-6 text-[clamp(2.5rem,6vw,4.25rem)] leading-[1.02] font-extrabold tracking-[-0.035em]">{T.heroTitle}</h1>
+          <p className="mb-8 max-w-[34ch] text-xl text-ink-soft">{T.heroText}</p>
+          <div className="flex flex-wrap gap-3">
+            <Button asChild className={cn(pill, solid)}><a href="#yakin">{T.findNear}</a></Button>
+            <Button asChild className={pill}><a href="/admin#signup">{T.signup}</a></Button>
           </div>
-          <Ticket />
+          <p className="mt-4 max-w-[40ch] text-ink-soft">{T.freeNote}</p>
         </div>
+        <Ticket />
+      </div>
 
-        <Nearby />
+      <Nearby />
 
-        <Section id="nasil">
-          <H2>{T.howTitle}</H2>
-          <ol className="steps m-0 grid list-none gap-7 p-0 md:grid-cols-3 md:gap-10">
-            {T.how.map(([t, d]) => <li key={t}><h3 className="mb-1.5 text-xl font-semibold tracking-[-0.01em]">{t}</h3><p className="text-ink-soft">{d}</p></li>)}
-          </ol>
-        </Section>
+      <Section id="nasil">
+        <H2>{T.howTitle}</H2>
+        <ol className="steps m-0 grid list-none gap-7 p-0 md:grid-cols-3 md:gap-10">
+          {T.how.map(([t, d]) => <li key={t}><h3 className="mb-1.5 text-xl font-semibold tracking-[-0.01em]">{t}</h3><p className="text-ink-soft">{d}</p></li>)}
+        </ol>
+      </Section>
 
-        <Section>
-          <H2>{T.useTitle}</H2>
-          <dl className="m-0 grid md:grid-cols-2 md:gap-x-12">
-            {T.uses.map(([t, d]) => (
-              <div key={t} className="border-b border-line py-5">
-                <dt className="text-[1.15rem] font-semibold">{t}</dt>
-                <dd className="mt-1 text-ink-soft">{d}</dd>
-              </div>
-            ))}
-          </dl>
-        </Section>
+      <Section>
+        <H2>{T.useTitle}</H2>
+        <dl className="m-0 grid md:grid-cols-2 md:gap-x-12">
+          {T.uses.map(([t, d]) => (
+            <div key={t} className="border-b border-line py-5">
+              <dt className="text-[1.15rem] font-semibold">{t}</dt>
+              <dd className="mt-1 text-ink-soft">{d}</dd>
+            </div>
+          ))}
+        </dl>
+      </Section>
 
-        <Section>
-          <H2>{T.rulesTitle}</H2>
-          <div className="grid gap-x-12 gap-y-9 md:grid-cols-2">
-            {T.rules.map(([t, d]) => (
-              <div key={t} className="border-l-4 border-ticket-edge pl-5">
-                <h3 className="mb-1.5 text-xl font-semibold tracking-[-0.01em]">{t}</h3>
-                <p className="text-ink-soft">{d}</p>
-              </div>
-            ))}
-          </div>
-        </Section>
+      <Section>
+        <H2>{T.rulesTitle}</H2>
+        <div className="grid gap-x-12 gap-y-9 md:grid-cols-2">
+          {T.rules.map(([t, d]) => (
+            <div key={t} className="border-l-4 border-ticket-edge pl-5">
+              <h3 className="mb-1.5 text-xl font-semibold tracking-[-0.01em]">{t}</h3>
+              <p className="text-ink-soft">{d}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
 
-        <Section>
-          <div className="grid items-start gap-10 md:grid-cols-2 md:gap-12">
-            <H2 className="m-0">{T.adminTitle}</H2>
-            <ul className="m-0 grid gap-3 pl-[1.2em] text-ink-soft [list-style:disc]">
-              {T.adminList.map((x) => <li key={x}>{x}</li>)}
-            </ul>
-          </div>
-        </Section>
+      <Section>
+        <div className="grid items-start gap-10 md:grid-cols-2 md:gap-12">
+          <H2 className="m-0">{T.adminTitle}</H2>
+          <ul className="m-0 grid gap-3 pl-[1.2em] text-ink-soft [list-style:disc]">
+            {T.adminList.map((x) => <li key={x}>{x}</li>)}
+          </ul>
+        </div>
+      </Section>
 
-        <section id="iletisim" className="mt-10 mb-20 rounded-[20px] bg-ink px-6 py-10 text-white md:rounded-[28px] md:px-12 md:py-16">
-          <H2 className="mb-4">{T.contactTitle}</H2>
-          <p className="mb-8 max-w-[46ch] text-[1.15rem] text-[#C9D2E3]">{T.contactText}</p>
-          <Button asChild className={cn(pill, "mb-8 border-ticket bg-ticket text-ink hover:bg-ticket/90")}><a href="/admin#signup">{T.signup}</a></Button>
-          <a className="inline-block text-[clamp(1.4rem,4vw,2.4rem)] font-extrabold tracking-[-0.02em] break-all text-ticket underline decoration-3 underline-offset-6" href="mailto:hello@qrwait.app">hello@qrwait.app</a>
-        </section>
-      </main>
-
-      <footer className="flex flex-wrap justify-between gap-4 pt-6 pb-10 text-[.95rem] text-ink-soft">
-        <span>© 2026 QRWait</span>
-        <span className="flex flex-wrap gap-4">
-          <a href="/privacy" className="underline">{LEGAL.privacyShort}</a>
-          <a href="/terms" className="underline">{LEGAL.terms}</a>
-          <a href="/admin" className="underline">{T.admin}</a>
-        </span>
-      </footer>
-    </div>
+      <section id="iletisim" className="mt-10 mb-20 rounded-[20px] bg-ink px-6 py-10 text-white md:rounded-[28px] md:px-12 md:py-16">
+        <H2 className="mb-4">{T.contactTitle}</H2>
+        <p className="mb-8 max-w-[46ch] text-[1.15rem] text-[#C9D2E3]">{T.contactText}</p>
+        <Button asChild className={cn(pill, "mb-8 border-ticket bg-ticket text-ink hover:bg-ticket/90")}><a href="/admin#signup">{T.signup}</a></Button>
+        <a className="inline-block text-[clamp(1.4rem,4vw,2.4rem)] font-extrabold tracking-[-0.02em] break-all text-ticket underline decoration-3 underline-offset-6" href="mailto:hello@qrwait.app">hello@qrwait.app</a>
+      </section>
+    </Site>
   );
 }
 

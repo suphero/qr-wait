@@ -30,6 +30,7 @@ export const S = pick({
     tableFor: (c: number) => `${c} kişilik masa`,
     noGeo: "Tarayıcınız konum desteklemiyor.",
     geoDenied: "Konum izni gerekli. Tarayıcı ayarlarından bu siteye konum izni verin.",
+    packs: { starter: "Başlangıç", business: "İşletme", season: "Sezon", enterprise: "Kurumsal" },
   },
   en: {
     cancel: "Cancel",
@@ -43,6 +44,7 @@ export const S = pick({
     tableFor: (c: number) => `Table for ${c}`,
     noGeo: "Your browser doesn't support location.",
     geoDenied: "Location access is required. Allow this site to use your location in your browser settings.",
+    packs: { starter: "Starter", business: "Business", season: "Season", enterprise: "Enterprise" },
   },
   de: {
     cancel: "Abbrechen",
@@ -56,6 +58,7 @@ export const S = pick({
     tableFor: (c: number) => `Tisch für ${c}`,
     noGeo: "Ihr Browser unterstützt keine Standortbestimmung.",
     geoDenied: "Die Standortfreigabe ist erforderlich. Erlauben Sie dieser Seite in den Browsereinstellungen den Zugriff auf Ihren Standort.",
+    packs: { starter: "Starter", business: "Business", season: "Saison", enterprise: "Enterprise" },
   },
   ru: {
     cancel: "Отмена",
@@ -69,6 +72,7 @@ export const S = pick({
     tableFor: (c: number) => `Стол на ${c}`,
     noGeo: "Ваш браузер не поддерживает геолокацию.",
     geoDenied: "Нужен доступ к геолокации. Разрешите этому сайту определять местоположение в настройках браузера.",
+    packs: { starter: "Старт", business: "Бизнес", season: "Сезон", enterprise: "Корпоративный" },
   },
 });
 

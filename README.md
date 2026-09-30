@@ -26,7 +26,7 @@ QRWait is a location-aware queue system for places where people wait: beaches an
 - Drop a no-show with one tap; their place goes to the next group.
 - Each queue is placed on a map and gets its own address (`<user>.qrwait.app/<queue>`) with a public status page. Hidden queues get an unguessable address instead.
 - Attendant panel runs in the browser, no installation. Web Push notifications for visitors.
-- Self-service sign-up with 1000 free tickets; more are bought as one-time packages via Lemon Squeezy.
+- Self-service sign-up with 1000 free tickets; more are bought as one-time USD packages via Lemon Squeezy (public price list at `/pricing`).
 
 ## Stack
 
@@ -43,7 +43,7 @@ QRWait is a location-aware queue system for places where people wait: beaches an
 
 ```
 src/            Worker: API, Durable Objects, auth, billing, email, push, i18n
-web/src/pages/  One React entry per page: home, join, host, status, admin, privacy, terms
+web/src/pages/  One React entry per page: home, pricing, join, host, status, admin, privacy, terms
 web/public/     Service worker, manifest, icons
 redirect/       Separate Worker: 301 from the old sirangeldi.com domain to qrwait.app
 smoke.mjs       End-to-end smoke test against a running dev server

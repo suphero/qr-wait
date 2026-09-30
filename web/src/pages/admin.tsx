@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { api, CATEGORIES, catIcon, locate, poll, type RoomInfo } from "@/lib/api";
+import { api, CATEGORIES, catIcon, locate, packName, perThousand, poll, type Pkg, type RoomInfo } from "@/lib/api";
 import { fmtDistL, lang } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
 import { mount } from "@/lib/mount";
@@ -409,7 +409,6 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
 
 type Order = { id: string; tickets: number; status: "paid" | "refunded"; total: string; at: number };
 type Balance = { metered: boolean; suspended: boolean; used: number; free: number; bought: number; granted: number; left: number | null; orders?: Order[] };
-type Pkg = { variant: string; tickets: number; price: string };
 type Me = { user: string; super: boolean; home: string | false; email?: string | null; verified?: boolean; balance?: Balance; packages?: Pkg[] };
 type User = { name: string; at: number; rooms: number; link: string; email: string | null; verified: boolean; suspended: boolean; balance: Balance };
 type Config = { turnstile: string; free: number; packages: Pkg[] };
@@ -449,9 +448,6 @@ function BalanceChip({ me, onTopUp }: { me: Me; onTopUp: () => void }) {
   );
 }
 
-// "349 ₺" → 349; TL değilse ya da ayrıştırılamazsa null (1000 bilet başı fiyat gösterilmez)
-const priceNum = (p: string) => { if (!p.includes("₺")) return null; const n = Number(p.replace(/[^\d,]/g, "").replace(",", ".")); return n > 0 ? n : null; };
-
 // Bilet yükleme sayfası (/admin#bilet): bakiye, paketler, satın alımlar. Ödeme Lemon Squeezy sayfasında, dönüşte ?paid=1.
 function TicketsPage({ me, paid, onBack, onError }: { me: Me; paid: boolean; onBack: () => void; onError: (m: string) => void }) {
   const b = me.balance!, [busy, setBusy] = useState(false);
@@ -478,13 +474,14 @@ function TicketsPage({ me, paid, onBack, onError }: { me: Me; paid: boolean; onB
       {b.left !== null && (me.packages?.length ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {me.packages.map((p) => {
-            const n = priceNum(p.price);
+            const n = perThousand(p), name = packName(p);
             return (
               <Card key={p.variant}>
                 <CardContent className="flex h-full flex-col gap-2">
+                  {name && <span className="text-sm font-semibold text-muted-foreground">{name}</span>}
                   <b className="text-xl">{T.pack(p.tickets)}</b>
                   <span className="text-2xl font-bold text-primary">{p.price}</span>
-                  {n && <span className="text-sm text-muted-foreground">{T.perThousand(Math.round(n / (p.tickets / 1000)))}</span>}
+                  {n && <span className="text-sm text-muted-foreground">{T.perThousand(n)}</span>}
                   <Button className="mt-auto" disabled={busy || !me.verified} onClick={() => buy(p.variant)}>{T.buy}</Button>
                 </CardContent>
               </Card>
