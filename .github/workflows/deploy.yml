@@ -37,7 +37,7 @@ jobs:
           LEMON_WEBHOOK_SECRET=test-webhook-secret
           TURNSTILE_SITE_KEY=1x00000000000000000000AA
           TURNSTILE_SECRET=1x0000000000000000000000000000000AA
-          PACKAGES=[{"variant":"111","tickets":500,"price":"$1"}]
+          PACKAGES=[{"variant":"111","tickets":500,"price":"49 ₺"}]
           EOF
       - name: Smoke test
         run: |

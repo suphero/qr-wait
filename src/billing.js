@@ -56,7 +56,7 @@ export class Account extends DurableObject {
     const n = this.left();
     if (a.metered && a.email && (n === LOW || n === 0)) {
       // Sayfa isteğini bozmasın; eşik tam bu bilette geçildiği için her eşikte bir kez gider
-      await mail(this.env, { to: a.email, lang: a.lang, kind: n ? "low" : "empty", user: a.user, link: `https://${this.env.BASE_DOMAIN}/admin`, n })
+      await mail(this.env, { to: a.email, lang: a.lang, kind: n ? "low" : "empty", user: a.user, link: `https://${this.env.BASE_DOMAIN}/admin#bilet`, n })
         .catch((e) => console.error("mail", e.message));
     }
   }

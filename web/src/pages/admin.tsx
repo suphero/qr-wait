@@ -407,7 +407,8 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
   );
 }
 
-type Balance = { metered: boolean; suspended: boolean; used: number; free: number; bought: number; granted: number; left: number | null };
+type Order = { id: string; tickets: number; status: "paid" | "refunded"; total: string; at: number };
+type Balance = { metered: boolean; suspended: boolean; used: number; free: number; bought: number; granted: number; left: number | null; orders?: Order[] };
 type Pkg = { variant: string; tickets: number; price: string };
 type Me = { user: string; super: boolean; home: string | false; email?: string | null; verified?: boolean; balance?: Balance; packages?: Pkg[] };
 type User = { name: string; at: number; rooms: number; link: string; email: string | null; verified: boolean; suspended: boolean; balance: Balance };
@@ -436,33 +437,85 @@ function Captcha({ siteKey, onToken }: { siteKey: string; onToken: (t: string) =
   return <div ref={el} className="min-h-[65px]" />;
 }
 
-// Bilet hakkı ve paket satın alma; sınırsız hesaplarda görünmez. Ödeme Lemon Squeezy sayfasında, dönüşte ?paid=1.
-function BalanceCard({ me, paid, onError }: { me: Me; paid: boolean; onError: (m: string) => void }) {
+// Başlıkta her zaman görünen bakiye; sayaçlı hesapta yükleme sayfasına götürür
+function BalanceChip({ me, onTopUp }: { me: Me; onTopUp: () => void }) {
+  const b = me.balance;
+  if (!b) return null;
+  if (b.left === null) return <span className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm"><TicketIcon className="size-4" /> {T.unlimited}</span>;
+  return (
+    <Button variant={b.left <= 100 ? "destructive" : "secondary"} onClick={onTopUp} title={T.topUp}>
+      <TicketIcon /> {T.left(Math.max(0, b.left))} · {T.topUp}
+    </Button>
+  );
+}
+
+// "349 ₺" → 349; TL değilse ya da ayrıştırılamazsa null (1000 bilet başı fiyat gösterilmez)
+const priceNum = (p: string) => { if (!p.includes("₺")) return null; const n = Number(p.replace(/[^\d,]/g, "").replace(",", ".")); return n > 0 ? n : null; };
+
+// Bilet yükleme sayfası (/admin#bilet): bakiye, paketler, satın alımlar. Ödeme Lemon Squeezy sayfasında, dönüşte ?paid=1.
+function TicketsPage({ me, paid, onBack, onError }: { me: Me; paid: boolean; onBack: () => void; onError: (m: string) => void }) {
   const b = me.balance!, [busy, setBusy] = useState(false);
-  if (b.left === null) return null;
-  const low = b.left <= 100;
   async function buy(variant: string) {
     setBusy(true);
     try { location.href = (await call<{ url: string }>("/api/admin/checkout", { variant })).url; } catch (e: any) { onError(e.message); setBusy(false); }
   }
   return (
-    <Card>
-      <CardHeader><CardTitle className="text-lg font-semibold">{T.balanceTitle}: {T.left(Math.max(0, b.left))}</CardTitle></CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">{T.balanceDesc(b.used, b.free)}</p>
-        {paid && <p className="font-semibold">{T.paid}</p>}
-        {low && <p className="font-semibold text-destructive">{b.left <= 0 ? T.emptyWarn : T.lowWarn}</p>}
-        {me.packages?.length ? (
-          <div className="flex flex-wrap gap-2">
-            {me.packages.map((p) => (
-              <Button key={p.variant} variant={low ? "default" : "secondary"} disabled={busy || !me.verified} onClick={() => buy(p.variant)}>
-                {T.pack(p.tickets)}{p.price && ` · ${p.price}`}
-              </Button>
-            ))}
-          </div>
-        ) : <p className="text-sm text-muted-foreground">{T.noPackages}</p>}
-      </CardContent>
-    </Card>
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="ghost" onClick={onBack}><ChevronLeftIcon /> {T.queues}</Button>
+        <Title className="mt-0 flex-1">{T.topUp}</Title>
+      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-2xl font-bold">{b.left === null ? T.unlimited : T.left(Math.max(0, b.left))}</CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">{T.balanceDesc(b.used, b.free)}</p>
+          {b.left !== null && <p className="text-sm text-muted-foreground">{T.breakdown(b.free, b.bought, b.granted, b.used)}</p>}
+          {paid && <p className="font-semibold">{T.paid}</p>}
+          {b.left !== null && b.left <= 100 && <p className="font-semibold text-destructive">{b.left <= 0 ? T.emptyWarn : T.lowWarn}</p>}
+          {me.verified === false && <p className="text-sm font-semibold">{T.verifyFirst}</p>}
+        </CardContent>
+      </Card>
+      {b.left !== null && (me.packages?.length ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {me.packages.map((p) => {
+            const n = priceNum(p.price);
+            return (
+              <Card key={p.variant}>
+                <CardContent className="flex h-full flex-col gap-2">
+                  <b className="text-xl">{T.pack(p.tickets)}</b>
+                  <span className="text-2xl font-bold text-primary">{p.price}</span>
+                  {n && <span className="text-sm text-muted-foreground">{T.perThousand(Math.round(n / (p.tickets / 1000)))}</span>}
+                  <Button className="mt-auto" disabled={busy || !me.verified} onClick={() => buy(p.variant)}>{T.buy}</Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : <p className="text-sm text-muted-foreground">{T.noPackages}</p>)}
+      {b.left !== null && <p className="text-sm text-muted-foreground">{T.buyNote}</p>}
+      {!!b.orders?.length && (
+        <Card className="py-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{T.orderDate}</TableHead>
+                <TableHead className="text-right">{T.colBalance}</TableHead>
+                <TableHead className="text-right">{T.orderTotal}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {b.orders.map((o) => (
+                <TableRow key={o.id}>
+                  <TableCell>{new Date(o.at).toLocaleDateString(lang)} <span className="text-xs text-muted-foreground">#{o.id}</span></TableCell>
+                  <TableCell className={cn("text-right tabular-nums", o.status === "refunded" && "line-through")}>{o.tickets.toLocaleString(lang)}</TableCell>
+                  <TableCell className="text-right">{o.total}{o.status === "refunded" && ` · ${T.refunded}`}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+    </>
   );
 }
 
@@ -533,8 +586,18 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
   const [editing, setEditing] = useState<RoomInfo | null | undefined>(); // undefined: form kapalı, null: yeni oda
   const [pwOpen, setPwOpen] = useState(false);
   const [err, setErr] = useState("");
+  const [tickets, setTickets] = useState(location.hash === "#bilet" || paid); // bilet yükleme sayfası
   const formOpen = useRef(false);
   formOpen.current = editing !== undefined;
+
+  // #bilet adresi paylaşılabilir (e-postadaki bağlantı), geri tuşu sıralara döner
+  useEffect(() => {
+    const on = () => setTickets(location.hash === "#bilet");
+    addEventListener("hashchange", on);
+    return () => removeEventListener("hashchange", on);
+  }, []);
+  const openTickets = (v: boolean) => { location.hash = v ? "bilet" : ""; setTickets(v); window.scrollTo(0, 0); };
+  const low = me.balance?.left != null && me.balance.left <= 100;
 
   async function load() {
     try {
@@ -562,6 +625,13 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
     try { await call("/api/admin/verify", {}); setNote(T.resent); } catch (e: any) { setErr(e.message); }
   }
 
+  if (tickets) return (
+    <Page className="max-w-5xl">
+      <TicketsPage me={me} paid={paid} onBack={() => openTickets(false)} onError={setErr} />
+      <ErrorText>{err}</ErrorText>
+    </Page>
+  );
+
   return (
     <Page className="max-w-5xl">
       <div className="flex flex-wrap items-center gap-2">
@@ -569,6 +639,7 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
           <Title>{T.queues}</Title>
           {me.home && <a className="text-sm text-muted-foreground underline-offset-2 hover:underline" href={me.home} target="_blank">{bare(me.home)}</a>}
         </div>
+        <BalanceChip me={me} onTopUp={() => openTickets(true)} />
         <Button disabled={me.verified === false} onClick={() => setEditing(null)}>{T.addRoom}</Button>
         <Button variant="secondary" title={T.changePw} onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> {T.accountBtn}</Button>
         <Button variant="secondary" onClick={() => logout()}>{T.logout}</Button>
@@ -580,7 +651,12 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
         </div>
       )}
       {note && <p className="text-sm">{note}</p>}
-      <BalanceCard me={me} paid={paid} onError={setErr} />
+      {low && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive p-3 text-sm">
+          <span className="flex-1 font-semibold text-destructive">{me.balance!.left! <= 0 ? T.emptyWarn : T.lowWarn}</span>
+          <Button size="sm" onClick={() => openTickets(true)}>{T.topUp}</Button>
+        </div>
+      )}
       {pwOpen && <PasswordForm onDone={() => setPwOpen(false)} onError={setErr} />}
       {pwOpen && <DeleteAccount onDeleted={() => logout(T.deleted)} onError={setErr} />}
       <RoomTable rooms={rooms} onChange={load} onEdit={setEditing} onError={setErr} />
@@ -755,7 +831,7 @@ type Mode = "login" | "signup" | "forgot" | "reset";
 // Belirteç okunur okunmaz adres çubuğundan silinir (geçmişte ve paylaşılan ekranda kalmasın).
 const params = new URLSearchParams(location.search);
 const resetToken = params.get("reset") ?? "", verifyToken = params.get("verify") ?? "", paidBack = params.has("paid");
-if (location.search) history.replaceState(null, "", "/admin");
+if (location.search) history.replaceState(null, "", `/admin${paidBack ? "#bilet" : location.hash}`);
 
 function AdminPage() {
   const [me, setMe] = useState<Me | null>(null);
