@@ -1,6 +1,7 @@
 # main'e her push: önce smoke testi (yerel wrangler dev), geçerse Cloudflare'e deploy.
 # Gerekli repo secret'ları: CLOUDFLARE_API_TOKEN ("Edit Cloudflare Workers" şablonu), CLOUDFLARE_ACCOUNT_ID.
-# ADMIN_PASSWORD ve VAPID_PRIVATE_KEY Cloudflare'de secret olarak durur, deploy onlara dokunmaz.
+# ADMIN_PASSWORD, VAPID_PRIVATE_KEY, TURNSTILE_SECRET, LEMON_API_KEY, LEMON_WEBHOOK_SECRET Cloudflare'de secret olarak durur,
+# deploy onlara dokunmaz.
 name: Deploy
 
 on:
@@ -26,13 +27,23 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # Yerel test ortamı: smoke.mjs varsayılan şifresi "test"; VAPID anahtarı yok, push gönderimi atlanır
-      - run: echo 'ADMIN_PASSWORD=test' > .dev.vars
+      # Yerel test ortamı: smoke.mjs varsayılan şifresi "test"; VAPID anahtarı yok, push gönderimi atlanır.
+      # Turnstile'ın her zaman geçen test anahtarları; DEV=1 e-posta bağlantılarını günlüğe yazar (smoke.mjs WRANGLER_LOG'dan okur)
+      - run: |
+          cat > .dev.vars <<'EOF'
+          ADMIN_PASSWORD=test
+          DEV=1
+          LEMON_TEST=1
+          LEMON_WEBHOOK_SECRET=test-webhook-secret
+          TURNSTILE_SITE_KEY=1x00000000000000000000AA
+          TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+          PACKAGES=[{"variant":"111","tickets":500,"price":"$1"}]
+          EOF
       - name: Smoke test
         run: |
           npx wrangler dev --port 8787 > wrangler.log 2>&1 &
           for i in $(seq 1 90); do curl -sf localhost:8787/api/vapid > /dev/null && break; sleep 1; done
-          node smoke.mjs
+          WRANGLER_LOG=wrangler.log node smoke.mjs
       - if: failure()
         run: cat wrangler.log
 

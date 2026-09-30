@@ -1,6 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
+import { Account, checkout, FREE, packages, webhook } from "./billing.js";
+import { human, ip, limit, pwned, secure } from "./guard.js";
 import { fail, failed, langOf, localize, msg, tableLabel } from "./i18n.js";
+import { mail } from "./mail.js";
 import { cleanSub, sendPush } from "./push.js";
+import { enc, hex, randomHex, same, sha256, sign } from "./util.js";
+
+export { Account };
 
 const TTLS = [60, 90, 180, 300]; // seçilebilir QR geçerlilik süreleri (sn); görevli ekranı süre/4'te bir yeni kod gösterir
 const MAX_GROUP = 8; // varsayılan en büyük grup
@@ -8,18 +14,6 @@ const GROUP_LIMIT = 20;
 const TABLE_LIMIT = 50;
 const CATEGORIES = new Set(["plaj", "iskele", "gise", "restoran", "saglik", "resmi", "etkinlik", "diger"]); // ikonları public/app.js'te
 const MAX_ENTRIES = 1000;
-
-const enc = (s) => new TextEncoder().encode(String(s ?? ""));
-const same = (a, b) => {
-  const x = enc(a), y = enc(b);
-  return x.length === y.length && crypto.subtle.timingSafeEqual(x, y);
-};
-
-async function sign(key, msg) {
-  const k = await crypto.subtle.importKey("raw", enc(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, enc(msg)));
-  return [...sig.slice(0, 10)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 // Haversine mesafesi, metre
 function meters(a, b) {
@@ -82,12 +76,21 @@ export class Room extends DurableObject {
 
   save() { return this.ctx.storage.put("s", this.s); }
 
-  async create(fields) {
+  // owner: biletler bu kullanıcının hesabından düşer (billing.js); sahipsiz eski odalarda yok
+  async create(fields, owner) {
     if (this.s) throw new Error("Oda zaten var");
-    this.s = { ...fields, key: crypto.randomUUID(), seq: 0, available: 0, tables: [], entries: [] };
+    this.s = { ...fields, owner, key: crypto.randomUUID(), seq: 0, available: 0, tables: [], entries: [] };
     await this.save();
     return this.s.key;
   }
+
+  async setOwner(owner) {
+    if (!this.s) return;
+    this.s.owner = owner;
+    await this.save();
+  }
+
+  keyOk(key) { return same(key, this.need().key); }
 
   info() {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
@@ -151,8 +154,10 @@ export class Room extends DurableObject {
     if (typeof device !== "string" || device.length < 16) throw fail("device");
     size = int(size, 1, c.maxGroup, "group", c.maxGroup);
     accept = acceptList(accept, size, c.flex);
-    // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner
-    const e = s.entries.find((x) => x.device === device) ?? this.add(size, accept, "qr", device, "", lang);
+    // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner. Sahibin bilet hakkı bittiyse ziyaretçi yalnızca sıranın kapalı olduğunu görür.
+    const e = s.entries.find((x) => x.device === device) ?? await this.ticket(size, accept, "qr", device, "", lang).catch((err) => {
+      throw failed(err, "quota") || failed(err, "suspended") ? fail("closed") : err;
+    });
     this.fill(); // boş yer / bekleyen masa varsa hemen çağrılır
     await this.save();
     await this.notify();
@@ -163,6 +168,20 @@ export class Room extends DurableObject {
     if (this.s.entries.length >= MAX_ENTRIES) throw fail("full");
     const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, accept, src, device, note, lang, status: "waiting", at: Date.now() };
     this.s.entries.push(e);
+    return e;
+  }
+
+  // Her yeni bilet sahibin hesabından 1 hak düşer. Bilet önce eklenir: hesap cevabı beklenirken aynı cihazın ikinci isteği
+  // onu bulur, MAX_ENTRIES aşılmaz. Hak yoksa bilet geri alınır (bu arada çağrıldıysa ayrılan yer de döner).
+  async ticket(...args) {
+    const e = this.add(...args);
+    if (!this.s.owner) return e;
+    try {
+      await this.env.ACCOUNT.getByName(this.s.owner).spend();
+    } catch (err) {
+      this.drop(e.id);
+      throw err;
+    }
     return e;
   }
 
@@ -198,7 +217,7 @@ export class Room extends DurableObject {
 
   // call() ile biriken çağrılara push gönderir. Sayfa açıksa yoklama zaten yakalar; push hatası isteği bozmamalı.
   async notify() {
-    const list = this.outbox ?? [];
+    const list = (this.outbox ?? []).filter((e) => this.s?.entries.includes(e)); // hakkı yetmeyip geri alınan bilet çıkar
     this.outbox = [];
     if (!list.length || !this.env.VAPID_PRIVATE_KEY) return;
     const s = this.s;
@@ -297,7 +316,7 @@ export class Room extends DurableObject {
       case "drop": this.drop(id); break;
       case "add": {
         const sz = int(size, 1, conf(s).maxGroup, "badGroup");
-        added = this.add(sz, acceptList(accept, sz, c.flex), "manual", null, String(note ?? "").slice(0, 60));
+        added = await this.ticket(sz, acceptList(accept, sz, c.flex), "manual", null, String(note ?? "").slice(0, 60));
         break;
       }
       case "reset": Object.assign(s, { seq: 0, available: 0, tables: [], entries: [] }); break;
@@ -322,15 +341,39 @@ export class Room extends DurableObject {
 //   "<oda id>" → { at, owner }; eski kayıtlarda yalnızca oluşturulma zamanı (sahipsiz oda)
 //   "slug:<kullanıcı>/<slug>" → oda id; sahipsiz eski odalarda "slug:<slug>"
 //   "legacy:<slug>" → oda id: kullanıcıya taşınan eski odanın <slug>.sirangeldi.com adresi yeni adrese yönlenir
-//   "user:<ad>" → { salt, hash, at }, "fail:<ad>" → { n, at } başarısız giriş sayacı
-// Sıcak yolda değil: sayfalar adresi açılışta bir kez çözer, sonra doğrudan odaya gider.
+//   "user:<ad>" → { salt, hash, at, email?, lang?, self?, verified?, suspended? }
+//     self: kendisi hesap açtı (sıra sayısı sınırlı), verified: false → e-postası doğrulanmadı, sıra açamaz
+//   "email:<adres>" → kullanıcı adı, "susp:<ad>" → askıya alınan kullanıcının sıraları haritada görünmez
+//   "fail:<ad>" → { n, at } başarısız giriş sayacı
+//   "tok:<verify|reset>:<sha256(belirteç)>" → { name, exp }: e-postayla giden tek kullanımlık bağlantı; belirtecin kendisi saklanmaz
+// Sıcak yolda değil: sayfalar adresi açılışta bir kez çözer, sonra doğrudan odaya gider. Bilet hakkı kullanıcının
+// Account DO'sunda (billing.js). Şifre özeti (PBKDF2) burada değil Worker'da hesaplanır: tek DO'yu giriş denemeleri kilitlemesin.
 export class Registry extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    // Bir kez, bilet hakkı gelmeden önceki veriye: odalara sahiplerini yazar (biletler sahibin hesabından düşsün),
+    // mevcut kullanıcıları sınırsız yapar (Account varsayılanı sayaçlı)
+    ctx.blockConcurrencyWhile(async () => {
+      if (await ctx.storage.get("meta:billing")) return;
+      for (const r of await this.rooms()) if (r.owner) await env.ROOM.getByName(r.id).setOwner(r.owner).catch(() => {});
+      for (const k of (await ctx.storage.list({ prefix: "user:" })).keys()) await env.ACCOUNT.getByName(k.slice(5)).set({ metered: false });
+      await ctx.storage.put("meta:billing", Date.now());
+    });
+  }
+
   value(k) { return this.ctx.storage.get(k); }
 
   async rooms(owner) {
-    const all = [...(await this.ctx.storage.list())].filter(([k]) => ID_RE.test(k))
+    // Oda id'leri [a-f0-9]: bu aralık user:, slug:, tok: gibi anahtarları taramaz
+    const all = [...(await this.ctx.storage.list({ start: "0", end: "g" }))].filter(([k]) => ID_RE.test(k))
       .map(([id, v]) => (typeof v === "number" ? { id, at: v, owner: null } : { id, ...v }));
     return all.filter((r) => owner === undefined || r.owner === owner).sort((a, b) => a.at - b.at);
+  }
+
+  // Herkese açık liste: askıya alınan kullanıcıların sıraları hariç
+  async listed(owner) {
+    const susp = new Set([...(await this.ctx.storage.list({ prefix: "susp:" })).keys()].map((k) => k.slice(5)));
+    return (await this.rooms(owner)).filter((r) => !susp.has(r.owner));
   }
 
   add(id, owner) { return this.ctx.storage.put(id, { at: Date.now(), owner }); }
@@ -358,7 +401,10 @@ export class Registry extends DurableObject {
     const rooms = await this.rooms();
     return [...(await this.ctx.storage.list({ prefix: "user:" }))].map(([k, v]) => {
       const name = k.slice(5);
-      return { name, at: v.at, rooms: rooms.filter((r) => r.owner === name).length };
+      return {
+        name, at: v.at, email: v.email ?? null, self: !!v.self, verified: v.verified !== false, suspended: !!v.suspended,
+        rooms: rooms.filter((r) => r.owner === name).length,
+      };
     });
   }
 
@@ -368,22 +414,95 @@ export class Registry extends DurableObject {
     return u;
   }
 
-  async createUser(name, cred) {
+  async nameFree(name) {
     if (await this.value(`user:${name}`)) throw fail("userTaken");
     // Eski sıra adresiyle aynı ad olursa eski adres yönlendirmesi bozulur
     if ((await this.value(`legacy:${name}`)) || (await this.value(`slug:${name}`))) throw fail("userLegacy");
+  }
+
+  // Süper yöneticinin açtığı kullanıcı: e-postasız, doğrulanmış; Worker hesabını sınırsız yapar
+  async createUser(name, cred) {
+    await this.nameFree(name);
     await this.ctx.storage.put(`user:${name}`, { ...cred, at: Date.now() });
   }
 
+  // Kendi hesap açan kullanıcı; dönen değer doğrulama bağlantısının belirteci.
+  // 7 gün içinde doğrulanmayan ve sırası olmayan hesap silinir (alarm): kullanıcı adları boşuna tutulmasın.
+  // terms: kabul edilen kullanım koşulları sürümü (web/src/components/legal.tsx TERMS_VERSION)
+  async signup(name, cred, email, lang, terms) {
+    await this.nameFree(name);
+    if (await this.value(`email:${email}`)) throw fail("emailTaken");
+    await this.ctx.storage.put({
+      [`user:${name}`]: { ...cred, email, lang, terms, termsAt: Date.now(), self: true, verified: false, at: Date.now(), mailed: { verify: Date.now() } },
+      [`email:${email}`]: name,
+    });
+    await this.tidyLater();
+    return this.token("verify", name, 3 * 864e5);
+  }
+
+  async token(kind, name, ttl) {
+    const t = randomHex(24);
+    await this.ctx.storage.put(`tok:${kind}:${await sha256(t)}`, { name, exp: Date.now() + ttl });
+    await this.tidyLater();
+    return t;
+  }
+
+  // Tek kullanımlık: süresi dolmamışsa kullanıcı adını döner ve siler
+  async redeem(kind, t) {
+    const k = `tok:${kind}:${await sha256(String(t ?? ""))}`, v = await this.value(k);
+    if (!v || v.exp < Date.now() || !(await this.value(`user:${v.name}`))) throw fail("badToken");
+    await this.ctx.storage.delete(k);
+    return v.name;
+  }
+
+  // E-posta gönderimini sınırlar: aynı kullanıcıya aynı türden (verify, reset) dakikada en fazla bir e-posta. Gönderilmeyecekse null.
+  async mailSlot(name, kind) {
+    const u = await this.value(`user:${name}`);
+    if (!u?.email || Date.now() - (u.mailed?.[kind] ?? 0) < 60e3) return null;
+    await this.ctx.storage.put(`user:${name}`, { ...u, mailed: { ...u.mailed, [kind]: Date.now() } });
+    return u;
+  }
+
+  async resendVerify(name) {
+    const u = await this.user(name);
+    if (u.verified !== false) throw fail("alreadyVerified");
+    if (!(await this.mailSlot(name, "verify"))) throw fail("tooMany");
+    return { email: u.email, lang: u.lang, token: await this.token("verify", name, 3 * 864e5) };
+  }
+
+  async verify(t) {
+    const name = await this.redeem("verify", t);
+    await this.setUser(name, { verified: true });
+    return name;
+  }
+
+  // Şifremi unuttum: kullanıcı yoksa ya da az önce e-posta gittiyse null (yanıt yine aynı; e-postanın kayıtlı olduğu anlaşılmasın)
+  async forgot(email) {
+    const name = await this.value(`email:${email}`), u = name && (await this.mailSlot(name, "reset"));
+    return u ? { name, lang: u.lang, token: await this.token("reset", name, 3600e3) } : null;
+  }
+
+  // Bağlantı e-postaya gittiği için e-posta doğrulanmış sayılır
+  async reset(t, cred) {
+    const name = await this.redeem("reset", t);
+    await this.setPassword(name, { ...cred, verified: true });
+    return name;
+  }
+
+  async setUser(name, fields) {
+    await this.ctx.storage.put(`user:${name}`, { ...(await this.user(name)), ...fields });
+    if ("suspended" in fields) await (fields.suspended ? this.ctx.storage.put(`susp:${name}`, 1) : this.ctx.storage.delete(`susp:${name}`));
+  }
+
   async setPassword(name, cred) {
-    await this.ctx.storage.put(`user:${name}`, { ...(await this.user(name)), ...cred });
+    await this.setUser(name, cred);
     await this.ctx.storage.delete(`fail:${name}`);
   }
 
   async deleteUser(name) {
-    await this.user(name);
+    const u = await this.user(name);
     if ((await this.rooms(name)).length) throw fail("userHasRooms");
-    await this.ctx.storage.delete([`user:${name}`, `fail:${name}`]);
+    await this.ctx.storage.delete([`user:${name}`, `fail:${name}`, `susp:${name}`, ...(u.email ? [`email:${u.email}`] : [])]);
   }
 
   // Sahipsiz (hesaplardan önceki) tüm sıraları kullanıcıya verir; eski adresleri yeni adrese yönlenir
@@ -399,32 +518,67 @@ export class Registry extends DurableObject {
       await s.delete(`slug:${slug}`);
       await s.put({ [`slug:${name}/${slug}`]: id, [`legacy:${slug}`]: id });
     }
-    for (const r of rooms) await s.put(r.id, { at: r.at, owner: name });
+    for (const r of rooms) {
+      await s.put(r.id, { at: r.at, owner: name });
+      await this.env.ROOM.getByName(r.id).setOwner(name).catch(() => {});
+    }
     return rooms.length;
   }
 
-  // Şifre kontrolü; kaba kuvvete karşı 15 dakikada 10 hatalı denemeden sonra kilitlenir.
-  // admin: süper yönetici için ADMIN_PASSWORD. Dönen değer oturum imza anahtarıdır.
-  async login(name, password, admin) {
+  // Giriş: id kullanıcı adı ya da e-posta. Şifreyi Worker doğrular, sonucu loginResult ile bildirir.
+  // Kaba kuvvete karşı 15 dakikada 10 hatalı denemeden sonra kilitlenir (ayrıca Worker'da IP başına istek sınırı var).
+  async loginInfo(id) {
+    const name = id.includes("@") ? (await this.value(`email:${id}`)) ?? id : id;
+    const f = await this.value(`fail:${name}`);
+    if (f?.n >= 10 && Date.now() - f.at < 15 * 60e3) throw fail("locked");
+    const u = name === SUPER ? null : await this.value(`user:${name}`);
+    return { name, known: name === SUPER || !!u, salt: u?.salt, hash: u?.hash, suspended: !!u?.suspended, failed: !!f };
+  }
+
+  async loginResult(name, ok) {
     const fk = `fail:${name}`, f = await this.value(fk), now = Date.now();
-    if (f?.n >= 10 && now - f.at < 15 * 60e3) throw fail("locked");
-    const u = name === SUPER ? admin && { hash: admin } : await this.value(`user:${name}`);
-    const ok = u && (name === SUPER ? same(password, admin) : same(await pbkdf2(password, u.salt), u.hash));
-    if (!ok) {
-      if (u) await this.ctx.storage.put(fk, { n: (f && now - f.at < 15 * 60e3 ? f.n : 0) + 1, at: now });
-      throw fail("badLogin");
+    if (ok) await this.ctx.storage.delete(fk);
+    else await this.ctx.storage.put(fk, { n: (f && now - f.at < 15 * 60e3 ? f.n : 0) + 1, at: now });
+  }
+
+  async tidyLater() {
+    if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 864e5);
+  }
+
+  // Günlük temizlik: süresi dolan bağlantılar, eski giriş sayaçları, 7 günde doğrulanmayan boş hesaplar
+  async alarm() {
+    const s = this.ctx.storage, now = Date.now(), gone = [];
+    for (const [k, v] of await s.list({ prefix: "tok:" })) if (v.exp < now) gone.push(k);
+    for (const [k, v] of await s.list({ prefix: "fail:" })) if (now - v.at > 864e5) gone.push(k);
+    const owners = new Set((await this.rooms()).map((r) => r.owner));
+    let pending = false;
+    for (const [k, u] of await s.list({ prefix: "user:" })) {
+      if (u.verified !== false) continue;
+      const name = k.slice(5);
+      if (now - u.at < 7 * 864e5 || owners.has(name)) { pending = true; continue; }
+      gone.push(k, `email:${u.email}`);
+      await this.env.ACCOUNT.getByName(name).destroy();
     }
-    if (f) await this.ctx.storage.delete(fk);
-    return u.hash;
+    for (let i = 0; i < gone.length; i += 128) await s.delete(gone.slice(i, i + 128));
+    if (pending || (await s.list({ prefix: "tok:", limit: 1 })).size) await s.setAlarm(now + 864e5);
   }
 }
 
 const ID_RE = /^[a-f0-9]{10}$/;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
-// Alt alan adı, kullanıcı adı ya da sıra adresi olamaz: sayfa ve dosya yollarıyla çakışır (antalyabb.sirangeldi.com/join)
-const RESERVED = new Set(["www", "api", "admin", "yonetim", "mail", "join", "host", "status", "home", "assets", "icons"]);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+// Alt alan adı, kullanıcı adı ya da sıra adresi olamaz: sayfa ve dosya yollarıyla çakışır (antalyabb.sirangeldi.com/join),
+// ya da herkes hesap açabildiği için resmi bir adres gibi görünüp kötüye kullanılabilir (destek.sirangeldi.com)
+const RESERVED = new Set([
+  "www", "api", "admin", "yonetim", "mail", "join", "host", "status", "home", "assets", "icons",
+  "app", "panel", "dashboard", "login", "giris", "signup", "kayit", "account", "hesap", "auth", "secure", "guvenlik",
+  "billing", "pay", "odeme", "fatura", "support", "destek", "help", "yardim", "info", "blog", "docs", "cdn", "static",
+  "root", "system", "sistem", "official", "resmi", "sirangeldi", "siran-geldi", "noreply", "no-reply", "bildirim", "security",
+  "gizlilik", "kosullar", "kvkk", "privacy", "terms", "legal", "hukuk",
+]);
 const SUPER = "admin"; // süper yönetici girişi: kullanıcı adı "admin", şifre ADMIN_PASSWORD
 const SESSION_MS = 30 * 864e5;
+const ROOM_LIMIT = 20; // kendi hesap açan kullanıcının en fazla sıra sayısı (herkese açık liste her sıraya sorar)
 
 // antalyabb.sirangeldi.com → "antalyabb"; ana alan adı ve www için "". Geliştirmede antalyabb.localhost:8787 de çalışır.
 function subdomain(url, env) {
@@ -433,18 +587,18 @@ function subdomain(url, env) {
   return RESERVED.has(sub) ? "" : sub;
 }
 
-const hex = (b) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
-
 // 100 000: Workers'ın PBKDF2'de izin verdiği en yüksek tur sayısı
 async function pbkdf2(password, salt) {
   const k = await crypto.subtle.importKey("raw", enc(password), "PBKDF2", false, ["deriveBits"]);
   return hex(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: enc(salt), iterations: 100000 }, k, 256));
 }
 
-async function credential(password) {
+// checkLeaks: kullanıcının kendi seçtiği şifre sızmış şifre listelerinde olmamalı (süper yöneticinin verdiği geçici şifrede bakılmaz)
+async function credential(password, checkLeaks = false) {
   password = String(password ?? "");
   if (password.length < 8 || password.length > 200) throw fail("shortPassword");
-  const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+  if (checkLeaks && (await pwned(password))) throw fail("pwned");
+  const salt = randomHex(16);
   return { salt, hash: await pbkdf2(password, salt) };
 }
 
@@ -455,18 +609,47 @@ function userName(v) {
   return name;
 }
 
+function emailOf(v) {
+  const e = String(v ?? "").trim().toLowerCase();
+  if (e.length > 254 || !EMAIL_RE.test(e)) throw fail("badEmail");
+  return e;
+}
+
 // Oturum: "<kullanıcı>.<bitiş>.<imza>". İmza anahtarı kullanıcının şifre özeti; şifre değişince eski oturumlar düşer.
 async function session(name, secret) {
   const exp = Date.now() + SESSION_MS;
   return { token: `${name}.${exp}.${await sign(secret, `${name}.${exp}`)}`, user: name, super: name === SUPER };
 }
 
+// Bilinmeyen kullanıcıda da PBKDF2 hesaplanır: yanıt süresinden e-postanın kayıtlı olup olmadığı anlaşılmasın
+async function checkLogin(env, reg, id, password) {
+  const u = await reg.loginInfo(String(id ?? "").trim().toLowerCase());
+  password = String(password ?? "");
+  const ok = u.name === SUPER ? !!env.ADMIN_PASSWORD && same(password, env.ADMIN_PASSWORD)
+    : same(await pbkdf2(password, u.salt ?? "-"), u.hash ?? "") && u.known;
+  if (u.known && (!ok || u.failed)) await reg.loginResult(u.name, ok);
+  if (!ok) throw fail("badLogin");
+  if (u.suspended) throw fail("suspended");
+  return { name: u.name, secret: u.name === SUPER ? env.ADMIN_PASSWORD : u.hash };
+}
+
+// Dönen u: süper yönetici için null
 async function auth(req, env, reg) {
   const [name, exp, sig] = (req.headers.get("authorization") ?? "").replace(/^Bearer /, "").split(".");
   if (!name || !(Number(exp) > Date.now())) throw fail("auth");
-  const secret = name === SUPER ? env.ADMIN_PASSWORD : (await reg.value(`user:${name}`))?.hash;
+  const u = name === SUPER ? null : await reg.value(`user:${name}`);
+  const secret = name === SUPER ? env.ADMIN_PASSWORD : u?.hash;
   if (!secret || !same(sig, await sign(secret, `${name}.${exp}`))) throw fail("auth");
-  return name;
+  if (u?.suspended) throw fail("suspended");
+  return { owner: name, u };
+}
+
+const acct = (env, name) => env.ACCOUNT.getByName(name);
+
+// E-postadaki bağlantılar isteğin geldiği sitenin yönetim sayfasına gider
+async function sendLink(env, url, { to, lang, kind, user, token }) {
+  const q = kind === "verify" ? "verify" : "reset";
+  await mail(env, { to, lang, kind, user, link: `${url.origin}/admin?${q}=${token}` }).catch((e) => console.error("mail", e.message));
 }
 
 // Gizli sıranın adresi: 20 karakter [a-z0-9] (~103 bit), tahmin edilemez; slug kuralına uyar, ID_RE'ye uymaz
@@ -514,36 +697,84 @@ function statusLink(url, env, owner, ref) {
   return owner ? `https://${owner}.${env.BASE_DOMAIN}/${ref}` : `https://${ref}.${env.BASE_DOMAIN}/`;
 }
 
-// Süper yönetici: kullanıcı açar, şifre sıfırlar, siler; hesaplardan önceki sıraları bir kullanıcıya taşır
+// Süper yönetici: kullanıcı açar, şifre sıfırlar, siler; hesaplardan önceki sıraları bir kullanıcıya taşır;
+// bilet hakkı verir, sayaçlı/sınırsız yapar, askıya alır
 async function usersApi(req, env, reg, url, body) {
-  const m = url.pathname.match(/^\/api\/admin\/users(?:\/([a-z0-9-]+)(?:\/(adopt))?)?$/);
+  const m = url.pathname.match(/^\/api\/admin\/users(?:\/([a-z0-9-]+)(?:\/(adopt|plan))?)?$/);
   if (!m) throw fail("badRequest");
   const [, name, op] = m;
   if (!name && req.method === "GET") {
-    const users = (await reg.users()).map((u) => ({ ...u, link: accountLink(url, env, u.name) }));
+    const users = await Promise.all((await reg.users()).map(async (u) => ({ ...u, link: accountLink(url, env, u.name), balance: await acct(env, u.name).balance() })));
     return { users, unowned: (await reg.rooms(null)).length };
   }
-  if (!name && req.method === "POST") await reg.createUser(userName(body.user), await credential(body.password));
+  if (!name && req.method === "POST") {
+    const n = userName(body.user);
+    await reg.createUser(n, await credential(body.password));
+    await acct(env, n).set({ metered: false });
+  }
   else if (op === "adopt" && req.method === "POST") return { moved: await reg.adopt(name) };
-  else if (!op && req.method === "PUT") await reg.setPassword(name, await credential(body.password));
-  else if (!op && req.method === "DELETE") await reg.deleteUser(name);
-  else throw fail("badRequest");
+  else if (op === "plan" && req.method === "POST") {
+    await reg.user(name);
+    const a = acct(env, name);
+    if ("metered" in body) await a.set({ metered: !!body.metered });
+    if (body.grant) await a.grant(int(body.grant, -1e7, 1e7, "badNumber"));
+    if ("suspended" in body) {
+      await reg.setUser(name, { suspended: !!body.suspended });
+      await a.set({ suspended: !!body.suspended });
+    }
+    if (body.verified) await reg.setUser(name, { verified: true });
+    return a.balance();
+  } else if (!op && req.method === "PUT") await reg.setPassword(name, await credential(body.password));
+  else if (!op && req.method === "DELETE") {
+    await reg.deleteUser(name);
+    await acct(env, name).destroy();
+  } else throw fail("badRequest");
   return { ok: true };
 }
 
-async function adminApi(req, env, url, body) {
-  const reg = env.REGISTRY.getByName("main"), owner = await auth(req, env, reg);
-  if (url.pathname === "/api/admin/me") return { user: owner, super: owner === SUPER, home: owner !== SUPER && accountLink(url, env, owner) };
-  if (owner === SUPER) {
-    if (url.pathname.startsWith("/api/admin/users")) return usersApi(req, env, reg, url, body);
-    throw fail("superNoRooms");
+// Kullanıcının kendi hesabı: /me, şifre, doğrulama e-postası, bilet paketi alma, hesabı silme
+async function accountApi(req, env, reg, url, body, owner, u) {
+  const p = url.pathname;
+  if (p === "/api/admin/me") {
+    return {
+      user: owner, super: false, home: accountLink(url, env, owner), email: u.email ?? null, verified: u.verified !== false,
+      balance: await acct(env, owner).balance(), packages: packages(env),
+    };
   }
-  if (url.pathname === "/api/admin/password" && req.method === "POST") {
-    await reg.login(owner, String(body.old ?? ""));
-    const cred = await credential(body.password);
+  if (p === "/api/admin/password" && req.method === "POST") {
+    await checkLogin(env, reg, owner, body.old);
+    const cred = await credential(body.password, true);
     await reg.setPassword(owner, cred);
     return session(owner, cred.hash); // eski oturumlar düştü, bu tarayıcı girişli kalsın
   }
+  if (p === "/api/admin/verify" && req.method === "POST") {
+    const r = await reg.resendVerify(owner);
+    await sendLink(env, url, { to: r.email, lang: r.lang, kind: "verify", user: owner, token: r.token });
+    return { ok: true };
+  }
+  if (p === "/api/admin/checkout" && req.method === "POST") {
+    if (u.verified === false) throw fail("unverified");
+    await limit(env, "AUTH_LIMIT", `pay:${owner}`);
+    return { url: await checkout(env, url.origin, owner, u.email, body.variant) };
+  }
+  if (p === "/api/admin/account/delete" && req.method === "POST") {
+    await checkLogin(env, reg, owner, body.password);
+    await reg.deleteUser(owner); // sırası varsa silinmez
+    await acct(env, owner).destroy();
+    return { ok: true };
+  }
+  return null;
+}
+
+async function adminApi(req, env, url, body) {
+  const reg = env.REGISTRY.getByName("main"), { owner, u } = await auth(req, env, reg);
+  if (owner === SUPER) {
+    if (url.pathname === "/api/admin/me") return { user: owner, super: true, home: false };
+    if (url.pathname.startsWith("/api/admin/users")) return usersApi(req, env, reg, url, body);
+    throw fail("superNoRooms");
+  }
+  const own = await accountApi(req, env, reg, url, body, owner, u);
+  if (own) return own;
   const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import|reslug))?)?$/);
   if (!m) throw fail("badRequest");
   const [, id, op] = m;
@@ -553,20 +784,24 @@ async function adminApi(req, env, url, body) {
     return rooms.filter(Boolean).map((r) => ({ ...r, link: hostLink(url, env, owner, r), page: statusLink(url, env, owner, r.slug ?? r.room) }));
   }
   if (!id && req.method === "POST") {
+    if (u.verified === false) throw fail("unverified");
+    if (u.self && (await reg.rooms(owner)).length >= ROOM_LIMIT) throw fail("roomLimit", ROOM_LIMIT);
     const fields = roomFields(body);
     const room = crypto.randomUUID().replaceAll("-", "").slice(0, 10);
     await reg.claim(owner, fields.slug, room);
-    const key = await env.ROOM.getByName(room).create(fields);
+    const key = await env.ROOM.getByName(room).create(fields, owner);
     await reg.add(room, owner);
     return { room, key };
   }
   const room = env.ROOM.getByName(id);
   if (op === "import" && req.method === "POST") {
-    // Listede olmayan mevcut bir odayı (ör. görevli linkinden ID ile) listeye geri ekler; başka kullanıcının odası alınamaz
+    // Listede olmayan mevcut bir odayı görevli linkinden (ID + anahtar) listeye geri ekler; anahtarı bilmeyen alamaz
     const { slug } = await room.info(); // oda yoksa "Sıra bulunamadı" fırlatır
+    if (!(await room.keyOk(String(body.key ?? "")))) throw fail("unauthorized");
     if (await reg.value(id)) throw fail("alreadyListed");
     if (slug) await reg.claim(owner, slug, id);
     await reg.add(id, owner);
+    await room.setOwner(owner);
     return { ok: true };
   }
   if (!(await reg.owns(id, owner))) throw fail("notFound");
@@ -593,13 +828,71 @@ async function adminApi(req, env, url, body) {
   return { ok: true };
 }
 
+// Hesap açma, e-posta doğrulama, şifremi unuttum. Hepsi IP başına sınırlı; hesap açma ve sıfırlama isteği Turnstile ister.
+async function publicAuth(req, env, reg, url, body) {
+  const p = url.pathname;
+  if (req.method !== "POST" || !["/api/login", "/api/signup", "/api/verify", "/api/forgot", "/api/reset"].includes(p)) return null;
+  await limit(env, "AUTH_LIMIT", `${p}:${ip(req)}`);
+  switch (p) {
+    case "/api/login": {
+      const { name, secret } = await checkLogin(env, reg, body.user, body.password);
+      return session(name, secret);
+    }
+    case "/api/signup": {
+      await human(env, req, body.captcha);
+      const name = userName(body.user), email = emailOf(body.email), lang = langOf(body.lang);
+      if (typeof body.terms !== "string" || !body.terms) throw fail("terms");
+      const cred = await credential(body.password, true);
+      const token = await reg.signup(name, cred, email, lang, body.terms.slice(0, 20));
+      await acct(env, name).set({ metered: true, suspended: false, email, lang, user: name });
+      await sendLink(env, url, { to: email, lang, kind: "verify", user: name, token });
+      return session(name, cred.hash);
+    }
+    case "/api/verify": return { user: await reg.verify(body.token) };
+    case "/api/forgot": {
+      await human(env, req, body.captcha);
+      const email = emailOf(body.email), r = await reg.forgot(email);
+      if (r) await sendLink(env, url, { to: email, lang: r.lang, kind: "reset", user: r.name, token: r.token });
+      return { ok: true };
+    }
+    case "/api/reset": {
+      const cred = await credential(body.password, true);
+      await reg.reset(body.token, cred);
+      return { ok: true };
+    }
+  }
+}
+
+// Herkese açık sıra listesi (tanıtım sitesindeki harita, kullanıcı sayfası): yalnızca status() alanları, anahtar yok, gizli sıralar
+// ve askıya alınan kullanıcılar hariç. ?u=: yalnızca o kullanıcının sıraları.
+// Her istek tüm odalara sorduğu için 30 sn önbellekte; önbellek anahtarında yalnızca u var, rastgele parametreyle aşılamaz.
+async function publicRooms(req, env, url, reg) {
+  const u = url.searchParams.get("u") || "";
+  const key = new Request(`${url.origin}/api/rooms?u=${encodeURIComponent(u)}`), cache = env.DEV === "1" ? null : caches.default;
+  const hit = await cache?.match(key);
+  if (hit) return hit;
+  const list = await reg.listed(u || undefined);
+  const rooms = await Promise.all(list.map(({ id, owner }) => env.ROOM.getByName(id).status()
+    .then((st) => ({ ...st, link: statusLink(url, env, owner, st.slug ?? id) }), () => null)));
+  const res = Response.json(rooms.filter((r) => r && !r.private), { headers: { "cache-control": "public, max-age=30" } });
+  await cache?.put(key, res.clone());
+  return res;
+}
+
 const PAGES = new Set(["/join", "/host", "/status"]); // wrangler.jsonc'ta run_worker_first: eski adres yönlendirmesi için
 
 // Sayfa istekleri. Kök: alt alan adında kullanıcının sayfası / sıra durumu, ana alan adında tanıtım sitesi.
 // antalyabb.sirangeldi.com/bambus → sıra durumu. Hesaplardan önceki bambus.sirangeldi.com adresleri
 // sıra bir kullanıcıya taşındıysa antalyabb.sirangeldi.com'a yönlenir (basılı QR'lar ve görevli linkleri çalışmaya devam eder).
+// Yönetim sayfası yalnızca ana alan adında: kullanıcı adresinde giriş formu görünmesin.
 async function page(req, env, url) {
   const sub = subdomain(url, env), path = url.pathname;
+  if (path === "/admin") {
+    if (!sub) return env.ASSETS.fetch(req);
+    const to = new URL(url);
+    to.hostname = url.hostname.slice(sub.length + 1);
+    return Response.redirect(to, 302);
+  }
   if (!sub) return path === "/" ? env.ASSETS.fetch(new Request(new URL("/home", url), req)) : env.ASSETS.fetch(req);
   const r = await env.REGISTRY.getByName("main").resolve(sub, url.searchParams.get("r") ?? "");
   if (r.owner) {
@@ -614,58 +907,58 @@ async function page(req, env, url) {
   return env.ASSETS.fetch(new Request(new URL(`/status${url.search}`, url), req));
 }
 
+async function handle(req, env) {
+  const url = new URL(req.url), lang = langOf(req.headers.get("x-lang")); // hata mesajlarının dili (web/src/lib/api.ts gönderir)
+  try {
+    if (!url.pathname.startsWith("/api/")) {
+      // Buraya yalnızca PAGES, /admin, kök ve eşleşen dosyası olmayan yollar gelir
+      if (PAGES.has(url.pathname) || url.pathname === "/" || url.pathname === "/admin" || (subdomain(url, env) && NAME_RE.test(url.pathname.slice(1)))) return await page(req, env, url);
+      return new Response("Not found", { status: 404 });
+    }
+    if (url.pathname === "/api/lemon" && req.method === "POST") return await webhook(req, env); // gövde ham haliyle imzalanır
+    const body = ["POST", "PUT"].includes(req.method) ? await req.json() : {};
+    const reg = env.REGISTRY.getByName("main");
+    const pub = await publicAuth(req, env, reg, url, body);
+    if (pub) return Response.json(pub);
+    if (url.pathname.startsWith("/api/admin/")) {
+      try {
+        return Response.json(await adminApi(req, env, url, body));
+      } catch (e) {
+        return Response.json({ error: localize(e.message, lang) }, { status: failed(e, "auth") || failed(e, "suspended") ? 401 : 400 });
+      }
+    }
+    if (url.pathname === "/api/rooms") return await publicRooms(req, env, url, reg);
+    if (url.pathname === "/api/vapid") return Response.json({ key: env.VAPID_PUBLIC_KEY ?? null });
+    // Hesap açma formu ve fiyatlar: Turnstile site anahtarı (gizli değil), ücretsiz bilet sayısı, paketler
+    if (url.pathname === "/api/config") return Response.json({ turnstile: env.TURNSTILE_SITE_KEY ?? "", free: FREE, packages: packages(env) });
+    if (url.pathname === "/api/resolve") {
+      // ?r= oda id'si ya da slug, ?u= kullanıcı (yoksa alt alan adından: antalyabb.sirangeldi.com).
+      // r'siz kullanıcı adresi { account } döner: sayfa kullanıcının sıralarını listeler.
+      const r = await reg.resolve(url.searchParams.get("u") || subdomain(url, env), url.searchParams.get("r") ?? "");
+      if (!r.room && !r.account) throw fail("notFound");
+      return Response.json(r.account ? { account: r.account } : { room: r.room });
+    }
+    const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|push|admin|status)$/);
+    if (!m) return new Response("Not found", { status: 404 });
+    const room = env.ROOM.getByName(m[1]);
+    switch (m[2]) {
+      case "join":
+        // Her bilet sıra sahibinin hakkından düştüğü için rastgele cihaz kimliğiyle toplu girişi IP başına sınırlar
+        await limit(env, "JOIN_LIMIT", `${m[1]}:${ip(req)}`);
+        return Response.json(await room.join(body));
+      case "me": return Response.json(await room.me(url.searchParams.get("id")));
+      case "leave": return Response.json(await room.leave(body.id));
+      case "push": return Response.json(await room.subscribe(body.id, body.sub));
+      case "admin": return Response.json(await room.admin(req.headers.get("x-key"), body));
+      case "status": return Response.json(await room.status());
+    }
+  } catch (e) {
+    return Response.json({ error: localize(e.message, lang) }, { status: failed(e, "tooMany") ? 429 : 400 });
+  }
+}
+
 export default {
   async fetch(req, env) {
-    const url = new URL(req.url), lang = langOf(req.headers.get("x-lang")); // hata mesajlarının dili (web/src/lib/api.ts gönderir)
-    try {
-      if (!url.pathname.startsWith("/api/")) {
-        // Buraya yalnızca PAGES, kök ve eşleşen dosyası olmayan yollar gelir
-        if (PAGES.has(url.pathname) || url.pathname === "/" || (subdomain(url, env) && NAME_RE.test(url.pathname.slice(1)))) return await page(req, env, url);
-        return new Response("Not found", { status: 404 });
-      }
-      const body = ["POST", "PUT"].includes(req.method) ? await req.json() : {};
-      const reg = env.REGISTRY.getByName("main");
-      if (url.pathname === "/api/login" && req.method === "POST") {
-        const name = String(body.user ?? "").trim().toLowerCase();
-        return Response.json(await session(name, await reg.login(name, String(body.password ?? ""), env.ADMIN_PASSWORD)));
-      }
-      if (url.pathname.startsWith("/api/admin/")) {
-        try {
-          return Response.json(await adminApi(req, env, url, body));
-        } catch (e) {
-          return Response.json({ error: localize(e.message, lang) }, { status: failed(e, "auth") ? 401 : 400 });
-        }
-      }
-      if (url.pathname === "/api/rooms") {
-        // Herkese açık sıra listesi (tanıtım sitesindeki harita, kullanıcı sayfası): yalnızca status() alanları, anahtar yok, gizli sıralar hariç
-        // ?u=: yalnızca o kullanıcının sıraları
-        // ponytail: her istek tüm odalara sorar; yüzlerce sıra olursa listeyi Cache API ile 30 sn önbelleğe al
-        const list = await reg.rooms(url.searchParams.get("u") || undefined);
-        const rooms = await Promise.all(list.map(({ id, owner }) => env.ROOM.getByName(id).status()
-          .then((st) => ({ ...st, link: statusLink(url, env, owner, st.slug ?? id) }), () => null)));
-        return Response.json(rooms.filter((r) => r && !r.private));
-      }
-      if (url.pathname === "/api/vapid") return Response.json({ key: env.VAPID_PUBLIC_KEY ?? null });
-      if (url.pathname === "/api/resolve") {
-        // ?r= oda id'si ya da slug, ?u= kullanıcı (yoksa alt alan adından: antalyabb.sirangeldi.com).
-        // r'siz kullanıcı adresi { account } döner: sayfa kullanıcının sıralarını listeler.
-        const r = await reg.resolve(url.searchParams.get("u") || subdomain(url, env), url.searchParams.get("r") ?? "");
-        if (!r.room && !r.account) throw fail("notFound");
-        return Response.json(r.account ? { account: r.account } : { room: r.room });
-      }
-      const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|push|admin|status)$/);
-      if (!m) return new Response("Not found", { status: 404 });
-      const room = env.ROOM.getByName(m[1]);
-      switch (m[2]) {
-        case "join": return Response.json(await room.join(body));
-        case "me": return Response.json(await room.me(url.searchParams.get("id")));
-        case "leave": return Response.json(await room.leave(body.id));
-        case "push": return Response.json(await room.subscribe(body.id, body.sub));
-        case "admin": return Response.json(await room.admin(req.headers.get("x-key"), body));
-        case "status": return Response.json(await room.status());
-      }
-    } catch (e) {
-      return Response.json({ error: localize(e.message, lang) }, { status: 400 });
-    }
+    return secure(await handle(req, env));
   },
 };

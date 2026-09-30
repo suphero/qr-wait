@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
-  CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsUpDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon,
-  ExternalLinkIcon, KeyRoundIcon, LocateFixedIcon, LockIcon, PencilIcon, RefreshCwIcon, SearchIcon, Trash2Icon, UsersIcon,
+  BanIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsUpDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon,
+  ExternalLinkIcon, InfinityIcon, KeyRoundIcon, LocateFixedIcon, LockIcon, MailCheckIcon, PencilIcon, RefreshCwIcon, SearchIcon, TicketIcon,
+  Trash2Icon, UsersIcon,
 } from "lucide-react";
 import { useConfirm } from "@/components/confirm";
+import { siteUrl, TERMS_VERSION } from "@/components/legal";
 import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -405,8 +407,90 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
   );
 }
 
-type Me = { user: string; super: boolean; home: string | false };
-type User = { name: string; at: number; rooms: number; link: string };
+type Balance = { metered: boolean; suspended: boolean; used: number; free: number; bought: number; granted: number; left: number | null };
+type Pkg = { variant: string; tickets: number; price: string };
+type Me = { user: string; super: boolean; home: string | false; email?: string | null; verified?: boolean; balance?: Balance; packages?: Pkg[] };
+type User = { name: string; at: number; rooms: number; link: string; email: string | null; verified: boolean; suspended: boolean; balance: Balance };
+type Config = { turnstile: string; free: number; packages: Pkg[] };
+
+// Cloudflare Turnstile (bot doğrulaması); betik ilk kullanımda yüklenir. Belirteç tek kullanımlık:
+// başarısız gönderimden sonra bileşen key değiştirilerek yeniden çizilir.
+let turnstile: Promise<any> | undefined;
+const loadTurnstile = () => (turnstile ??= new Promise((ok, no) => {
+  const s = document.createElement("script");
+  s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+  s.onload = () => ok((window as any).turnstile);
+  s.onerror = no;
+  document.head.append(s);
+}));
+
+function Captcha({ siteKey, onToken }: { siteKey: string; onToken: (t: string) => void }) {
+  const el = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let id: string | undefined, gone = false;
+    loadTurnstile().then((ts) => {
+      if (!gone) id = ts.render(el.current, { sitekey: siteKey, language: lang, callback: onToken, "expired-callback": () => onToken(""), "error-callback": () => onToken("") });
+    });
+    return () => { gone = true; if (id) (window as any).turnstile.remove(id); };
+  }, [siteKey]);
+  return <div ref={el} className="min-h-[65px]" />;
+}
+
+// Bilet hakkı ve paket satın alma; sınırsız hesaplarda görünmez. Ödeme Lemon Squeezy sayfasında, dönüşte ?paid=1.
+function BalanceCard({ me, paid, onError }: { me: Me; paid: boolean; onError: (m: string) => void }) {
+  const b = me.balance!, [busy, setBusy] = useState(false);
+  if (b.left === null) return null;
+  const low = b.left <= 100;
+  async function buy(variant: string) {
+    setBusy(true);
+    try { location.href = (await call<{ url: string }>("/api/admin/checkout", { variant })).url; } catch (e: any) { onError(e.message); setBusy(false); }
+  }
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-lg font-semibold">{T.balanceTitle}: {T.left(Math.max(0, b.left))}</CardTitle></CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">{T.balanceDesc(b.used, b.free)}</p>
+        {paid && <p className="font-semibold">{T.paid}</p>}
+        {low && <p className="font-semibold text-destructive">{b.left <= 0 ? T.emptyWarn : T.lowWarn}</p>}
+        {me.packages?.length ? (
+          <div className="flex flex-wrap gap-2">
+            {me.packages.map((p) => (
+              <Button key={p.variant} variant={low ? "default" : "secondary"} disabled={busy || !me.verified} onClick={() => buy(p.variant)}>
+                {T.pack(p.tickets)}{p.price && ` · ${p.price}`}
+              </Button>
+            ))}
+          </div>
+        ) : <p className="text-sm text-muted-foreground">{T.noPackages}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Hesabı silme: şifreyle onay, yalnızca sırası kalmamış hesap
+function DeleteAccount({ onDeleted, onError }: { onDeleted: () => void; onError: (m: string) => void }) {
+  const confirm = useConfirm();
+  const [pw, setPw] = useState("");
+  async function submit(ev: FormEvent) {
+    ev.preventDefault();
+    if (!(await confirm({ title: T.deleteAccount, description: T.deleteDesc, action: T.del, destructive: true }))) return;
+    try { await call("/api/admin/account/delete", { password: pw }); onDeleted(); } catch (e: any) { onError(e.message); }
+  }
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-lg font-semibold">{T.deleteAccount}</CardTitle></CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="flex flex-col gap-4 text-base">
+          <p className="text-sm text-muted-foreground">{T.deleteDesc}</p>
+          <Field>
+            <FieldLabel htmlFor="delpw">{T.deletePw}</FieldLabel>
+            <Input id="delpw" type="password" required autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          </Field>
+          <Button variant="destructive">{T.deleteAccount}</Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
 
 // Kendi şifresini değiştirme; yeni oturum anahtarı döner (eski oturumlar düşer)
 function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
@@ -443,8 +527,9 @@ function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: st
   );
 }
 
-function RoomsPanel({ me, logout }: { me: Me; logout: (msg?: string) => void }) {
+function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; reloadMe: () => Promise<void>; logout: (msg?: string) => void }) {
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
+  const [note, setNote] = useState("");
   const [editing, setEditing] = useState<RoomInfo | null | undefined>(); // undefined: form kapalı, null: yeni oda
   const [pwOpen, setPwOpen] = useState(false);
   const [err, setErr] = useState("");
@@ -466,6 +551,17 @@ function RoomsPanel({ me, logout }: { me: Me; logout: (msg?: string) => void }) 
     return poll(() => !formOpen.current && load(), 15000, true);
   }, []);
 
+  // Ödemeden dönüş: webhook birkaç saniyede gelir, bakiye yarım dakika sık yenilenir
+  useEffect(() => {
+    if (!paid) return;
+    const t = setInterval(reloadMe, 3000), stop = setTimeout(() => clearInterval(t), 30000);
+    return () => { clearInterval(t); clearTimeout(stop); };
+  }, [paid]);
+
+  async function resend() {
+    try { await call("/api/admin/verify", {}); setNote(T.resent); } catch (e: any) { setErr(e.message); }
+  }
+
   return (
     <Page className="max-w-5xl">
       <div className="flex flex-wrap items-center gap-2">
@@ -473,11 +569,20 @@ function RoomsPanel({ me, logout }: { me: Me; logout: (msg?: string) => void }) 
           <Title>{T.queues}</Title>
           {me.home && <a className="text-sm text-muted-foreground underline-offset-2 hover:underline" href={me.home} target="_blank">{bare(me.home)}</a>}
         </div>
-        <Button onClick={() => setEditing(null)}>{T.addRoom}</Button>
-        <Button variant="secondary" title={T.changePw} onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> {T.pwBtn}</Button>
+        <Button disabled={me.verified === false} onClick={() => setEditing(null)}>{T.addRoom}</Button>
+        <Button variant="secondary" title={T.changePw} onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> {T.accountBtn}</Button>
         <Button variant="secondary" onClick={() => logout()}>{T.logout}</Button>
       </div>
+      {me.verified === false && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm">
+          <span className="flex-1">{T.verifyBanner(me.email ?? "")}</span>
+          <Button size="sm" variant="secondary" onClick={resend}>{T.resend}</Button>
+        </div>
+      )}
+      {note && <p className="text-sm">{note}</p>}
+      <BalanceCard me={me} paid={paid} onError={setErr} />
       {pwOpen && <PasswordForm onDone={() => setPwOpen(false)} onError={setErr} />}
+      {pwOpen && <DeleteAccount onDeleted={() => logout(T.deleted)} onError={setErr} />}
       <RoomTable rooms={rooms} onChange={load} onEdit={setEditing} onError={setErr} />
       {editing !== undefined && (
         <RoomForm key={editing?.room ?? "new"} room={editing} rooms={rooms} home={me.home || ""} onError={setErr}
@@ -493,7 +598,9 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
   const confirm = useConfirm();
   const [data, setData] = useState<{ users: User[]; unowned: number }>({ users: [], unowned: 0 });
   const [form, setForm] = useState<{ user: string; password: string; reset?: string }>();
+  const [grant, setGrant] = useState<{ user: string; n: string }>();
   const [err, setErr] = useState("");
+  const plan = (u: string, body: object) => run(() => call(`/api/admin/users/${u}/plan`, body));
 
   async function load() {
     try {
@@ -536,23 +643,37 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
             <TableRow>
               <TableHead>{T.colUser}</TableHead>
               <TableHead className="text-right">{T.colQueue}</TableHead>
+              <TableHead className="text-right">{T.colBalance}</TableHead>
               <TableHead className="text-right">{T.colActions}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {data.users.map((u) => (
               <TableRow key={u.name}>
-                <TableCell>
+                <TableCell className="whitespace-normal">
                   <b>{u.name}</b>
                   <div className="text-sm text-muted-foreground"><a className="underline-offset-2 hover:underline" href={u.link} target="_blank">{bare(u.link)}</a></div>
+                  <div className="text-xs text-muted-foreground">
+                    {[u.email, !u.verified && `⚠ ${T.unverifiedTag}`, u.suspended && `⛔ ${T.suspendedTag}`].filter(Boolean).join(" · ")}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{u.rooms}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {u.balance.metered ? u.balance.left : "∞"} <span className="text-muted-foreground">/ {u.balance.used}</span>
+                </TableCell>
                 <TableCell>
                   <div className="flex justify-end">
                     <DropdownMenu modal={false}>
                       <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title={T.more}><EllipsisIcon /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onSelect={() => setForm({ user: u.name, password: "", reset: u.name })}><KeyRoundIcon /> {T.setPw}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setGrant({ user: u.name, n: "" })}><TicketIcon /> {T.grant}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => plan(u.name, { metered: !u.balance.metered })}><InfinityIcon /> {u.balance.metered ? T.unmeter : T.meter}</DropdownMenuItem>
+                        {!u.verified && <DropdownMenuItem onSelect={() => plan(u.name, { verified: true })}><MailCheckIcon /> {T.markVerified}</DropdownMenuItem>}
+                        <DropdownMenuItem onSelect={async () => {
+                          if (u.suspended || await confirm({ title: T.suspendTitle, description: T.suspendDesc(u.name), action: T.suspend, destructive: true }))
+                            plan(u.name, { suspended: !u.suspended });
+                        }}><BanIcon /> {u.suspended ? T.unsuspend : T.suspend}</DropdownMenuItem>
                         {data.unowned > 0 && (
                           <DropdownMenuItem onSelect={async () => {
                             if (await confirm({ title: T.adoptTitle, description: T.adoptDesc(data.unowned, u.name, bare(u.link)), action: T.move }))
@@ -571,11 +692,32 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
               </TableRow>
             ))}
             {!data.users.length && (
-              <TableRow><TableCell colSpan={3} className="py-8 text-center text-muted-foreground">{T.noUsers}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">{T.noUsers}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
       </Card>
+      {grant && (
+        <Card>
+          <CardHeader><CardTitle className="text-lg font-semibold">{T.grantFor(grant.user)}</CardTitle></CardHeader>
+          <CardContent>
+            <form className="flex flex-col gap-4 text-base" onSubmit={(ev) => {
+              ev.preventDefault();
+              plan(grant.user, { grant: +grant.n }).then(() => setGrant(undefined));
+            }}>
+              <Field>
+                <FieldLabel htmlFor="grant">{T.grantN}</FieldLabel>
+                <Input id="grant" type="number" required inputMode="numeric" value={grant.n} onChange={(e) => setGrant({ ...grant, n: e.target.value })} />
+                <FieldDescription>{T.grantDesc}</FieldDescription>
+              </Field>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" className="flex-1" onClick={() => setGrant(undefined)}>{T.cancel}</Button>
+                <Button className="flex-1">{T.save}</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
       {form && (
         <Card>
           <CardHeader><CardTitle className="text-lg font-semibold">{form.reset ? T.setPwFor(form.reset) : T.newUser}</CardTitle></CardHeader>
@@ -607,10 +749,23 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
   );
 }
 
+type Mode = "login" | "signup" | "forgot" | "reset";
+
+// E-posta bağlantıları: ?verify=<belirteç>, ?reset=<belirteç>; ödemeden dönüş ?paid=1; tanıtım sitesinden #signup.
+// Belirteç okunur okunmaz adres çubuğundan silinir (geçmişte ve paylaşılan ekranda kalmasın).
+const params = new URLSearchParams(location.search);
+const resetToken = params.get("reset") ?? "", verifyToken = params.get("verify") ?? "", paidBack = params.has("paid");
+if (location.search) history.replaceState(null, "", "/admin");
+
 function AdminPage() {
   const [me, setMe] = useState<Me | null>(null);
-  const [err, setErr] = useState("");
-  const [user, setUser] = useState(""), [pwInput, setPwInput] = useState("");
+  const [err, setErr] = useState(""), [note, setNote] = useState("");
+  const [mode, setMode] = useState<Mode>(resetToken ? "reset" : location.hash === "#signup" ? "signup" : "login");
+  const [f, setF] = useState({ user: "", email: "", password: "" });
+  const [agree, setAgree] = useState(false);
+  const [cfg, setCfg] = useState<Config | null>(null);
+  const [captcha, setCaptcha] = useState(""), [captchaKey, setCaptchaKey] = useState(0);
+  const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
 
   async function start() {
     try {
@@ -626,37 +781,101 @@ function AdminPage() {
     setErr(msg);
   }
 
-  async function login(ev: FormEvent) {
-    ev.preventDefault();
-    try {
-      const r = await api<{ token: string }>("/api/login", { user, password: pwInput });
-      localStorage.setItem("session", (token = r.token));
-      setPwInput("");
-      await start();
-    } catch (e: any) { setErr(e.message); }
+  function go(m: Mode) {
+    setMode(m);
+    setErr("");
+    setNote("");
   }
 
-  useEffect(() => { if (token) start(); }, []);
+  useEffect(() => {
+    if (verifyToken) {
+      api("/api/verify", { token: verifyToken }).then(() => { setNote(T.verifiedMsg); if (token) start(); }, (e) => setErr(e.message));
+    } else if (token) start();
+  }, []);
 
-  if (me) return me.super ? <UsersPanel logout={logout} /> : <RoomsPanel me={me} logout={logout} />;
+  useEffect(() => {
+    if ((mode === "signup" || mode === "forgot") && !cfg) api<Config>("/api/config").then(setCfg, (e) => setErr(e.message));
+  }, [mode]);
+
+  async function submit(ev: FormEvent) {
+    ev.preventDefault();
+    setErr("");
+    if ((mode === "signup" || mode === "forgot") && !captcha) return setErr(T.captchaWait);
+    try {
+      if (mode === "login" || mode === "signup") {
+        const r = mode === "login"
+          ? await api<{ token: string }>("/api/login", { user: f.user, password: f.password })
+          : await api<{ token: string }>("/api/signup", { ...f, captcha, lang, terms: agree ? TERMS_VERSION : "" });
+        localStorage.setItem("session", (token = r.token));
+        set("password", "");
+        await start();
+      } else if (mode === "forgot") {
+        await api("/api/forgot", { email: f.email, captcha });
+        go("login");
+        setNote(T.forgotSent);
+      } else {
+        await api("/api/reset", { token: resetToken, password: f.password });
+        go("login");
+        setNote(T.resetDone);
+      }
+    } catch (e: any) {
+      setErr(e.message);
+      setCaptcha("");
+      setCaptchaKey((k) => k + 1);
+    }
+  }
+
+  if (me) return me.super ? <UsersPanel logout={logout} /> : <RoomsPanel me={me} paid={paidBack} reloadMe={start} logout={logout} />;
+  const title = { login: T.loginTitle, signup: T.signupTitle, forgot: T.forgotLink, reset: T.resetTitle }[mode];
+  const link = (m: Mode, text: string) => <button type="button" className="font-semibold text-primary underline-offset-2 hover:underline" onClick={() => go(m)}>{text}</button>;
   return (
     <Page>
       <Card className="mt-3">
-        <CardHeader><Title className="mt-0">{T.loginTitle}</Title></CardHeader>
+        <CardHeader><Title className="mt-0">{title}</Title></CardHeader>
         <CardContent>
-          <form className="flex flex-col gap-4 text-base" onSubmit={login}>
-            <Field>
-              <FieldLabel htmlFor="user">{T.username}</FieldLabel>
-              <Input id="user" required autoCapitalize="none" autoComplete="username" value={user} onChange={(e) => setUser(e.target.value)} />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="pw">{T.password}</FieldLabel>
-              <Input id="pw" type="password" required autoComplete="current-password" value={pwInput} onChange={(e) => setPwInput(e.target.value)} />
-            </Field>
-            <Button>{T.login}</Button>
+          <form className="flex flex-col gap-4 text-base" onSubmit={submit}>
+            {mode === "signup" && cfg && <p className="text-sm text-muted-foreground">{T.signupIntro(cfg.free)}</p>}
+            {mode === "forgot" && <p className="text-sm text-muted-foreground">{T.forgotDesc}</p>}
+            {(mode === "login" || mode === "signup") && (
+              <Field>
+                <FieldLabel htmlFor="user">{mode === "login" ? T.loginId : T.username}</FieldLabel>
+                <Input id="user" required autoCapitalize="none" autoComplete="username" value={f.user} onChange={(e) => set("user", mode === "signup" ? e.target.value.toLowerCase() : e.target.value)}
+                  {...(mode === "signup" && { minLength: 3, maxLength: 40, pattern: "[a-z0-9][a-z0-9\\-]*[a-z0-9]" })} />
+                {mode === "signup" && <FieldDescription>{T.signupUserDesc(`${f.user || "…"}.${location.hostname.replace(/^www\./, "")}`)}</FieldDescription>}
+              </Field>
+            )}
+            {(mode === "signup" || mode === "forgot") && (
+              <Field>
+                <FieldLabel htmlFor="email">{T.email}</FieldLabel>
+                <Input id="email" type="email" required autoComplete="email" maxLength={254} value={f.email} onChange={(e) => set("email", e.target.value)} />
+              </Field>
+            )}
+            {mode !== "forgot" && (
+              <Field>
+                <FieldLabel htmlFor="pw">{mode === "reset" ? T.newPw : T.password}</FieldLabel>
+                <Input id="pw" type="password" required autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "login" ? undefined : 8}
+                  value={f.password} onChange={(e) => set("password", e.target.value)} />
+                {mode !== "login" && <FieldDescription>{T.signupPwDesc}</FieldDescription>}
+              </Field>
+            )}
+            {mode === "signup" && (
+              <Field orientation="horizontal">
+                <Checkbox id="agree" required checked={agree} onCheckedChange={(c) => setAgree(c === true)} />
+                <FieldLabel htmlFor="agree" className="font-normal"><span>{T.agree(siteUrl("/terms"), siteUrl("/privacy"))}</span></FieldLabel>
+              </Field>
+            )}
+            {(mode === "signup" || mode === "forgot") && cfg?.turnstile && <Captcha key={captchaKey} siteKey={cfg.turnstile} onToken={setCaptcha} />}
+            <Button>{{ login: T.login, signup: T.signupBtn, forgot: T.forgotBtn, reset: T.save }[mode]}</Button>
           </form>
+          <div className="mt-4 flex flex-col gap-1 text-sm">
+            {mode === "login" && <p>{T.noAccount} {link("signup", T.signupLink)}</p>}
+            {mode === "login" && <p>{link("forgot", T.forgotLink)}</p>}
+            {mode === "signup" && <p>{T.haveAccount} {link("login", T.loginLink)}</p>}
+            {(mode === "forgot" || mode === "reset") && <p>{link("login", T.back)}</p>}
+          </div>
         </CardContent>
       </Card>
+      {note && <p role="status" className="font-semibold">{note}</p>}
       <ErrorText>{err}</ErrorText>
     </Page>
   );

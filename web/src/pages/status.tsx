@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, catIcon, poll, type PublicRoom, type Status } from "@/lib/api";
 import { lang, pick, waitText, word } from "@/lib/i18n";
+import { LEGAL } from "@/components/legal";
 import { mount } from "@/lib/mount";
 
 // antalyabb.sirangeldi.com/bambus ya da /status?r=bambus; kullanıcı alt alan adından (yoksa ?u=)
@@ -188,7 +189,7 @@ function StatusPage() {
       )}
 
       <ErrorText>{err}</ErrorText>
-      <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={home}>Sıran Geldi</a>)}</p>
+      <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={home}>Sıran Geldi</a>)} · <a className="underline" href={`${home}privacy`}>{LEGAL.privacyShort}</a></p>
     </Page>
   );
 }

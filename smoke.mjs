@@ -1,6 +1,9 @@
-// `npm run dev` açıkken çalıştırın: node smoke.mjs  (.dev.vars içinde ADMIN_PASSWORD=test)
+// `npm run dev` açıkken çalıştırın: node smoke.mjs  (.dev.vars içinde ADMIN_PASSWORD=test, ya da PASSWORD=<şifre> node smoke.mjs)
+// WRANGLER_LOG=<wrangler dev çıktısı>: e-posta bağlantıları (DEV=1) oradan okunur; yoksa şifre sıfırlama testi atlanır.
+// Giriş IP başına dakikada 10 istekle sınırlı: art arda çalıştırırken bir dakika bekleyin.
 import assert from "node:assert/strict";
-import { createECDH, randomBytes } from "node:crypto";
+import { createECDH, createHmac, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const B = process.env.BASE ?? "http://localhost:8787";
 const req = async (method, p, body, h = {}) => {
@@ -226,10 +229,120 @@ await tadmin({ action: "table", n: 2 });
 ts = await tadmin({ action: "untable", id: (await tadmin()).freeTables[0].id });
 assert.equal(ts.freeTables.length, 0);
 await req("DELETE", `/api/admin/rooms/${tr.room}`, undefined, PW);
-// Şifre değişince eski oturum düşer
-assert.match((await post("/api/admin/password", { old: "yanlis-sifre", password: "yenisifre123" }, PW)).error, /hatalı/);
-const PW3 = { authorization: `Bearer ${(await post("/api/admin/password", { old: "deneme123", password: "yenisifre123" }, PW)).token}` };
+// Şifre değişince eski oturum düşer; kullanıcının seçtiği şifre sızıntı listelerinde olmamalı
+const strong = () => `smoke-${randomBytes(12).toString("hex")}`;
+assert.match((await post("/api/admin/password", { old: "yanlis-sifre", password: strong() }, PW)).error, /hatalı/);
+assert.match((await post("/api/admin/password", { old: "deneme123", password: "password123" }, PW)).error, /sızıntı/);
+const PW3 = { authorization: `Bearer ${(await post("/api/admin/password", { old: "deneme123", password: strong() }, PW)).token}` };
 assert.match((await req("GET", "/api/admin/rooms", undefined, PW)).error, /Oturum geçersiz/);
 assert.deepEqual(await req("GET", "/api/admin/rooms", undefined, PW3), []);
+const um = await req("GET", "/api/admin/me", undefined, PW3);
+assert.ok(um.verified && um.balance.metered === false, "süper yöneticinin açtığı kullanıcı doğrulanmış ve sınırsız");
 await req("DELETE", `/api/admin/users/${U}`, undefined, SU);
+
+// --- Hesap açma, e-posta doğrulama, bilet hakkı, ödeme ---
+const LOG = process.env.WRANGLER_LOG;
+// DEV=1 iken mail.js bağlantıyı günlüğe yazar: "mail verify → a@b: http://…/admin?verify=<belirteç>"
+const mailed = async (kind, to) => {
+  if (!LOG) return null;
+  for (let i = 0; i < 20; i++) {
+    const m = [...readFileSync(LOG, "utf8").matchAll(new RegExp(`mail ${kind} → ${to.replace(/[.+]/g, "\\$&")}: \\S+[?&]${kind}=([a-f0-9]+)`, "g"))].at(-1);
+    if (m) return m[1];
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`${kind} e-postası günlükte yok`);
+};
+const cfg = await req("GET", "/api/config");
+assert.equal(cfg.free, 1000);
+const captcha = "XXXX.DUMMY.TOKEN.XXXX"; // Turnstile test anahtarı her belirteci kabul eder
+const N = `self${Date.now()}`, EM = `${N}@example.com`, P1 = strong();
+const signup = (b) => post("/api/signup", { user: N, email: EM, password: P1, captcha, terms: "2026-09-30", ...b });
+assert.match((await signup({ terms: undefined })).error, /koşullarını/, "koşullar kabul edilmeden hesap açılmaz");
+assert.match((await signup({ email: "yok" })).error, /Geçersiz e-posta/);
+assert.match((await signup({ user: "destek" })).error, /Geçersiz kullanıcı/, "resmi görünen adlar ayrılmış");
+assert.match((await signup({ password: "password123" })).error, /sızıntı/);
+const S1 = await signup();
+assert.ok(S1.token && S1.user === N, "hesap açan kullanıcı girişli döner");
+const SA = { authorization: `Bearer ${S1.token}` };
+assert.match((await signup({ user: `${N}-b` })).error, /e-posta ile/, "aynı e-posta iki hesapta olamaz");
+assert.match((await signup({ email: `x${EM}` })).error, /alınmış/);
+let sme = await req("GET", "/api/admin/me", undefined, SA);
+assert.deepEqual([sme.verified, sme.email, sme.balance.metered, sme.balance.left], [false, EM, true, 1000]);
+assert.match((await post("/api/admin/rooms", { name: "X", slug: `${N}-x`, radius: 300, ...spot }, SA)).error, /doğrulayın/, "doğrulanmadan sıra açılmaz");
+assert.match((await post("/api/admin/checkout", { variant: "111" }, SA)).error, /doğrulayın/);
+assert.match((await post("/api/verify", { token: "0".repeat(48) })).error, /Bağlantı geçersiz/);
+const vt = await mailed("verify", EM);
+if (vt) assert.equal((await post("/api/verify", { token: vt })).user, N);
+else await post(`/api/admin/users/${N}/plan`, { verified: true }, SU);
+if (vt) assert.match((await post("/api/verify", { token: vt })).error, /Bağlantı geçersiz/, "doğrulama bağlantısı tek kullanımlık");
+assert.equal((await req("GET", "/api/admin/me", undefined, SA)).verified, true);
+assert.match((await post("/api/admin/verify", {}, SA)).error, /zaten doğrulanmış/);
+// Bilet hakkı: her yeni bilet 1 düşer (QR ve elle ekleme), bitince görevli nedenini, ziyaretçi yalnızca kapalı olduğunu görür
+const sr = await post("/api/admin/rooms", { name: N, slug: `${N}-sira`, radius: 300, ...spot }, SA);
+assert.ok(sr.room);
+await post(`/api/admin/users/${N}/plan`, { grant: -997 }, SU); // 1000 - 997 = 3 hak
+const sadmin = (body = {}) => post(`/api/r/${sr.room}/admin`, body, { "x-key": sr.key });
+await sadmin({ action: "add", size: 1 });
+const sjoin = (device) => sadmin().then(({ token: t }) => post(`/api/r/${sr.room}/join`, { t, ...spot, size: 1, device }));
+const j1 = await sjoin("paid-device-000000001");
+assert.equal((await sjoin("paid-device-000000001")).no, j1.no, "aynı cihazın bileti yeniden sayılmaz");
+await sjoin("paid-device-000000002");
+assert.match((await sjoin("paid-device-000000003")).error, /yeni kişi almıyor/, "hak bitince ziyaretçi sıraya giremez");
+assert.match((await sadmin({ action: "add", size: 1 })).error, /Bilet hakkı bitti/);
+assert.equal((await sadmin()).entries.length, 3, "hakkı yetmeyen bilet sırada kalmaz");
+sme = await req("GET", "/api/admin/me", undefined, SA);
+assert.deepEqual([sme.balance.used, sme.balance.left], [3, 0]);
+// Lemon Squeezy webhook'u: imzasız istek reddedilir, sipariş bir kez yüklenir, iade geri alır
+const hook = (event, status, id = "9001", secret = "test-webhook-secret") => {
+  const raw = JSON.stringify({ meta: { event_name: event, test_mode: true, custom_data: { user: N } },
+    data: { id, attributes: { status, total_formatted: "$1.00", first_order_item: { variant_id: 111, quantity: 1 } } } });
+  return fetch(`${B}/api/lemon`, { method: "POST", headers: { "content-type": "application/json", "x-signature": createHmac("sha256", secret).update(raw).digest("hex") }, body: raw });
+};
+assert.equal((await hook("order_created", "paid", "9001", "yanlis")).status, 401, "imzası tutmayan webhook");
+assert.equal((await hook("order_created", "paid")).status, 200);
+assert.equal((await hook("order_created", "paid")).status, 200);
+const left = async () => (await req("GET", "/api/admin/me", undefined, SA)).balance.left;
+assert.equal(await left(), 500, "aynı sipariş iki kez yüklenmez");
+assert.ok((await sjoin("paid-device-000000003")).no, "hak yüklenince sıra yeniden çalışır");
+await hook("order_refunded", "refunded");
+assert.equal(await left(), -1, "iade edilen paket geri alınır");
+await post(`/api/admin/users/${N}/plan`, { grant: 1001 }, SU);
+assert.match((await post("/api/admin/checkout", { variant: "999" }, SA)).error, /Ödeme şu an/, "bilinmeyen paket");
+// Askıya alma: giriş ve oturum düşer, sıra haritadan kalkar, bilet alınmaz
+const listedNames = async () => (await req("GET", "/api/rooms")).map((r) => r.name);
+assert.ok((await listedNames()).includes(N));
+await post(`/api/admin/users/${N}/plan`, { suspended: true }, SU);
+assert.match((await req("GET", "/api/admin/me", undefined, SA)).error, /askıya/);
+assert.match((await post("/api/login", { user: EM, password: P1 })).error, /askıya/, "e-postayla giriş; askıdaki hesap giremez");
+assert.ok(!(await listedNames()).includes(N), "askıdaki kullanıcının sırası haritada yok");
+assert.match((await sjoin("paid-device-000000004")).error, /yeni kişi almıyor/);
+await post(`/api/admin/users/${N}/plan`, { suspended: false }, SU);
+// Görevli linki olmadan başkasının odası içe aktarılamaz
+assert.match((await post(`/api/admin/rooms/${sr.room}/import`, { key: "yanlis" }, SA)).error, /Yetkisiz/);
+// Şifremi unuttum: kayıtlı olmayan e-postada da aynı yanıt
+assert.deepEqual(await post("/api/forgot", { email: `yok-${EM}`, captcha }), { ok: true });
+assert.deepEqual(await post("/api/forgot", { email: EM, captcha }), { ok: true });
+const rt = await mailed("reset", EM);
+let cur = P1;
+if (rt) {
+  assert.match((await post("/api/reset", { token: rt, password: "password123" })).error, /sızıntı/);
+  const P2 = strong();
+  assert.deepEqual(await post("/api/reset", { token: rt, password: P2 }), { ok: true });
+  assert.match((await post("/api/reset", { token: rt, password: strong() })).error, /Bağlantı geçersiz/, "sıfırlama bağlantısı tek kullanımlık");
+  assert.match((await req("GET", "/api/admin/me", undefined, SA)).error, /Oturum geçersiz/, "şifre sıfırlanınca oturumlar düşer");
+  SA.authorization = `Bearer ${(await post("/api/login", { user: N, password: P2 })).token}`;
+  cur = P2;
+} else console.log("WRANGLER_LOG yok: şifre sıfırlama bağlantısı testi atlandı");
+// Hesabı silme: önce sıralar silinmeli
+assert.match((await post("/api/admin/account/delete", { password: "yanlis" }, SA)).error, /hatalı/);
+assert.match((await post("/api/admin/account/delete", { password: cur }, SA)).error, /sıraları var/);
+await req("DELETE", `/api/admin/rooms/${sr.room}`, undefined, SA);
+assert.deepEqual(await post("/api/admin/account/delete", { password: cur }, SA), { ok: true });
+assert.match((await req("GET", "/api/admin/me", undefined, SA)).error, /Oturum geçersiz/);
+// IP başına istek sınırı (en sonda: dakikada 10 istek)
+const codes = await Promise.all(Array.from({ length: 12 }, () => fetch(`${B}/api/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((r) => r.status)));
+assert.ok(codes.includes(429), "istek sınırı");
+// Güvenlik başlıkları
+const hp = await fetch(`${B}/admin`);
+assert.ok(hp.headers.get("content-security-policy")?.includes("frame-ancestors 'none'") && hp.headers.get("x-content-type-options") === "nosniff");
 console.log("smoke OK");

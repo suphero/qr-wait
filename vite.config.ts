@@ -20,6 +20,8 @@ const PAGES: Record<string, { title: string; head?: string; body?: string }> = {
   host: { title: "Görevli Paneli" },
   status: { title: "Sıra durumu" },
   admin: { title: "Sıran Geldi · Yönetim" },
+  privacy: { title: "Gizlilik · Sıran Geldi" },
+  terms: { title: "Kullanım Koşulları · Sıran Geldi" },
 };
 
 const html = (name: string) => {

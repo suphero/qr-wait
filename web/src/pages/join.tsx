@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { api, catIcon, locate, mins, poll, type Me, type Status } from "@/lib/api";
 import { geoErrors, lang, orList, pick, pl, tableLabel } from "@/lib/i18n";
+import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
@@ -340,6 +341,7 @@ function JoinPage() {
       )}
 
       <ErrorText>{err}</ErrorText>
+      <p className="mt-4 text-center text-xs text-muted-foreground"><a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a></p>
     </Page>
   );
 }

@@ -4,24 +4,51 @@
   "compatibility_date": "2026-09-01",
   // Arayüz web/ altında React + Vite; wrangler dev/deploy önce build alır ve dist/ sunulur
   "build": { "command": "npm run build", "watch_dir": "web" },
-  // Sayfalar önce Worker'a gelir: hesaplardan önceki <slug>.sirangeldi.com adresleri yeni adrese yönlenir (src/index.js PAGES)
-  "assets": { "directory": "dist", "binding": "ASSETS", "run_worker_first": ["/join", "/host", "/status"] },
+  // Sayfalar önce Worker'a gelir: hesaplardan önceki <slug>.sirangeldi.com adresleri yeni adrese yönlenir (src/index.js PAGES),
+  // güvenlik başlıkları (src/guard.js) eklenir
+  "assets": { "directory": "dist", "binding": "ASSETS", "run_worker_first": ["/join", "/host", "/status", "/admin"] },
   "durable_objects": { "bindings": [
     { "name": "ROOM", "class_name": "Room" },
-    { "name": "REGISTRY", "class_name": "Registry" }
+    { "name": "REGISTRY", "class_name": "Registry" },
+    { "name": "ACCOUNT", "class_name": "Account" } // kullanıcı başına bilet bakiyesi (src/billing.js)
   ] },
   // Worker adı plaj-sira'dan siran-geldi'ye değişti: DO verisi eski Worker'dan taşındı
   "migrations": [
     { "tag": "v1", "transferred_classes": [
       { "from": "Room", "from_script": "plaj-sira", "to": "Room" },
       { "from": "Registry", "from_script": "plaj-sira", "to": "Registry" }
-    ] }
+    ] },
+    { "tag": "v2", "new_sqlite_classes": ["Account"] }
+  ],
+  // Doğrulama ve şifre sıfırlama e-postaları: Cloudflare Email Service, gönderen alan adı panelde doğrulanmış olmalı
+  "send_email": [{ "name": "EMAIL" }],
+  // IP başına istek sınırı (src/guard.js limit); period 10 ya da 60 sn olabilir
+  "ratelimits": [
+    { "name": "AUTH_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }, // giriş, hesap açma, şifre sıfırlama
+    { "name": "JOIN_LIMIT", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } } // sıraya giriş, oda + IP başına
   ],
   "observability": { "enabled": true },
   "workers_dev": true, // alan adı aktif olana kadar ve yedek erişim için açık kalsın
   // DNS'te "@" ve "*" için proxied AAAA 100:: yer tutucu kayıtları var
-  // VAPID_PRIVATE_KEY ve ADMIN_PASSWORD (süper yönetici, kullanıcı adı "admin") secret olarak tutulur (wrangler secret put), .dev.vars'ta yerel kopyası var
-  "vars": { "BASE_DOMAIN": "sirangeldi.com", "VAPID_PUBLIC_KEY": "BMnLrY7VHICel9RZSt62UEiLxZymXnHinntTM-oeV88iHlXTfWZjrtjTJjE_XSx4_q25hNs9TftLofwDaH-UHC4" },
+  // Secret'lar (wrangler secret put), .dev.vars'ta yerel kopyası var:
+  //   VAPID_PRIVATE_KEY, ADMIN_PASSWORD (süper yönetici, kullanıcı adı "admin"), TURNSTILE_SECRET,
+  //   LEMON_API_KEY, LEMON_WEBHOOK_SECRET (Lemon Squeezy webhook'u: https://sirangeldi.com/api/lemon, order_created + order_refunded)
+  // .dev.vars'ta ayrıca DEV=1: e-posta bağlantıları günlüğe yazılır, sıra listesi önbelleğe alınmaz; LEMON_TEST=1: test siparişleri kabul
+  "vars": {
+    "BASE_DOMAIN": "sirangeldi.com",
+    "VAPID_PUBLIC_KEY": "BMnLrY7VHICel9RZSt62UEiLxZymXnHinntTM-oeV88iHlXTfWZjrtjTJjE_XSx4_q25hNs9TftLofwDaH-UHC4",
+    "MAIL_FROM": "bildirim@sirangeldi.com",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFKNZ22SRKQieffD", // widget "Sıran Geldi" (managed, sirangeldi.com); gizli anahtarı TURNSTILE_SECRET
+    "LEMON_STORE_ID": "486894", // siran-geldi.lemonsqueezy.com
+    // Satılan paketler: variant = Lemon Squeezy varyant id'si; price yalnızca gösterim, tahsilat Lemon Squeezy'deki fiyattan
+    // (mağaza para birimi TRY). Ürünün "Default" varyantı (2186515) satılmaz: webhook'ta bilinmeyen varyant yok sayılır.
+    "PACKAGES": [
+      { "variant": "2186480", "tickets": 5000, "price": "349 ₺" }, // Başlangıç
+      { "variant": "2186488", "tickets": 20000, "price": "999 ₺" }, // İşletme
+      { "variant": "2186495", "tickets": 50000, "price": "1.999 ₺" }, // Sezon
+      { "variant": "2186498", "tickets": 150000, "price": "4.499 ₺" } // Kurumsal
+    ]
+  },
   "routes": [
     { "pattern": "sirangeldi.com/*", "zone_name": "sirangeldi.com" },
     { "pattern": "*.sirangeldi.com/*", "zone_name": "sirangeldi.com" }

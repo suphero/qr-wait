@@ -45,6 +45,19 @@ const M = {
   full: { tr: "Sıra dolu", en: "The queue is full", de: "Die Warteschlange ist voll", ru: "Очередь заполнена" },
   entryNotFound: { tr: "Sıra kaydı bulunamadı", en: "Queue entry not found", de: "Eintrag in der Warteschlange nicht gefunden", ru: "Запись в очереди не найдена" },
   badPush: { tr: "Geçersiz bildirim aboneliği", en: "Invalid notification subscription", de: "Ungültiges Benachrichtigungsabonnement", ru: "Недействительная подписка на уведомления" },
+  // Sıra sahibinin bilet hakkı bitti ya da hesabı askıda; ziyaretçiye nedeni söylenmez
+  closed: {
+    tr: "Bu sıra şu an yeni kişi almıyor. Görevliye başvurun.",
+    en: "This queue isn't accepting new people right now. Please ask the attendant.",
+    de: "Diese Warteschlange nimmt derzeit niemanden auf. Bitte wenden Sie sich an das Personal.",
+    ru: "Сейчас эта очередь не принимает новых людей. Обратитесь к сотруднику.",
+  },
+  tooMany: {
+    tr: "Çok fazla istek. Biraz sonra tekrar deneyin.",
+    en: "Too many requests. Please try again shortly.",
+    de: "Zu viele Anfragen. Bitte versuchen Sie es gleich noch einmal.",
+    ru: "Слишком много запросов. Повторите чуть позже.",
+  },
 
   // --- görevli ---
   unauthorized: { tr: "Yetkisiz", en: "Unauthorized", de: "Nicht berechtigt", ru: "Нет доступа" },
@@ -66,6 +79,18 @@ const M = {
     ru: `Стол должен быть на 1–${n} человек`,
   }),
   badGroup: { tr: "Geçersiz grup", en: "Invalid group", de: "Ungültige Gruppe", ru: "Недопустимая группа" },
+  quota: {
+    tr: "Bilet hakkı bitti. Sıra sahibi yönetim ekranından bilet paketi almalı.",
+    en: "Out of tickets. The queue owner needs to buy a ticket pack in the admin panel.",
+    de: "Keine Tickets mehr. Der Inhaber der Warteschlange muss im Verwaltungsbereich ein Ticketpaket kaufen.",
+    ru: "Билеты закончились. Владельцу очереди нужно купить пакет в панели управления.",
+  },
+  suspended: {
+    tr: "Hesap askıya alındı. Destek için bize yazın.",
+    en: "The account is suspended. Contact us for support.",
+    de: "Das Konto ist gesperrt. Kontaktieren Sie uns für Unterstützung.",
+    ru: "Учётная запись приостановлена. Свяжитесь с нами.",
+  },
 
   // --- yönetim ---
   auth: {
@@ -97,6 +122,62 @@ const M = {
     en: "Invalid username: 3–40 characters, lowercase letters, digits and hyphens",
     de: "Ungültiger Benutzername: 3–40 Zeichen, Kleinbuchstaben, Ziffern und Bindestriche",
     ru: "Недопустимое имя пользователя: 3–40 символов, строчные латинские буквы, цифры и дефис",
+  },
+  terms: {
+    tr: "Devam etmek için kullanım koşullarını ve gizlilik metnini kabul edin",
+    en: "Accept the terms of use and privacy notice to continue",
+    de: "Akzeptieren Sie die Nutzungsbedingungen und den Datenschutzhinweis, um fortzufahren",
+    ru: "Чтобы продолжить, примите условия использования и политику конфиденциальности",
+  },
+  badEmail: { tr: "Geçersiz e-posta adresi", en: "Invalid email address", de: "Ungültige E-Mail-Adresse", ru: "Недопустимый адрес электронной почты" },
+  emailTaken: {
+    tr: "Bu e-posta ile açılmış bir hesap var. Giriş yapın ya da şifrenizi sıfırlayın.",
+    en: "An account with this email already exists. Log in or reset your password.",
+    de: "Mit dieser E-Mail gibt es bereits ein Konto. Melden Sie sich an oder setzen Sie Ihr Passwort zurück.",
+    ru: "Учётная запись с этой почтой уже есть. Войдите или сбросьте пароль.",
+  },
+  pwned: {
+    tr: "Bu şifre bilinen veri sızıntılarında geçiyor. Başka bir şifre seçin.",
+    en: "This password appears in known data breaches. Choose another one.",
+    de: "Dieses Passwort taucht in bekannten Datenlecks auf. Wählen Sie ein anderes.",
+    ru: "Этот пароль встречается в известных утечках данных. Выберите другой.",
+  },
+  captcha: {
+    tr: "Robot doğrulaması başarısız. Sayfayı yenileyip tekrar deneyin.",
+    en: "Bot check failed. Reload the page and try again.",
+    de: "Bot-Prüfung fehlgeschlagen. Laden Sie die Seite neu und versuchen Sie es erneut.",
+    ru: "Проверка на робота не пройдена. Обновите страницу и попробуйте снова.",
+  },
+  badToken: {
+    tr: "Bağlantı geçersiz ya da süresi dolmuş. Yeni bağlantı isteyin.",
+    en: "The link is invalid or has expired. Request a new one.",
+    de: "Der Link ist ungültig oder abgelaufen. Fordern Sie einen neuen an.",
+    ru: "Ссылка недействительна или устарела. Запросите новую.",
+  },
+  alreadyVerified: { tr: "E-posta zaten doğrulanmış", en: "Email is already verified", de: "E-Mail ist bereits bestätigt", ru: "Почта уже подтверждена" },
+  unverified: {
+    tr: "Önce e-posta adresinizi doğrulayın",
+    en: "Verify your email address first",
+    de: "Bestätigen Sie zuerst Ihre E-Mail-Adresse",
+    ru: "Сначала подтвердите адрес электронной почты",
+  },
+  roomLimit: (n) => ({
+    tr: `En fazla ${n} sıra açabilirsiniz. Daha fazlası için bize yazın.`,
+    en: `You can create up to ${n} queues. Contact us if you need more.`,
+    de: `Sie können bis zu ${n} Warteschlangen anlegen. Kontaktieren Sie uns, wenn Sie mehr brauchen.`,
+    ru: `Можно создать не более ${n} очередей. Если нужно больше, напишите нам.`,
+  }),
+  payOff: {
+    tr: "Ödeme şu an kullanılamıyor",
+    en: "Payments are not available right now",
+    de: "Zahlungen sind derzeit nicht verfügbar",
+    ru: "Оплата сейчас недоступна",
+  },
+  payDown: {
+    tr: "Ödeme sayfası açılamadı, biraz sonra tekrar deneyin",
+    en: "Couldn't open the payment page, try again shortly",
+    de: "Die Zahlungsseite konnte nicht geöffnet werden, versuchen Sie es gleich erneut",
+    ru: "Не удалось открыть страницу оплаты, попробуйте чуть позже",
   },
   userNotFound: { tr: "Kullanıcı bulunamadı", en: "User not found", de: "Benutzer nicht gefunden", ru: "Пользователь не найден" },
   userTaken: { tr: "Bu kullanıcı adı alınmış", en: "This username is taken", de: "Dieser Benutzername ist vergeben", ru: "Это имя пользователя занято" },

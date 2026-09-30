@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { api, catIcon, locate, type PublicRoom } from "@/lib/api";
 import { fmtDistL, geoErrors, lang, pick, waitText } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
+import { LEGAL } from "@/components/legal";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 import "./home.css";
@@ -12,7 +13,7 @@ const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.ch
 
 type Pair = [string, string];
 const T = pick<{
-  title: string; admin: string; heroTitle: string; heroText: string; findNear: string; setupOwn: string;
+  title: string; admin: string; signup: string; freeNote: string; heroTitle: string; heroText: string; findNear: string;
   steps: string[]; done: string; ticketAria: string;
   nearTitle: string; sortByLoc: string; noteStart: string; noteNear: string; noneNear: (d: string) => string; here: string;
   mapAria: string; loadFail: string; loading: string; none: string; seeStatus: string;
@@ -22,10 +23,11 @@ const T = pick<{
   tr: {
     title: "Sıran Geldi · Uygulamasız sıra sistemi",
     admin: "Yönetici girişi",
+    signup: "Ücretsiz hesap aç",
+    freeNote: "Kendi sıranızı birkaç dakikada kurun. İlk 1000 bilet ücretsiz, kredi kartı gerekmez.",
     heroTitle: "Sıranı al, gerisini telefonun beklesin.",
     heroText: "Plajda, iskelede, hizmet noktasında. QR kodu okut, sıraya gir, sıran gelince telefonun titresin. Uygulama indirmen gerekmez.",
     findNear: "Yakınımdaki sıraları bul",
-    setupOwn: "Kendi sıranızı kuralım",
     steps: ["Önünüzde 3 grup var", "Önünüzde 2 grup var", "Önünüzde 1 grup var", "Sıradaki sizsiniz, hazır olun"],
     done: "Sıran geldi! Görevliye numaranı göster.",
     ticketAria: "Örnek sıra fişi, yeniden oynatmak için dokunun",
@@ -75,10 +77,11 @@ const T = pick<{
   en: {
     title: "Sıran Geldi · Queueing without an app",
     admin: "Admin login",
+    signup: "Sign up for free",
+    freeNote: "Set up your own queue in minutes. The first 1000 tickets are free, no credit card needed.",
     heroTitle: "Take your number, let your phone do the waiting.",
     heroText: "At the beach, the pier, the service desk. Scan the QR code, join the queue, and your phone buzzes when it's your turn. No app to download.",
     findNear: "Find queues near me",
-    setupOwn: "Set up your own queue",
     steps: ["3 groups ahead of you", "2 groups ahead of you", "1 group ahead of you", "You're next, get ready"],
     done: "It's your turn! Show your number to the attendant.",
     ticketAria: "Sample queue ticket, tap to replay",
@@ -128,10 +131,11 @@ const T = pick<{
   de: {
     title: "Sıran Geldi · Warteschlange ohne App",
     admin: "Admin-Anmeldung",
+    signup: "Kostenlos registrieren",
+    freeNote: "Richten Sie Ihre eigene Warteschlange in wenigen Minuten ein. Die ersten 1000 Tickets sind kostenlos, keine Kreditkarte nötig.",
     heroTitle: "Nummer ziehen, das Warten übernimmt Ihr Handy.",
     heroText: "Am Strand, am Anleger, am Serviceschalter. QR-Code scannen, anstellen, und Ihr Handy vibriert, wenn Sie an der Reihe sind. Keine App nötig.",
     findNear: "Warteschlangen in meiner Nähe",
-    setupOwn: "Eigene Warteschlange einrichten",
     steps: ["3 Gruppen vor Ihnen", "2 Gruppen vor Ihnen", "1 Gruppe vor Ihnen", "Sie sind als Nächstes dran"],
     done: "Sie sind dran! Zeigen Sie dem Personal Ihre Nummer.",
     ticketAria: "Beispiel-Warteticket, zum erneuten Abspielen tippen",
@@ -181,10 +185,11 @@ const T = pick<{
   ru: {
     title: "Sıran Geldi · Очередь без приложения",
     admin: "Вход для администратора",
+    signup: "Зарегистрироваться бесплатно",
+    freeNote: "Создайте свою очередь за несколько минут. Первые 1000 билетов бесплатно, карта не нужна.",
     heroTitle: "Возьмите номер — ждать будет ваш телефон.",
     heroText: "На пляже, на пристани, в пункте обслуживания. Отсканируйте QR-код, встаньте в очередь, и телефон завибрирует, когда подойдёт ваша очередь. Приложение не нужно.",
     findNear: "Найти очереди рядом",
-    setupOwn: "Создать свою очередь",
     steps: ["Перед вами 3 группы", "Перед вами 2 группы", "Перед вами 1 группа", "Вы следующий, будьте готовы"],
     done: "Ваша очередь! Покажите номер сотруднику.",
     ticketAria: "Пример талона очереди, нажмите, чтобы повторить",
@@ -382,8 +387,9 @@ function HomePage() {
             <p className="mb-8 max-w-[34ch] text-xl text-ink-soft">{T.heroText}</p>
             <div className="flex flex-wrap gap-3">
               <Button asChild className={cn(pill, solid)}><a href="#yakin">{T.findNear}</a></Button>
-              <Button asChild className={pill}><a href="#iletisim">{T.setupOwn}</a></Button>
+              <Button asChild className={pill}><a href="/admin#signup">{T.signup}</a></Button>
             </div>
+            <p className="mt-4 max-w-[40ch] text-ink-soft">{T.freeNote}</p>
           </div>
           <Ticket />
         </div>
@@ -433,13 +439,18 @@ function HomePage() {
         <section id="iletisim" className="mt-10 mb-20 rounded-[20px] bg-ink px-6 py-10 text-white md:rounded-[28px] md:px-12 md:py-16">
           <H2 className="mb-4">{T.contactTitle}</H2>
           <p className="mb-8 max-w-[46ch] text-[1.15rem] text-[#C9D2E3]">{T.contactText}</p>
+          <Button asChild className={cn(pill, "mb-8 border-ticket bg-ticket text-ink hover:bg-ticket/90")}><a href="/admin#signup">{T.signup}</a></Button>
           <a className="inline-block text-[clamp(1.4rem,4vw,2.4rem)] font-extrabold tracking-[-0.02em] break-all text-ticket underline decoration-3 underline-offset-6" href="mailto:iletisim@sirangeldi.com">iletisim@sirangeldi.com</a>
         </section>
       </main>
 
       <footer className="flex flex-wrap justify-between gap-4 pt-6 pb-10 text-[.95rem] text-ink-soft">
         <span>© 2026 Sıran Geldi</span>
-        <a href="/admin" className="underline">{T.admin}</a>
+        <span className="flex flex-wrap gap-4">
+          <a href="/privacy" className="underline">{LEGAL.privacyShort}</a>
+          <a href="/terms" className="underline">{LEGAL.terms}</a>
+          <a href="/admin" className="underline">{T.admin}</a>
+        </span>
       </footer>
     </div>
   );
