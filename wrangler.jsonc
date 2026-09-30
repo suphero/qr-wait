@@ -1,5 +1,5 @@
 {
-  "name": "siran-geldi",
+  "name": "qr-wait",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
   // Arayüz web/ altında React + Vite; wrangler dev/deploy önce build alır ve dist/ sunulur
@@ -12,7 +12,7 @@
     { "name": "REGISTRY", "class_name": "Registry" },
     { "name": "ACCOUNT", "class_name": "Account" } // kullanıcı başına bilet bakiyesi (src/billing.js)
   ] },
-  // Worker adı (siran-geldi) iç addır, alan adı ve marka QRWait; ad değişirse DO verisi ve secret'lar taşınmalı
+  // Worker panelden plaj-sira → siran-geldi → qr-wait olarak yeniden adlandırıldı; DO verisi ve secret'lar yerinde
   "migrations": [
     { "tag": "v1", "transferred_classes": [
       { "from": "Room", "from_script": "plaj-sira", "to": "Room" },
@@ -50,7 +50,7 @@
     ]
   },
   "routes": [
-    { "pattern": "qrwait.app/*", "zone_name": "qrwait.app" },
+    { "pattern": "qrwait.app", "custom_domain": true }, // DNS kaydını Cloudflare kendisi açar
     { "pattern": "*.qrwait.app/*", "zone_name": "qrwait.app" }
   ]
 }
