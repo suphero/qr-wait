@@ -4,7 +4,7 @@ import { pick, pl } from "@/lib/i18n";
 // Yönetim ekranı metinleri (admin.tsx)
 export const T = pick({
   tr: {
-    docTitle: "Sıran Geldi · Yönetim",
+    docTitle: "QRWait · Yönetim",
     // giriş
     loginTitle: "Yönetim girişi",
     username: "Kullanıcı adı",
@@ -114,7 +114,7 @@ export const T = pick({
     addRoom: "+ Yeni sıra",
     users: "Kullanıcılar",
     addUser: "+ Yeni kullanıcı",
-    unowned: (n: number) => <>Hesaplardan önce açılmış <b>{n}</b> sıra bir kullanıcıya bağlı değil. Kullanıcının menüsünden "Sahipsiz sıraları taşı" ile taşıyın. Eski adresleri (<i>sıra.sirangeldi.com</i>) kullanıcının adresine yönlenir.</>,
+    unowned: (n: number) => <>Hesaplardan önce açılmış <b>{n}</b> sıra bir kullanıcıya bağlı değil. Kullanıcının menüsünden "Sahipsiz sıraları taşı" ile taşıyın. Eski adresleri (<i>sıra.qrwait.app</i>) kullanıcının adresine yönlenir.</>,
     colUser: "Kullanıcı",
     setPw: "Şifre belirle",
     adoptTitle: "Sahipsiz sıralar taşınsın mı?",
@@ -195,7 +195,7 @@ export const T = pick({
     markVerified: "E-postayı doğrulanmış say",
   },
   en: {
-    docTitle: "Sıran Geldi · Admin",
+    docTitle: "QRWait · Admin",
     loginTitle: "Admin login",
     username: "Username",
     password: "Password",
@@ -299,7 +299,7 @@ export const T = pick({
     addRoom: "+ New queue",
     users: "Users",
     addUser: "+ New user",
-    unowned: (n: number) => <><b>{n}</b> {n === 1 ? "queue" : "queues"} created before accounts existed {n === 1 ? "isn't" : "aren't"} linked to a user. Move them with "Move unowned queues" in a user's menu. Their old addresses (<i>queue.sirangeldi.com</i>) will redirect to the user's address.</>,
+    unowned: (n: number) => <><b>{n}</b> {n === 1 ? "queue" : "queues"} created before accounts existed {n === 1 ? "isn't" : "aren't"} linked to a user. Move them with "Move unowned queues" in a user's menu. Their old addresses (<i>queue.qrwait.app</i>) will redirect to the user's address.</>,
     colUser: "User",
     setPw: "Set password",
     adoptTitle: "Move unowned queues?",
@@ -377,7 +377,7 @@ export const T = pick({
     markVerified: "Mark email as verified",
   },
   de: {
-    docTitle: "Sıran Geldi · Verwaltung",
+    docTitle: "QRWait · Verwaltung",
     loginTitle: "Anmeldung zur Verwaltung",
     username: "Benutzername",
     password: "Passwort",
@@ -481,7 +481,7 @@ export const T = pick({
     addRoom: "+ Neue Warteschlange",
     users: "Benutzer",
     addUser: "+ Neuer Benutzer",
-    unowned: (n: number) => <><b>{n}</b> vor Einführung der Konten angelegte {n === 1 ? "Warteschlange ist" : "Warteschlangen sind"} keinem Benutzer zugeordnet. Verschieben Sie sie über „Nicht zugeordnete verschieben“ im Menü eines Benutzers. Ihre alten Adressen (<i>schlange.sirangeldi.com</i>) leiten auf die Adresse des Benutzers weiter.</>,
+    unowned: (n: number) => <><b>{n}</b> vor Einführung der Konten angelegte {n === 1 ? "Warteschlange ist" : "Warteschlangen sind"} keinem Benutzer zugeordnet. Verschieben Sie sie über „Nicht zugeordnete verschieben“ im Menü eines Benutzers. Ihre alten Adressen (<i>schlange.qrwait.app</i>) leiten auf die Adresse des Benutzers weiter.</>,
     colUser: "Benutzer",
     setPw: "Passwort festlegen",
     adoptTitle: "Nicht zugeordnete Warteschlangen verschieben?",
@@ -559,7 +559,7 @@ export const T = pick({
     markVerified: "E-Mail als bestätigt markieren",
   },
   ru: {
-    docTitle: "Sıran Geldi · Управление",
+    docTitle: "QRWait · Управление",
     loginTitle: "Вход в управление",
     username: "Имя пользователя",
     password: "Пароль",
@@ -663,7 +663,7 @@ export const T = pick({
     addRoom: "+ Новая очередь",
     users: "Пользователи",
     addUser: "+ Новый пользователь",
-    unowned: (n: number) => <>Очередей, созданных до появления учётных записей и не привязанных к пользователю: <b>{n}</b>. Перенесите их через «Перенести очереди без владельца» в меню пользователя. Старые адреса (<i>очередь.sirangeldi.com</i>) будут перенаправляться на адрес пользователя.</>,
+    unowned: (n: number) => <>Очередей, созданных до появления учётных записей и не привязанных к пользователю: <b>{n}</b>. Перенесите их через «Перенести очереди без владельца» в меню пользователя. Старые адреса (<i>очередь.qrwait.app</i>) будут перенаправляться на адрес пользователя.</>,
     colUser: "Пользователь",
     setPw: "Задать пароль",
     adoptTitle: "Перенести очереди без владельца?",

@@ -4,7 +4,7 @@
   "compatibility_date": "2026-09-01",
   // Arayüz web/ altında React + Vite; wrangler dev/deploy önce build alır ve dist/ sunulur
   "build": { "command": "npm run build", "watch_dir": "web" },
-  // Sayfalar önce Worker'a gelir: hesaplardan önceki <slug>.sirangeldi.com adresleri yeni adrese yönlenir (src/index.js PAGES),
+  // Sayfalar önce Worker'a gelir: hesaplardan önceki <slug>.qrwait.app adresleri yeni adrese yönlenir (src/index.js PAGES),
   // güvenlik başlıkları (src/guard.js) eklenir
   "assets": { "directory": "dist", "binding": "ASSETS", "run_worker_first": ["/join", "/host", "/status", "/admin"] },
   "durable_objects": { "bindings": [
@@ -12,7 +12,7 @@
     { "name": "REGISTRY", "class_name": "Registry" },
     { "name": "ACCOUNT", "class_name": "Account" } // kullanıcı başına bilet bakiyesi (src/billing.js)
   ] },
-  // Worker adı plaj-sira'dan siran-geldi'ye değişti: DO verisi eski Worker'dan taşındı
+  // Worker adı (siran-geldi) iç addır, alan adı ve marka QRWait; ad değişirse DO verisi ve secret'lar taşınmalı
   "migrations": [
     { "tag": "v1", "transferred_classes": [
       { "from": "Room", "from_script": "plaj-sira", "to": "Room" },
@@ -32,13 +32,13 @@
   // DNS'te "@" ve "*" için proxied AAAA 100:: yer tutucu kayıtları var
   // Secret'lar (wrangler secret put), .dev.vars'ta yerel kopyası var:
   //   VAPID_PRIVATE_KEY, ADMIN_PASSWORD (süper yönetici, kullanıcı adı "admin"), TURNSTILE_SECRET,
-  //   LEMON_API_KEY, LEMON_WEBHOOK_SECRET (Lemon Squeezy webhook'u: https://sirangeldi.com/api/lemon, order_created + order_refunded)
+  //   LEMON_API_KEY, LEMON_WEBHOOK_SECRET (Lemon Squeezy webhook'u: https://qrwait.app/api/lemon, order_created + order_refunded)
   // .dev.vars'ta ayrıca DEV=1: e-posta bağlantıları günlüğe yazılır, sıra listesi önbelleğe alınmaz; LEMON_TEST=1: test siparişleri kabul
   "vars": {
-    "BASE_DOMAIN": "sirangeldi.com",
+    "BASE_DOMAIN": "qrwait.app",
     "VAPID_PUBLIC_KEY": "BMnLrY7VHICel9RZSt62UEiLxZymXnHinntTM-oeV88iHlXTfWZjrtjTJjE_XSx4_q25hNs9TftLofwDaH-UHC4",
-    "MAIL_FROM": "bildirim@sirangeldi.com",
-    "TURNSTILE_SITE_KEY": "0x4AAAAAAFKNZ22SRKQieffD", // widget "Sıran Geldi" (managed, sirangeldi.com); gizli anahtarı TURNSTILE_SECRET
+    "MAIL_FROM": "notify@qrwait.app",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFKNZ22SRKQieffD", // widget "QRWait" (managed, qrwait.app); gizli anahtarı TURNSTILE_SECRET
     "LEMON_STORE_ID": "486894", // siran-geldi.lemonsqueezy.com
     // Satılan paketler: variant = Lemon Squeezy varyant id'si; price yalnızca gösterim, tahsilat Lemon Squeezy'deki fiyattan
     // (mağaza para birimi TRY). Ürünün "Default" varyantı (2186515) satılmaz: webhook'ta bilinmeyen varyant yok sayılır.
@@ -50,7 +50,7 @@
     ]
   },
   "routes": [
-    { "pattern": "sirangeldi.com/*", "zone_name": "sirangeldi.com" },
-    { "pattern": "*.sirangeldi.com/*", "zone_name": "sirangeldi.com" }
+    { "pattern": "qrwait.app/*", "zone_name": "qrwait.app" },
+    { "pattern": "*.qrwait.app/*", "zone_name": "qrwait.app" }
   ]
 }

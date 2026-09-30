@@ -340,7 +340,7 @@ export class Room extends DurableObject {
 // Anahtarlar:
 //   "<oda id>" → { at, owner }; eski kayıtlarda yalnızca oluşturulma zamanı (sahipsiz oda)
 //   "slug:<kullanıcı>/<slug>" → oda id; sahipsiz eski odalarda "slug:<slug>"
-//   "legacy:<slug>" → oda id: kullanıcıya taşınan eski odanın <slug>.sirangeldi.com adresi yeni adrese yönlenir
+//   "legacy:<slug>" → oda id: kullanıcıya taşınan eski odanın <slug>.qrwait.app adresi yeni adrese yönlenir
 //   "user:<ad>" → { salt, hash, at, email?, lang?, self?, verified?, suspended? }
 //     self: kendisi hesap açtı (sıra sayısı sınırlı), verified: false → e-postası doğrulanmadı, sıra açamaz
 //   "email:<adres>" → kullanıcı adı, "susp:<ad>" → askıya alınan kullanıcının sıraları haritada görünmez
@@ -389,7 +389,7 @@ export class Registry extends DurableObject {
   }
 
   // u: kullanıcı (alt alan adı ya da ?u=), r: slug ya da oda id'si.
-  // Kullanıcı değilse eski tek seviyeli adrestir (bambus.sirangeldi.com, ?r=bambus); owner varsa sayfa yeni adrese yönlenir.
+  // Kullanıcı değilse eski tek seviyeli adrestir (bambus.qrwait.app, ?r=bambus); owner varsa sayfa yeni adrese yönlenir.
   async resolve(u, r) {
     if (ID_RE.test(r)) return { room: r };
     if (u && (await this.value(`user:${u}`))) return r ? { room: await this.value(`slug:${u}/${r}`) } : { account: u };
@@ -567,20 +567,20 @@ export class Registry extends DurableObject {
 const ID_RE = /^[a-f0-9]{10}$/;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-// Alt alan adı, kullanıcı adı ya da sıra adresi olamaz: sayfa ve dosya yollarıyla çakışır (antalyabb.sirangeldi.com/join),
-// ya da herkes hesap açabildiği için resmi bir adres gibi görünüp kötüye kullanılabilir (destek.sirangeldi.com)
+// Alt alan adı, kullanıcı adı ya da sıra adresi olamaz: sayfa ve dosya yollarıyla çakışır (antalyabb.qrwait.app/join),
+// ya da herkes hesap açabildiği için resmi bir adres gibi görünüp kötüye kullanılabilir (destek.qrwait.app)
 const RESERVED = new Set([
   "www", "api", "admin", "yonetim", "mail", "join", "host", "status", "home", "assets", "icons",
   "app", "panel", "dashboard", "login", "giris", "signup", "kayit", "account", "hesap", "auth", "secure", "guvenlik",
   "billing", "pay", "odeme", "fatura", "support", "destek", "help", "yardim", "info", "blog", "docs", "cdn", "static",
-  "root", "system", "sistem", "official", "resmi", "sirangeldi", "siran-geldi", "noreply", "no-reply", "bildirim", "security",
+  "root", "system", "sistem", "official", "resmi", "qrwait", "noreply", "no-reply", "bildirim", "security",
   "gizlilik", "kosullar", "kvkk", "privacy", "terms", "legal", "hukuk",
 ]);
 const SUPER = "admin"; // süper yönetici girişi: kullanıcı adı "admin", şifre ADMIN_PASSWORD
 const SESSION_MS = 30 * 864e5;
 const ROOM_LIMIT = 20; // kendi hesap açan kullanıcının en fazla sıra sayısı (herkese açık liste her sıraya sorar)
 
-// antalyabb.sirangeldi.com → "antalyabb"; ana alan adı ve www için "". Geliştirmede antalyabb.localhost:8787 de çalışır.
+// antalyabb.qrwait.app → "antalyabb"; ana alan adı ve www için "". Geliştirmede antalyabb.localhost:8787 de çalışır.
 function subdomain(url, env) {
   const h = url.hostname, base = [env.BASE_DOMAIN, "localhost"].find((b) => b && h.endsWith(`.${b}`));
   const sub = base ? h.slice(0, -base.length - 1) : "";
@@ -682,16 +682,16 @@ function roomFields(b, prev) {
   };
 }
 
-// Kullanıcının sayfası: antalyabb.sirangeldi.com; alan adı tanımlı değilse (workers.dev) aynı origin
+// Kullanıcının sayfası: antalyabb.qrwait.app; alan adı tanımlı değilse (workers.dev) aynı origin
 const accountLink = (url, env, user) => (env.BASE_DOMAIN ? `https://${user}.${env.BASE_DOMAIN}/` : `${url.origin}/status?u=${user}`);
 
-// Görevli linki: antalyabb.sirangeldi.com/host#bambus.<anahtar>; alan adı yoksa oda id'si ile
+// Görevli linki: antalyabb.qrwait.app/host#bambus.<anahtar>; alan adı yoksa oda id'si ile
 function hostLink(url, env, owner, r) {
   if (env.BASE_DOMAIN && r.slug) return `https://${owner}.${env.BASE_DOMAIN}/host#${r.slug}.${r.key}`;
   return `${url.origin}/host#${r.room}.${r.key}`;
 }
 
-// Ziyaretçiye açık sıra durumu sayfası: antalyabb.sirangeldi.com/bambus; sahipsiz eski oda bambus.sirangeldi.com
+// Ziyaretçiye açık sıra durumu sayfası: antalyabb.qrwait.app/bambus; sahipsiz eski oda bambus.qrwait.app
 function statusLink(url, env, owner, ref) {
   if (!env.BASE_DOMAIN || ID_RE.test(ref)) return `${url.origin}/status?r=${ref}`;
   return owner ? `https://${owner}.${env.BASE_DOMAIN}/${ref}` : `https://${ref}.${env.BASE_DOMAIN}/`;
@@ -882,8 +882,8 @@ async function publicRooms(req, env, url, reg) {
 const PAGES = new Set(["/join", "/host", "/status"]); // wrangler.jsonc'ta run_worker_first: eski adres yönlendirmesi için
 
 // Sayfa istekleri. Kök: alt alan adında kullanıcının sayfası / sıra durumu, ana alan adında tanıtım sitesi.
-// antalyabb.sirangeldi.com/bambus → sıra durumu. Hesaplardan önceki bambus.sirangeldi.com adresleri
-// sıra bir kullanıcıya taşındıysa antalyabb.sirangeldi.com'a yönlenir (basılı QR'lar ve görevli linkleri çalışmaya devam eder).
+// antalyabb.qrwait.app/bambus → sıra durumu. Hesaplardan önceki bambus.qrwait.app adresleri
+// sıra bir kullanıcıya taşındıysa antalyabb.qrwait.app'a yönlenir (basılı QR'lar ve görevli linkleri çalışmaya devam eder).
 // Yönetim sayfası yalnızca ana alan adında: kullanıcı adresinde giriş formu görünmesin.
 async function page(req, env, url) {
   const sub = subdomain(url, env), path = url.pathname;
@@ -932,7 +932,7 @@ async function handle(req, env) {
     // Hesap açma formu ve fiyatlar: Turnstile site anahtarı (gizli değil), ücretsiz bilet sayısı, paketler
     if (url.pathname === "/api/config") return Response.json({ turnstile: env.TURNSTILE_SITE_KEY ?? "", free: FREE, packages: packages(env) });
     if (url.pathname === "/api/resolve") {
-      // ?r= oda id'si ya da slug, ?u= kullanıcı (yoksa alt alan adından: antalyabb.sirangeldi.com).
+      // ?r= oda id'si ya da slug, ?u= kullanıcı (yoksa alt alan adından: antalyabb.qrwait.app).
       // r'siz kullanıcı adresi { account } döner: sayfa kullanıcının sıralarını listeler.
       const r = await reg.resolve(url.searchParams.get("u") || subdomain(url, env), url.searchParams.get("r") ?? "");
       if (!r.room && !r.account) throw fail("notFound");

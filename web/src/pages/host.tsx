@@ -11,7 +11,7 @@ import { lang, LANGS, pick, pl, tableLabel, type Lang } from "@/lib/i18n";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
-// Hash: "<slug veya id>.<anahtar>" ya da yalnızca "<anahtar>". Eski <slug>.sirangeldi.com/host#<anahtar> linki
+// Hash: "<slug veya id>.<anahtar>" ya da yalnızca "<anahtar>". Eski <slug>.qrwait.app/host#<anahtar> linki
 // yeni adrese ?r=<slug> ile yönlenir.
 const hash = location.hash.slice(1), dot = hash.indexOf(".");
 const ref = dot < 0 ? new URLSearchParams(location.search).get("r") ?? "" : hash.slice(0, dot), key = hash.slice(dot + 1);

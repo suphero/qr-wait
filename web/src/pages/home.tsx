@@ -21,7 +21,7 @@ const T = pick<{
   adminTitle: string; adminList: string[]; contactTitle: string; contactText: string;
 }>({
   tr: {
-    title: "Sıran Geldi · Uygulamasız sıra sistemi",
+    title: "QRWait · QR kodlu sanal sıra sistemi",
     admin: "Yönetici girişi",
     signup: "Ücretsiz hesap aç",
     freeNote: "Kendi sıranızı birkaç dakikada kurun. İlk 1000 bilet ücretsiz, kredi kartı gerekmez.",
@@ -75,7 +75,7 @@ const T = pick<{
     contactText: "Plajınız, işletmeniz ya da etkinliğiniz için sıra sistemi kurmak isterseniz yazın. Kurulumu birlikte yapalım.",
   },
   en: {
-    title: "Sıran Geldi · Queueing without an app",
+    title: "QRWait · Virtual queue with a QR code, no app",
     admin: "Admin login",
     signup: "Sign up for free",
     freeNote: "Set up your own queue in minutes. The first 1000 tickets are free, no credit card needed.",
@@ -129,7 +129,7 @@ const T = pick<{
     contactText: "Want a queue system for your beach, business or event? Write to us and we'll set it up together.",
   },
   de: {
-    title: "Sıran Geldi · Warteschlange ohne App",
+    title: "QRWait · Virtuelle Warteschlange per QR-Code",
     admin: "Admin-Anmeldung",
     signup: "Kostenlos registrieren",
     freeNote: "Richten Sie Ihre eigene Warteschlange in wenigen Minuten ein. Die ersten 1000 Tickets sind kostenlos, keine Kreditkarte nötig.",
@@ -183,7 +183,7 @@ const T = pick<{
     contactText: "Sie möchten ein Warteschlangensystem für Ihren Strand, Ihren Betrieb oder Ihr Event? Schreiben Sie uns – wir richten es gemeinsam ein.",
   },
   ru: {
-    title: "Sıran Geldi · Очередь без приложения",
+    title: "QRWait · Электронная очередь по QR-коду",
     admin: "Вход для администратора",
     signup: "Зарегистрироваться бесплатно",
     freeNote: "Создайте свою очередь за несколько минут. Первые 1000 билетов бесплатно, карта не нужна.",
@@ -375,7 +375,7 @@ function HomePage() {
     <div className="mx-auto max-w-[1080px] px-5 font-display text-[1.0625rem] leading-relaxed text-ink [font-optical-sizing:auto] [&_:focus-visible]:rounded [&_:focus-visible]:outline-3 [&_:focus-visible]:outline-offset-3 [&_:focus-visible]:outline-success">
       <header className="flex items-center justify-between py-5">
         <a className="text-[1.35rem] font-extrabold tracking-[-0.02em] no-underline" href="/">
-          sıran geldi<span aria-hidden="true" className="ml-[.12em] inline-block size-[.5em] rounded-full bg-success" />
+          qrwait<span aria-hidden="true" className="ml-[.12em] inline-block size-[.5em] rounded-full bg-success" />
         </a>
         <Button asChild className={cn(pill, "px-4 py-2.5 text-[.95rem]")}><a href="/admin">{T.admin}</a></Button>
       </header>
@@ -440,12 +440,12 @@ function HomePage() {
           <H2 className="mb-4">{T.contactTitle}</H2>
           <p className="mb-8 max-w-[46ch] text-[1.15rem] text-[#C9D2E3]">{T.contactText}</p>
           <Button asChild className={cn(pill, "mb-8 border-ticket bg-ticket text-ink hover:bg-ticket/90")}><a href="/admin#signup">{T.signup}</a></Button>
-          <a className="inline-block text-[clamp(1.4rem,4vw,2.4rem)] font-extrabold tracking-[-0.02em] break-all text-ticket underline decoration-3 underline-offset-6" href="mailto:iletisim@sirangeldi.com">iletisim@sirangeldi.com</a>
+          <a className="inline-block text-[clamp(1.4rem,4vw,2.4rem)] font-extrabold tracking-[-0.02em] break-all text-ticket underline decoration-3 underline-offset-6" href="mailto:hello@qrwait.app">hello@qrwait.app</a>
         </section>
       </main>
 
       <footer className="flex flex-wrap justify-between gap-4 pt-6 pb-10 text-[.95rem] text-ink-soft">
-        <span>© 2026 Sıran Geldi</span>
+        <span>© 2026 QRWait</span>
         <span className="flex flex-wrap gap-4">
           <a href="/privacy" className="underline">{LEGAL.privacyShort}</a>
           <a href="/terms" className="underline">{LEGAL.terms}</a>

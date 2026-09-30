@@ -5,10 +5,10 @@ import { langOf } from "./i18n.js";
 
 const M = {
   verify: {
-    tr: { subject: "E-posta adresinizi doğrulayın", body: (u) => `Merhaba ${u},\n\nSıran Geldi hesabınızı etkinleştirmek için aşağıdaki bağlantıyı açın. Bağlantı 3 gün geçerli.`, button: "E-postamı doğrula", foot: "Bu hesabı siz açmadıysanız bu e-postayı yok sayın." },
-    en: { subject: "Verify your email address", body: (u) => `Hi ${u},\n\nOpen the link below to activate your Sıran Geldi account. The link is valid for 3 days.`, button: "Verify my email", foot: "If you didn't create this account, ignore this email." },
-    de: { subject: "Bestätigen Sie Ihre E-Mail-Adresse", body: (u) => `Hallo ${u},\n\nÖffnen Sie den folgenden Link, um Ihr Sıran-Geldi-Konto zu aktivieren. Der Link ist 3 Tage gültig.`, button: "E-Mail bestätigen", foot: "Wenn Sie dieses Konto nicht erstellt haben, ignorieren Sie diese E-Mail." },
-    ru: { subject: "Подтвердите адрес электронной почты", body: (u) => `Здравствуйте, ${u}!\n\nОткройте ссылку ниже, чтобы активировать учётную запись Sıran Geldi. Ссылка действует 3 дня.`, button: "Подтвердить почту", foot: "Если вы не создавали эту учётную запись, проигнорируйте письмо." },
+    tr: { subject: "E-posta adresinizi doğrulayın", body: (u) => `Merhaba ${u},\n\nQRWait hesabınızı etkinleştirmek için aşağıdaki bağlantıyı açın. Bağlantı 3 gün geçerli.`, button: "E-postamı doğrula", foot: "Bu hesabı siz açmadıysanız bu e-postayı yok sayın." },
+    en: { subject: "Verify your email address", body: (u) => `Hi ${u},\n\nOpen the link below to activate your QRWait account. The link is valid for 3 days.`, button: "Verify my email", foot: "If you didn't create this account, ignore this email." },
+    de: { subject: "Bestätigen Sie Ihre E-Mail-Adresse", body: (u) => `Hallo ${u},\n\nÖffnen Sie den folgenden Link, um Ihr QRWait-Konto zu aktivieren. Der Link ist 3 Tage gültig.`, button: "E-Mail bestätigen", foot: "Wenn Sie dieses Konto nicht erstellt haben, ignorieren Sie diese E-Mail." },
+    ru: { subject: "Подтвердите адрес электронной почты", body: (u) => `Здравствуйте, ${u}!\n\nОткройте ссылку ниже, чтобы активировать учётную запись QRWait. Ссылка действует 3 дня.`, button: "Подтвердить почту", foot: "Если вы не создавали эту учётную запись, проигнорируйте письмо." },
   },
   reset: {
     tr: { subject: "Şifre sıfırlama", body: (u) => `Merhaba ${u},\n\nŞifrenizi sıfırlamak için aşağıdaki bağlantıyı açın. Bağlantı 1 saat geçerli ve bir kez kullanılabilir.`, button: "Yeni şifre belirle", foot: "Şifre sıfırlamayı siz istemediyseniz bu e-postayı yok sayın, şifreniz değişmez." },
@@ -38,12 +38,12 @@ export async function mail(env, { to, lang, kind, user, link, n }) {
   const t = M[kind][langOf(lang)], body = t.body(user, n);
   if (env.DEV === "1") console.log(`mail ${kind} → ${to}: ${link}`);
   if (!env.EMAIL) return;
-  const text = `${body}\n\n${link}\n${t.foot ? `\n${t.foot}\n` : ""}\n— Sıran Geldi`;
+  const text = `${body}\n\n${link}\n${t.foot ? `\n${t.foot}\n` : ""}\n— QRWait`;
   const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.5;color:#1B2A4A;max-width:520px">
 ${body.split("\n\n").map((p) => `<p>${esc(p)}</p>`).join("\n")}
 <p><a href="${esc(link)}" style="display:inline-block;background:#1B2A4A;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">${esc(t.button)}</a></p>
 <p style="font-size:13px;color:#666">${esc(link)}</p>
 ${t.foot ? `<p style="font-size:13px;color:#666">${esc(t.foot)}</p>` : ""}
-<p>— Sıran Geldi</p></div>`;
+<p>— QRWait</p></div>`;
   await env.EMAIL.send({ to, from: env.MAIL_FROM, subject: t.subject, text, html });
 }

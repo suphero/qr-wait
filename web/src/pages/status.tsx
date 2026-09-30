@@ -7,7 +7,7 @@ import { lang, pick, waitText, word } from "@/lib/i18n";
 import { LEGAL } from "@/components/legal";
 import { mount } from "@/lib/mount";
 
-// antalyabb.sirangeldi.com/bambus ya da /status?r=bambus; kullanıcı alt alan adından (yoksa ?u=)
+// antalyabb.qrwait.app/bambus ya da /status?r=bambus; kullanıcı alt alan adından (yoksa ?u=)
 const q = new URLSearchParams(location.search), path = location.pathname.slice(1);
 const ref = q.get("r") ?? (path === "status" ? "" : path), user = q.get("u") ?? "";
 const base = location.hostname.split(".").slice(1).join(".");
@@ -94,7 +94,7 @@ const T = pick({
 
 function StatusPage() {
   const [s, setS] = useState<Status>();
-  const [list, setList] = useState<PublicRoom[]>(); // kullanıcı sayfası (antalyabb.sirangeldi.com): sıraları
+  const [list, setList] = useState<PublicRoom[]>(); // kullanıcı sayfası (antalyabb.qrwait.app): sıraları
   const [mine, setMine] = useState(false);
   const [updated, setUpdated] = useState(T.loading);
   const [err, setErr] = useState("");
@@ -189,7 +189,7 @@ function StatusPage() {
       )}
 
       <ErrorText>{err}</ErrorText>
-      <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={home}>Sıran Geldi</a>)} · <a className="underline" href={`${home}privacy`}>{LEGAL.privacyShort}</a></p>
+      <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={home}>QRWait</a>)} · <a className="underline" href={`${home}privacy`}>{LEGAL.privacyShort}</a></p>
     </Page>
   );
 }

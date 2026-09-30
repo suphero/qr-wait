@@ -3,7 +3,7 @@
 
 import { fail } from "./i18n.js";
 
-const SUBJECT = "mailto:info@sirangeldi.com";
+const SUBJECT = "mailto:hello@qrwait.app";
 const te = new TextEncoder();
 
 const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");

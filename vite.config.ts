@@ -9,19 +9,19 @@ const web = resolve(import.meta.dirname, "web");
 // HTML dosyası repoda yok; başlık ve <head> ekleri burada.
 const PAGES: Record<string, { title: string; head?: string; body?: string }> = {
   home: {
-    title: "Sıran Geldi · Uygulamasız sıra sistemi",
+    title: "QRWait · QR kodlu sanal sıra sistemi",
     head: `<meta name="description" content="Plajlar, iskeleler, hizmet noktaları ve etkinlikler için QR kodlu sıra sistemi. Uygulama indirmeden sıraya gir, sıran gelince telefonun haber versin.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">`,
     body: "bg-paper",
   },
-  join: { title: "Sıran Geldi", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">` },
+  join: { title: "QRWait", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">` },
   host: { title: "Görevli Paneli" },
   status: { title: "Sıra durumu" },
-  admin: { title: "Sıran Geldi · Yönetim" },
-  privacy: { title: "Gizlilik · Sıran Geldi" },
-  terms: { title: "Kullanım Koşulları · Sıran Geldi" },
+  admin: { title: "QRWait · Yönetim" },
+  privacy: { title: "Gizlilik · QRWait" },
+  terms: { title: "Kullanım Koşulları · QRWait" },
 };
 
 const html = (name: string) => {
