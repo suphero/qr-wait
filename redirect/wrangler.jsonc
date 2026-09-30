@@ -1,0 +1,12 @@
+// sirangeldi.com → qrwait.app yönlendirmesi. Ana uygulamadan ayrı Worker, CI deploy etmez:
+// değişirse bu klasörde `npx wrangler deploy`. DNS'te "@" ve "*" için proxied AAAA 100:: kayıtları var.
+{
+  "name": "sirangeldi-redirect",
+  "main": "index.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "sirangeldi.com/*", "zone_name": "sirangeldi.com" },
+    { "pattern": "*.sirangeldi.com/*", "zone_name": "sirangeldi.com" }
+  ]
+}
