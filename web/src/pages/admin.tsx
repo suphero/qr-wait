@@ -33,7 +33,7 @@ const slugify = (t: string) => t.toLocaleLowerCase("tr").replace(/[çğıöşü]
 
 type Pt = { lat: number; lng: number };
 type Form = {
-  name: string; category: string; private: boolean; slug: string; radius: string; flex: boolean;
+  name: string; category: string; private: boolean; slug: string; radius: string; flex: boolean; skip: boolean;
   mode: "seats" | "tables"; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string;
 };
 
@@ -56,7 +56,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
   const [f, setF] = useState<Form>({
     name: room?.name ?? "", category: room?.category ?? "diger", private: !!room?.private,
     slug: room?.private ? "" : room?.slug ?? "", // gizli odanın rastgele adresi açık adrese taşınmasın
-    radius: String(room?.radius ?? 300), flex: !!room?.flex, mode: room?.mode ?? "seats", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
+    radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
   });
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
   const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
@@ -180,9 +180,12 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
                 </FieldContent>
               </Field>
               {f.mode === "seats" && (
-                <div className="pl-6">
+                <div className="flex flex-col gap-4 pl-6">
                   <Check title={T.flex} checked={f.flex} onChange={(v) => set("flex", v)}>
                     {T.flexDesc}
+                  </Check>
+                  <Check title={T.skip} checked={f.skip} onChange={(v) => set("skip", v)}>
+                    {T.skipDesc}
                   </Check>
                 </div>
               )}
@@ -271,7 +274,7 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
           {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? T.hiddenTag : bare(r.page)}</a> : T.noSlug}
         </div>
         <div className="text-xs text-muted-foreground">
-          {[`${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag,
+          {[`${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag, r.skip && T.skipTag,
             r.qr === "static" ? T.staticTag : T.ttlTag(r.ttl)].filter(Boolean).join(" · ")}
         </div>
       </TableCell>

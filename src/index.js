@@ -42,10 +42,11 @@ const acceptOf = (e) => e.accept ?? [e.size];
 
 // Sonradan eklenen oda ayarları; eski kayıtlarda alan yoksa varsayılan.
 // Sıra türü: "seats" boş yer havuzu (plaj, iskele), "tables" masalar (restoran); masada esnek yer seçimi anlamsız.
+// skip: yer modunda sıradaki grup sığmazsa arkadan sığan küçük gruplar öne alınır (masa modu zaten böyle çalışır).
 const conf = (s) => {
   const mode = s.mode === "tables" ? "tables" : "seats", tables = mode === "tables";
   return {
-    category: s.category ?? "diger", mode, tables, flex: !!s.flex && !tables, maxEmpty: tables ? s.maxEmpty ?? null : null,
+    category: s.category ?? "diger", mode, tables, flex: !!s.flex && !tables, skip: !!s.skip && !tables, maxEmpty: tables ? s.maxEmpty ?? null : null,
     maxGroup: s.maxGroup ?? MAX_GROUP, qr: s.qr ?? "dynamic", ttl: s.ttl ?? 90,
   };
 };
@@ -250,8 +251,8 @@ export class Room extends DurableObject {
   }
 
   // Boş yer (this.s.available) varken bekleyenleri çağırır.
-  // TODO(politika): Şu an katı FIFO: sıradaki grup sığmıyorsa arkadakiler de beklemeye devam eder.
-  // Alternatif: sığan küçük grupları öne al (daha az boş yer kalır ama kalabalık aileler sürekli geri düşebilir).
+  // Varsayılan katı FIFO: sıradaki grup sığmıyorsa arkadakiler de bekler. skip açıksa sığan küçük gruplar öne alınır
+  // (daha az boş yer kalır ama kalabalık gruplar sürekli geri düşebilir).
   // Masa modunda: bekleyen gruplar sırayla, her birine sığan en küçük boş masa. Sığmayan grup atlanır;
   // böylece büyük masa boşalınca arkadaki büyük grup çağrılabilir.
   fill() {
@@ -267,8 +268,8 @@ export class Room extends DurableObject {
     }
     for (const e of s.entries) {
       if (e.status !== "waiting") continue;
-      if (fit(e, this.s.available) === null) break;
-      this.call(e);
+      if (fit(e, this.s.available) !== null) this.call(e);
+      else if (!conf(s).skip) break;
     }
   }
 
@@ -487,6 +488,7 @@ function roomFields(b, prev) {
     name: String(b.name ?? "").trim().slice(0, 60) || "Sıra",
     slug, lat, lng, radius: int(b.radius, 50, 2000, "radius"),
     flex: b.flex === true || b.flex === "on", // grup, kişi sayısından az yeri de kabul edebilir (plaj şezlongu gibi)
+    skip: b.skip === true || b.skip === "on", // sığmayan grubun arkasındaki küçük gruplar öne geçebilir
     category: CATEGORIES.has(b.category) ? b.category : "diger",
     mode: b.mode === "tables" ? "tables" : "seats",
     // Masa modunda masada boş kalabilecek en fazla sandalye; boş: sınır yok

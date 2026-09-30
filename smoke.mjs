@@ -135,6 +135,17 @@ assert.equal((await fme(g2.id)).status, "waiting");
 fs = await fadmin({ action: "drop", id: g1.id }); // gelmedi: ayrılan 2 yer (4 değil) geri döner → 3 → #2 çağrılır
 assert.deepEqual([(await fme(g2.id)).status, (await fme(g2.id)).alloc, fs.available], ["called", 2, 1]);
 await req("DELETE", `/api/admin/rooms/${f.room}`, undefined, PW);
+// Sığmayan grubun arkası: varsayılan katı FIFO, skip açıkken sığan küçük gruplar öne geçer
+for (const skip of [false, true]) {
+  const k = await post("/api/admin/rooms", { name: "Atlama", slug: `${slug}-atla-${skip}`, radius: 300, skip, ...spot }, PW);
+  const kadmin = (body = {}) => post(`/api/r/${k.room}/admin`, body, { "x-key": k.key });
+  await kadmin({ action: "add", size: 4 });
+  await kadmin({ action: "add", size: 2 });
+  const ks = await kadmin({ action: "free", n: 3 });
+  assert.deepEqual(ks.entries.map((e) => e.status), ["waiting", skip ? "called" : "waiting"], `skip=${skip}`);
+  assert.equal(ks.available, skip ? 1 : 3);
+  await req("DELETE", `/api/admin/rooms/${k.room}`, undefined, PW);
+}
 // Gizli sıra: rastgele adres, haritada yok; gizli kaldıkça adres korunur, açılınca seçilen adres kullanılır
 const pv = await post("/api/admin/rooms", { name: "Gizli", slug: "tahmin-edilir", private: true, radius: 300, ...spot }, PW);
 const pfind = async () => (await req("GET", "/api/admin/rooms", undefined, PW)).find((r) => r.room === pv.room);
