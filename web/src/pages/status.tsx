@@ -3,7 +3,7 @@ import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, catIcon, poll, type PublicRoom, type Status } from "@/lib/api";
-import { lang, pick, waitText, word } from "@/lib/i18n";
+import { closedText, fmtWait, lang, pick, S, waitText, word } from "@/lib/i18n";
 import { LEGAL } from "@/components/legal";
 import { mount } from "@/lib/mount";
 
@@ -157,6 +157,8 @@ function StatusPage() {
             <CardContent className="text-center">
               <div className="text-7xl leading-tight font-extrabold text-primary tabular-nums">{s.waiting}</div>
               <p>{s.waiting ? T.waiting(s.waiting, s.people) : T.nobody}</p>
+              {closedText(s) ? <p className="mt-2 font-semibold text-destructive">{closedText(s)}</p>
+                : s.eta && <p className="mt-2 font-semibold">{S.eta(fmtWait(s.eta))}</p>}
             </CardContent>
           </Card>
 

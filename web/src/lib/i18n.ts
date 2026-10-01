@@ -28,6 +28,11 @@ export const S = pick({
     or: "veya",
     table: (n: string) => `Masa ${n}`,
     tableFor: (c: number) => `${c} kişilik masa`,
+    minU: "dk", hourU: "sa",
+    eta: (t: string) => `Tahmini bekleme: yaklaşık ${t}`,
+    closedPaused: "Sıra şu an yeni katılıma kapalı.",
+    closedHours: (a: string, b: string) => `Sıra şu an kapalı. Katılım saatleri: ${a}-${b}.`,
+    closedFull: "Sıra şu an dolu. Biraz sonra yeniden deneyin.",
     noGeo: "Tarayıcınız konum desteklemiyor.",
     geoDenied: "Konum izni gerekli. Tarayıcı ayarlarından bu siteye konum izni verin.",
     packs: { starter: "Başlangıç", business: "İşletme", season: "Sezon", enterprise: "Kurumsal" },
@@ -42,6 +47,11 @@ export const S = pick({
     or: "or",
     table: (n: string) => `Table ${n}`,
     tableFor: (c: number) => `Table for ${c}`,
+    minU: "min", hourU: "h",
+    eta: (t: string) => `Estimated wait: about ${t}`,
+    closedPaused: "The queue isn't taking new people right now.",
+    closedHours: (a: string, b: string) => `The queue is closed right now. Joining hours: ${a}–${b}.`,
+    closedFull: "The queue is full right now. Please try again a little later.",
     noGeo: "Your browser doesn't support location.",
     geoDenied: "Location access is required. Allow this site to use your location in your browser settings.",
     packs: { starter: "Starter", business: "Business", season: "Season", enterprise: "Enterprise" },
@@ -56,6 +66,11 @@ export const S = pick({
     or: "oder",
     table: (n: string) => `Tisch ${n}`,
     tableFor: (c: number) => `Tisch für ${c}`,
+    minU: "Min.", hourU: "Std.",
+    eta: (t: string) => `Geschätzte Wartezeit: etwa ${t}`,
+    closedPaused: "Die Warteschlange nimmt gerade niemanden neu auf.",
+    closedHours: (a: string, b: string) => `Die Warteschlange ist gerade geschlossen. Anstellzeiten: ${a}–${b}.`,
+    closedFull: "Die Warteschlange ist gerade voll. Bitte versuchen Sie es etwas später erneut.",
     noGeo: "Ihr Browser unterstützt keine Standortbestimmung.",
     geoDenied: "Die Standortfreigabe ist erforderlich. Erlauben Sie dieser Seite in den Browsereinstellungen den Zugriff auf Ihren Standort.",
     packs: { starter: "Starter", business: "Business", season: "Saison", enterprise: "Enterprise" },
@@ -70,6 +85,11 @@ export const S = pick({
     or: "или",
     table: (n: string) => `Стол ${n}`,
     tableFor: (c: number) => `Стол на ${c}`,
+    minU: "мин", hourU: "ч",
+    eta: (t: string) => `Примерное ожидание: около ${t}`,
+    closedPaused: "Очередь сейчас не принимает новых посетителей.",
+    closedHours: (a: string, b: string) => `Очередь сейчас закрыта. Время записи: ${a}–${b}.`,
+    closedFull: "Очередь сейчас заполнена. Попробуйте чуть позже.",
     noGeo: "Ваш браузер не поддерживает геолокацию.",
     geoDenied: "Нужен доступ к геолокации. Разрешите этому сайту определять местоположение в настройках браузера.",
     packs: { starter: "Старт", business: "Бизнес", season: "Сезон", enterprise: "Корпоративный" },
@@ -81,6 +101,14 @@ export const waitText = (r: PublicRoom) => (r.waiting ? S.waiting(r) : S.empty);
 export const orList = (a: number[]) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} ${S.or} ${a.at(-1)}` : String(a[0]));
 // src/i18n.js'teki tableLabel ile aynı
 export const tableLabel = (t: Pick<Table, "name" | "cap">) => (/^\d+$/.test(t.name) ? S.table(t.name) : t.name || S.tableFor(t.cap));
+// Tahmini bekleme: 25 dk, 1 sa 10 dk. 10 dk'dan uzunsa 5'e yuvarlanır (kesinlik izlenimi vermesin).
+export const fmtWait = (n: number) => {
+  const m = n > 10 ? Math.ceil(n / 5) * 5 : n;
+  return m < 60 ? `${m} ${S.minU}` : `${Math.floor(m / 60)} ${S.hourU}${m % 60 ? ` ${m % 60} ${S.minU}` : ""}`;
+};
+// Yeni katılım kapalıysa nedeni; açıksa null
+export const closedText = (r: { paused: boolean; open: boolean; full: boolean; hours: { from: string; to: string } | null }) =>
+  r.paused ? S.closedPaused : !r.open && r.hours ? S.closedHours(r.hours.from, r.hours.to) : r.full ? S.closedFull : null;
 export const geoErrors = { unsupported: S.noGeo, denied: S.geoDenied };
 // 850 m, 1,2 km / 1.2 km
 export const fmtDistL = (m: number) => (m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m`

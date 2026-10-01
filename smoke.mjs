@@ -231,6 +231,50 @@ if (process.env.SLOW) {
 }
 await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300, qr: "static", ...spot }, PW);
 assert.equal((await ofind()).wait, null, "varsayılan süresiz");
+// Katılım: kapasite, durdurma, açılış saatleri (sıranın saat diliminde)
+const put = (extra) => req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300, qr: "static", tz: "Europe/Istanbul", ...spot, ...extra }, PW);
+const ostat = () => req("GET", `/api/r/${o.room}/status`);
+await put({ cap: 1 });
+await gadmin({ action: "reset" });
+const c1 = await gjoin("cap-device-0000001", spot);
+assert.ok(c1.no);
+assert.match((await gjoin("cap-device-0000002", spot)).error, /Sıra dolu/);
+assert.equal((await ostat()).full, true);
+assert.equal((await gjoin("cap-device-0000001", spot)).no, c1.no, "dolu sırada da kendi biletini alır");
+assert.ok((await gadmin({ action: "add", size: 1 })).added, "elle ekleme sınıra takılmaz");
+await put({});
+assert.equal((await ofind()).cap, null);
+assert.equal((await gadmin({ action: "pause" })).paused, true);
+assert.match((await gjoin("cap-device-0000002", spot)).error, /yeni katılıma kapalı/);
+assert.equal((await ostat()).paused, true);
+assert.equal((await gadmin({ action: "resume" })).paused, false);
+assert.ok((await gjoin("cap-device-0000002", spot)).no, "açılınca girilir");
+const hm = (h) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(Date.now() + h * 3600e3);
+await put({ hours: { from: hm(2), to: hm(3) } });
+assert.match((await gjoin("cap-device-0000003", spot)).error, /Katılım saatleri/);
+assert.equal((await ostat()).open, false);
+await put({ hours: { from: hm(-1), to: hm(1) } });
+assert.equal((await ostat()).open, true, "saat aralığında açık");
+assert.deepEqual((await ofind()).hours, { from: hm(-1), to: hm(1) });
+await put({});
+// Tahmini bekleme: son 1 saatte en az 3 çağrı olunca
+assert.equal((await ostat()).eta, null, "çağrı yokken tahmin yok");
+for (let i = 0; i < 3; i++) await gadmin({ action: "add", size: 1 });
+await gadmin({ action: "free", n: 3 });
+const eta = (await ostat()).eta;
+assert.ok(eta >= 1, "çağrı hızından tahmin");
+// İstatistik: bugünün sayaçları
+const today = async () => (await req("GET", `/api/admin/rooms/${o.room}/stats`, undefined, PW)).days.at(-1);
+const day0 = await today();
+assert.ok(day0.joined >= 6 && day0.manual >= 4 && day0.called >= 3 && day0.hours.length === 24);
+const calledNow = (await gadmin()).entries.find((e) => e.status === "called");
+await gadmin({ action: "arrived", id: calledNow.id });
+const waitingNow = (await gadmin()).entries.find((e) => e.status === "waiting");
+await gadmin({ action: "drop", id: waitingNow.id });
+const day1 = await today();
+assert.deepEqual([day1.served - day0.served, day1.removed - day0.removed], [1, 1]);
+const foreign = await req("GET", `/api/admin/rooms/${o.room}/stats`, undefined, PW2);
+assert.ok(foreign.error && !foreign.days, "başkasının istatistiği görülmez");
 assert.match((await gjoin("geo-device-0000003", far)).error, /bulunduğu yerde görünmüyorsunuz/);
 assert.match((await post("/api/admin/rooms", { name: "X", slug: `${slug}-x`, radius: 300, maxGroup: 50, ...spot }, PW)).error, /1-20/);
 await req("DELETE", `/api/admin/rooms/${o.room}`, undefined, PW);

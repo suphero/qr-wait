@@ -30,7 +30,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Hesap sahiplerinin verileri", ul: [
       <><b>Hesap:</b> kullanıcı adı, e-posta adresi, dil tercihi, kullanım koşullarının kabul edildiği sürüm ve zaman.</>,
       <><b>Şifre:</b> yalnızca geri döndürülemeyen özeti (PBKDF2) saklanır. Şifrenin bilinen veri sızıntılarında geçip geçmediği, özetin yalnızca ilk 5 karakteri gönderilerek (k-anonimlik) kontrol edilir; şifre ya da tam özet hiçbir yere gönderilmez.</>,
-      <><b>Sıralar:</b> sıra adı, adresi, konumu ve ayarları. Konum kontrolü görevlinin konumuna göre yapılan sıralarda, görevli panelinin gönderdiği son konum (yalnızca en sonuncusu, kontrol için).</>,
+      <><b>Sıralar:</b> sıra adı, adresi, konumu ve ayarları. Konum kontrolü görevlinin konumuna göre yapılan sıralarda, görevli panelinin gönderdiği son konum (yalnızca en sonuncusu, kontrol için). Günlük istatistikler yalnızca sayılardan oluşur (kaç grup katıldı, çağrıldı, ortalama bekleme), ziyaretçiye ait bilgi içermez.</>,
       <><b>Kullanım ve ödeme kayıtları:</b> kullanılan ve kalan bilet sayısı, sipariş numarası, paket ve tutar. Kart bilgileriniz bize ulaşmaz; ödemeyi Lemon Squeezy alır.</>,
     ] },
     { h: "Tüm ziyaretçiler", ul: [
@@ -86,7 +86,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Data of account holders", ul: [
       <><b>Account:</b> username, email address, language, the version and time you accepted the terms of use.</>,
       <><b>Password:</b> only an irreversible hash (PBKDF2) is stored. Whether a password appears in known data breaches is checked by sending only the first 5 characters of its hash (k-anonymity); the password or full hash is never sent anywhere.</>,
-      <><b>Queues:</b> queue name, address, location and settings. For queues that check location against the attendant, the last location sent by the attendant panel (only the latest one, for the check).</>,
+      <><b>Queues:</b> queue name, address, location and settings. For queues that check location against the attendant, the last location sent by the attendant panel (only the latest one, for the check). Daily statistics are counts only (how many groups joined, were called, average wait) and contain no visitor information.</>,
       <><b>Usage and payment records:</b> tickets used and remaining, order number, pack and amount. Your card details never reach us; payment is taken by Lemon Squeezy.</>,
     ] },
     { h: "All visitors", ul: [
@@ -142,7 +142,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Daten der Kontoinhaber", ul: [
       <><b>Konto:</b> Benutzername, E-Mail-Adresse, Sprache, Version und Zeitpunkt der Zustimmung zu den Nutzungsbedingungen.</>,
       <><b>Passwort:</b> gespeichert wird nur ein nicht umkehrbarer Hash (PBKDF2). Ob ein Passwort in bekannten Datenlecks vorkommt, wird geprüft, indem nur die ersten 5 Zeichen seines Hashes gesendet werden (k-Anonymität); Passwort oder vollständiger Hash werden nie übermittelt.</>,
-      <><b>Warteschlangen:</b> Name, Adresse, Standort und Einstellungen. Bei Warteschlangen, die den Standort des Personals prüfen, der zuletzt vom Personal-Panel gesendete Standort (nur der jeweils letzte, für die Prüfung).</>,
+      <><b>Warteschlangen:</b> Name, Adresse, Standort und Einstellungen. Bei Warteschlangen, die den Standort des Personals prüfen, der zuletzt vom Personal-Panel gesendete Standort (nur der jeweils letzte, für die Prüfung). Tägliche Statistiken bestehen nur aus Zahlen (wie viele Gruppen sich angestellt haben, aufgerufen wurden, durchschnittliche Wartezeit) und enthalten keine Besucherdaten.</>,
       <><b>Nutzungs- und Zahlungsdaten:</b> verbrauchte und verbleibende Tickets, Bestellnummer, Paket und Betrag. Ihre Kartendaten erreichen uns nicht; die Zahlung wickelt Lemon Squeezy ab.</>,
     ] },
     { h: "Alle Besucher", ul: [
@@ -198,7 +198,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Данные владельцев учётных записей", ul: [
       <><b>Учётная запись:</b> имя пользователя, адрес почты, язык, версия и время принятия условий использования.</>,
       <><b>Пароль:</b> хранится только необратимый хеш (PBKDF2). Наличие пароля в известных утечках проверяется отправкой лишь первых 5 символов хеша (k-анонимность); пароль и полный хеш никуда не передаются.</>,
-      <><b>Очереди:</b> название, адрес, местоположение и настройки. Для очередей с проверкой по местоположению сотрудника — последнее местоположение, отправленное панелью сотрудника (только последнее, для проверки).</>,
+      <><b>Очереди:</b> название, адрес, местоположение и настройки. Для очередей с проверкой по местоположению сотрудника — последнее местоположение, отправленное панелью сотрудника (только последнее, для проверки). Ежедневная статистика содержит только числа (сколько групп встало, было вызвано, среднее ожидание) и не содержит данных посетителей.</>,
       <><b>Данные об использовании и оплате:</b> использованные и оставшиеся билеты, номер заказа, пакет и сумма. Данные карты к нам не попадают — оплату принимает Lemon Squeezy.</>,
     ] },
     { h: "Все посетители", ul: [

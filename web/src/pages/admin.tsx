@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import {
   BanIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsUpDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon,
-  ExternalLinkIcon, InfinityIcon, KeyRoundIcon, LocateFixedIcon, LockIcon, MailCheckIcon, PencilIcon, RefreshCwIcon, SearchIcon, TicketIcon,
+  ChartColumnIcon, ExternalLinkIcon, InfinityIcon, KeyRoundIcon, LocateFixedIcon, LockIcon, MailCheckIcon, PencilIcon, RefreshCwIcon, SearchIcon, TicketIcon,
   Trash2Icon, UsersIcon,
 } from "lucide-react";
 import { useConfirm } from "@/components/confirm";
@@ -16,7 +16,7 @@ import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { api, CATEGORIES, catIcon, locate, packName, perThousand, poll, type Geo, type Pkg, type RoomInfo } from "@/lib/api";
+import { api, CATEGORIES, catIcon, locate, packName, perThousand, poll, type Geo, type Pkg, type RoomInfo, type Stats } from "@/lib/api";
 import { fmtDistL, lang } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
 import { mount } from "@/lib/mount";
@@ -38,6 +38,7 @@ type Form = {
   name: string; category: string; private: boolean; slug: string; radius: string; flex: boolean; skip: boolean;
   mode: "seats" | "tables"; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string; geo: Geo;
   timed: "off" | "on"; wait: string;
+  limited: "off" | "on"; from: string; to: string; cap: string;
 };
 
 // Onay kutusu + başlık + açıklama
@@ -168,6 +169,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
     geo: room?.geo ?? "fixed",
     timed: room?.wait ? "on" : "off", wait: String(room?.wait ?? 10),
+    limited: room?.hours ? "on" : "off", from: room?.hours?.from ?? "09:00", to: room?.hours?.to ?? "18:00", cap: String(room?.cap ?? ""),
   });
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
   const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
@@ -178,9 +180,11 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
   async function submit(ev: FormEvent) {
     ev.preventDefault();
     if (fixed && !pt) return onError(T.pickOnMap);
-    const { slug, timed, ...rest } = f;
+    const { slug, timed, limited, from, to, ...rest } = f;
     // Nokta yalnızca sabit konumda anlamlı; diğerlerinde sıra haritada görünmez
-    const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, wait: timed === "on" ? +f.wait : null, ...(fixed ? pt : {}) };
+    const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, wait: timed === "on" ? +f.wait : null,
+      hours: limited === "on" ? { from, to } : null, cap: f.cap === "" ? null : +f.cap, tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      ...(fixed ? pt : {}) };
     const prev = rooms.find((r) => r.room === room?.room);
     const changed = prev?.slug && (f.private ? !prev.private : prev.slug !== slug);
     if (changed && !(await confirm({ title: T.slugChangeTitle, description: T.slugChangeDesc, action: T.cont }))) return;
@@ -251,6 +255,27 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
             ]} />
             {warn}
           </Section>
+
+          <Section title={T.joinSec}>
+            <Choice label={T.joinSec} value={f.limited} onChange={(v) => set("limited", v)} items={[
+              { v: "off", title: T.always, desc: T.alwaysDesc },
+              { v: "on", title: T.hoursOn, desc: T.hoursOnDesc, extra: (
+                <div className="grid grid-cols-2 gap-4">
+                  <Field>
+                    <FieldLabel htmlFor="from">{T.fromL}</FieldLabel>
+                    <Input id="from" type="time" required value={f.from} onChange={(e) => set("from", e.target.value)} />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="to">{T.toL}</FieldLabel>
+                    <Input id="to" type="time" required value={f.to} onChange={(e) => set("to", e.target.value)} />
+                  </Field>
+                </div>
+              ) },
+            ]} />
+            <Inline id="cap" label={T.capQ} desc={T.capDesc}>
+              <Input id="cap" type="number" min={1} max={1000} inputMode="numeric" placeholder={T.noLimit} value={f.cap} onChange={(e) => set("cap", e.target.value)} />
+            </Inline>
+          </Section>
         </div>
 
         <div className="flex flex-col gap-4">
@@ -311,7 +336,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
   );
 }
 
-function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: number; onChange: () => Promise<void>; onEdit: () => void; onError: (m: string) => void }) {
+function RoomRow({ r, dist, onChange, onEdit, onStats, onError }: { r: RoomInfo; dist?: number; onChange: () => Promise<void>; onEdit: () => void; onStats: () => void; onError: (m: string) => void }) {
   const confirm = useConfirm();
   const [copied, setCopied] = useState(false);
 
@@ -334,7 +359,7 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
           {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? T.hiddenTag : bare(r.page)}</a> : T.noSlug}
         </div>
         <div className="text-xs text-muted-foreground">
-          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag, r.skip && T.skipTag, r.wait && T.waitTag(r.wait),
+          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag, r.skip && T.skipTag, r.wait && T.waitTag(r.wait), r.hours && `${r.hours.from}–${r.hours.to}`, r.cap && T.capTag(r.cap), r.paused && T.pausedTag,
             r.qr === "static" ? T.staticTag : T.ttlTag(r.ttl)].filter(Boolean).join(" · ")}
         </div>
       </TableCell>
@@ -346,6 +371,7 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
           <Button size="icon-sm" variant="ghost" title={T.copyLink} onClick={copy}>{copied ? <CheckIcon /> : <CopyIcon />}</Button>
           <Button size="icon-sm" variant="ghost" title={T.openPanel} asChild><a href={r.link} target="_blank"><ExternalLinkIcon /></a></Button>
           <Button size="icon-sm" variant="ghost" title={T.editBtn} onClick={onEdit}><PencilIcon /></Button>
+          <Button size="icon-sm" variant="ghost" title={T.statsBtn} onClick={onStats}><ChartColumnIcon /></Button>
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title={T.more}><EllipsisIcon /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -389,7 +415,7 @@ function SortHead({ k, sort, setSort, className, children }: { k: SortKey; sort:
   );
 }
 
-function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; onChange: () => Promise<void>; onEdit: (r: RoomInfo) => void; onError: (m: string) => void }) {
+function RoomTable({ rooms, onChange, onEdit, onStats, onError }: { rooms: RoomInfo[]; onChange: () => Promise<void>; onEdit: (r: RoomInfo) => void; onStats: (r: RoomInfo) => void; onError: (m: string) => void }) {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "name", asc: true });
   const [page, setPage] = useState(0);
@@ -442,7 +468,7 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
             </TableRow>
           </TableHeader>
           <TableBody>
-            {shown.map(({ r, d }) => <RoomRow key={r.room} r={r} dist={d} onChange={onChange} onEdit={() => onEdit(r)} onError={onError} />)}
+            {shown.map(({ r, d }) => <RoomRow key={r.room} r={r} dist={d} onChange={onChange} onEdit={() => onEdit(r)} onStats={() => onStats(r)} onError={onError} />)}
             {!shown.length && (
               <TableRow>
                 <TableCell colSpan={me ? 5 : 4} className="py-8 text-center text-muted-foreground">
@@ -635,6 +661,129 @@ function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: st
   );
 }
 
+// Saat dilimine göre bugünden n gün önceki tarih ("2026-09-02"); dönem süzgeci için
+const dayAgo = (tz: string, n: number) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.now() - n * 864e5);
+const avgMin = (d: { waitMs: number; called: number }) => (d.called ? Math.round(d.waitMs / d.called / 60000) : null);
+const SUMS = ["joined", "manual", "called", "waitMs", "served", "noShow", "expired", "left", "removed"] as const;
+
+// Bir sıranın günlük sayıları: özet, saatlere göre katılım, günlük tablo, CSV
+function StatsPage({ room, onBack, onError }: { room: RoomInfo; onBack: () => void; onError: (m: string) => void }) {
+  const [data, setData] = useState<Stats>();
+  const [range, setRange] = useState(30);
+  const [tip, setTip] = useState<number | null>(null); // üzerine gelinen saat
+
+  useEffect(() => { call<Stats>(`/api/admin/rooms/${room.room}/stats`).then(setData, (e) => onError(e.message)); }, [room.room]);
+
+  const days = (data?.days ?? []).filter((d) => d.day > dayAgo(data!.tz, range));
+  const sum = Object.fromEntries(SUMS.map((k) => [k, days.reduce((n, d) => n + d[k], 0)])) as Record<(typeof SUMS)[number], number>;
+  const hours = Array.from({ length: 24 }, (_, h) => days.reduce((n, d) => n + d.hours[h], 0));
+  const peak = Math.max(1, ...hours);
+  const avg = avgMin(sum);
+
+  function csv() {
+    const head = [T.date, T.joined, T.manual, T.served, T.noShow, T.expired, T.leftSelf, T.removed, `${T.avgWait} (min)`];
+    const rows = days.map((d) => [d.day, d.joined, d.manual, d.served, d.noShow, d.expired, d.left, d.removed, avgMin(d) ?? ""]);
+    const text = [head, ...rows].map((r) => r.map((x) => `"${String(x).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" }));
+    a.download = `qrwait-${room.slug ?? room.room}-${range}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  const tiles: [string, ReactNode][] = [
+    [T.joined, sum.joined], [T.served, sum.served], [T.noShow, sum.noShow + sum.expired], [T.leftSelf, sum.left],
+    [T.avgWait, avg === null ? "–" : T.minShort(avg)],
+  ];
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="ghost" onClick={onBack}><ChevronLeftIcon /> {T.queues}</Button>
+        <Title className="mt-0 flex-1">{T.statsTitle}: {room.name}</Title>
+        <div className="w-32">
+          <NativeSelect aria-label={T.statsTitle} value={String(range)} onChange={(e) => setRange(+e.target.value)}>
+            {[7, 30, 90].map((n) => <NativeSelectOption key={n} value={String(n)}>{T.days(n)}</NativeSelectOption>)}
+          </NativeSelect>
+        </div>
+        <Button variant="secondary" disabled={!days.length} onClick={csv}>{T.csv}</Button>
+      </div>
+
+      {data && !days.length && <p className="text-muted-foreground">{T.noStats}</p>}
+      {!!days.length && <>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {tiles.map(([label, v]) => (
+            <Card key={label} className="gap-1 py-4">
+              <CardContent>
+                <div className="text-sm text-muted-foreground">{label}</div>
+                <div className="text-2xl font-bold tabular-nums">{v}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <Card>
+          <CardHeader><CardTitle className="text-base font-semibold">{T.byHour}</CardTitle></CardHeader>
+          <CardContent>
+            <div className="relative">
+              <div className="flex h-36 items-end gap-0.5 border-b" onMouseLeave={() => setTip(null)}>
+                {hours.map((n, h) => (
+                  // Vuruş alanı sütunun tamamı; görünen çubuk değere göre
+                  <div key={h} className="flex h-full flex-1 cursor-default items-end" onMouseEnter={() => setTip(h)}
+                    role="img" aria-label={`${String(h).padStart(2, "0")}:00 · ${n}`}>
+                    <div className={cn("w-full rounded-t-[4px] bg-primary transition-opacity", tip !== null && tip !== h && "opacity-50")}
+                      style={{ height: n ? `${Math.max(2, (n / peak) * 100)}%` : 0 }} />
+                  </div>
+                ))}
+              </div>
+              {tip !== null && (
+                <div className="pointer-events-none absolute -top-2 rounded-md border bg-background px-2 py-1 text-xs shadow-sm tabular-nums"
+                  style={{ left: `clamp(0px, calc(${((tip + 0.5) / 24) * 100}% - 3rem), calc(100% - 6rem))` }}>
+                  {String(tip).padStart(2, "0")}:00–{String((tip + 1) % 24).padStart(2, "0")}:00 · <b>{hours[tip]}</b>
+                </div>
+              )}
+              <div className="mt-1 flex text-xs text-muted-foreground tabular-nums">
+                {hours.map((_, h) => <span key={h} className="flex-1 text-center">{h % 3 === 0 ? String(h).padStart(2, "0") : ""}</span>)}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-base font-semibold">{T.daily}</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{T.date}</TableHead>
+                  <TableHead className="text-right">{T.joined}</TableHead>
+                  <TableHead className="text-right">{T.served}</TableHead>
+                  <TableHead className="text-right">{T.noShow}</TableHead>
+                  <TableHead className="text-right">{T.leftSelf}</TableHead>
+                  <TableHead className="text-right">{T.avgWait}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...days].reverse().map((d) => (
+                  <TableRow key={d.day}>
+                    <TableCell className="tabular-nums">{new Date(`${d.day}T12:00:00`).toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "short" })}</TableCell>
+                    <TableCell className="text-right tabular-nums">{d.joined}{d.manual ? <span className="text-muted-foreground"> ({T.manual} {d.manual})</span> : null}</TableCell>
+                    <TableCell className="text-right tabular-nums">{d.served}</TableCell>
+                    <TableCell className="text-right tabular-nums">{d.noShow + d.expired}{d.expired ? <span className="text-muted-foreground"> ({T.expired} {d.expired})</span> : null}</TableCell>
+                    <TableCell className="text-right tabular-nums">{d.left}</TableCell>
+                    <TableCell className="text-right tabular-nums">{avgMin(d) === null ? "–" : T.minShort(avgMin(d)!)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+        <p className="text-sm text-muted-foreground">{T.statsNote(data!.tz)}</p>
+      </>}
+    </>
+  );
+}
+
 function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; reloadMe: () => Promise<void>; logout: (msg?: string) => void }) {
   const [rooms, setRooms] = useState<RoomInfo[] | null>(null); // null: henüz yüklenmedi
   const [note, setNote] = useState("");
@@ -644,9 +793,11 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
   // Sıra formu kendi sayfasında: #yeni, #duzenle-<oda id>
   const [hash, setHash] = useState(location.hash);
   const editId = hash.startsWith("#duzenle-") ? hash.slice(9) : null;
+  const statsId = hash.startsWith("#istatistik-") ? hash.slice(12) : null;
+  const statsRoom = statsId ? rooms?.find((r) => r.room === statsId) : undefined;
   const editing = hash === "#yeni" ? null : editId ? rooms?.find((r) => r.room === editId) : undefined; // undefined: form kapalı, null: yeni oda
   const formOpen = useRef(false);
-  formOpen.current = hash === "#yeni" || !!editId;
+  formOpen.current = hash === "#yeni" || !!editId || !!statsId; // açıkken liste yenilenmez
 
   // #bilet adresi paylaşılabilir (e-postadaki bağlantı), geri tuşu sıralara döner
   useEffect(() => {
@@ -657,7 +808,7 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
   const go = (h: string) => { location.hash = h; setHash(h && `#${h}`); setTickets(h === "bilet"); window.scrollTo(0, 0); };
   const openTickets = (v: boolean) => go(v ? "bilet" : "");
   // Silinmiş ya da başkasının sırası: listeye dön
-  useEffect(() => { if (editId && rooms && !editing) go(""); }, [editId, rooms]);
+  useEffect(() => { if (rooms && ((editId && !editing) || (statsId && !statsRoom))) go(""); }, [editId, statsId, rooms]);
   const low = me.balance?.left != null && me.balance.left <= 100;
 
   async function load() {
@@ -685,6 +836,13 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
   async function resend() {
     try { await call("/api/admin/verify", {}); setNote(T.resent); } catch (e: any) { setErr(e.message); }
   }
+
+  if (statsId) return (
+    <Page className="max-w-5xl">
+      {statsRoom && <StatsPage room={statsRoom} onBack={() => go("")} onError={setErr} />}
+      <ErrorText>{err}</ErrorText>
+    </Page>
+  );
 
   if (formOpen.current) return (
     <Page className="max-w-6xl">
@@ -730,7 +888,7 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
       )}
       {pwOpen && <PasswordForm onDone={() => setPwOpen(false)} onError={setErr} />}
       {pwOpen && <DeleteAccount onDeleted={() => logout(T.deleted)} onError={setErr} />}
-      <RoomTable rooms={rooms ?? []} onChange={load} onEdit={(r) => go(`duzenle-${r.room}`)} onError={setErr} />
+      <RoomTable rooms={rooms ?? []} onChange={load} onEdit={(r) => go(`duzenle-${r.room}`)} onStats={(r) => go(`istatistik-${r.room}`)} onError={setErr} />
       <ErrorText>{err}</ErrorText>
     </Page>
   );

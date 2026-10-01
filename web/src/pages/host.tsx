@@ -1,3 +1,4 @@
+import { PauseIcon, PlayIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConfirm } from "@/components/confirm";
@@ -45,6 +46,11 @@ const T = pick({
     noFit: (t: string) => `${t} için uygun grup yok. Boş masalarda bekliyor, uygun grup gelince otomatik çağrılır.`,
     staticQr: "Bu QR sabittir, değişmez. Yazdırıp sıranın başına asabilirsiniz.",
     hereOn: "📍 Konumunuz alındı: ziyaretçiler yalnızca yakınınızdayken sıraya girebilir.",
+    pause: "Girişleri durdur",
+    resume: "Girişleri aç",
+    pausedNote: "Yeni katılım durduruldu. Sıradakiler çağrılmaya devam eder.",
+    hoursNote: (a: string, b: string) => `Katılım saatleri dışında (${a}-${b}): yeni katılım kapalı.`,
+    fullNote: (n: number) => `Sıra dolu (en fazla ${n} grup): yeni katılım kapalı.`,
     keepOpenTitle: "Bu sayfayı açık tutun",
     keepOpen: "Konum kontrolü bu cihazın konumuna göre yapılıyor. Sayfa kapanırsa, ekran kilitlenirse ya da konum servisleri kapanırsa birkaç dakika içinde kimse sıraya giremez.",
     keepOpenPrinted: "Basılı QR da yalnızca bu sayfa açıkken çalışır.",
@@ -99,6 +105,11 @@ const T = pick({
     noFit: (t: string) => `No suitable group for ${t}. It waits among the free tables and is assigned automatically when a suitable group arrives.`,
     staticQr: "This QR code is fixed and doesn't change. You can print it and post it at the queue.",
     hereOn: "📍 Location found: visitors can only join while near you.",
+    pause: "Stop new joins",
+    resume: "Allow new joins",
+    pausedNote: "New joins are stopped. Groups already waiting are still called.",
+    hoursNote: (a: string, b: string) => `Outside joining hours (${a}–${b}): no new joins.`,
+    fullNote: (n: number) => `Queue is full (max ${n} groups): no new joins.`,
     keepOpenTitle: "Keep this page open",
     keepOpen: "The location check uses this device's location. If the page closes, the screen locks or location services are turned off, nobody can join within a few minutes.",
     keepOpenPrinted: "A printed QR code also only works while this page is open.",
@@ -153,6 +164,11 @@ const T = pick({
     noFit: (t: string) => `Keine passende Gruppe für ${t}. Der Tisch wartet bei den freien Tischen und wird automatisch vergeben, sobald eine passende Gruppe kommt.`,
     staticQr: "Dieser QR-Code ist fest und ändert sich nicht. Sie können ihn ausdrucken und an der Warteschlange aushängen.",
     hereOn: "📍 Standort ermittelt: Besucher können sich nur in Ihrer Nähe anstellen.",
+    pause: "Anstellen stoppen",
+    resume: "Anstellen erlauben",
+    pausedNote: "Neues Anstellen ist gestoppt. Wartende Gruppen werden weiter aufgerufen.",
+    hoursNote: (a: string, b: string) => `Außerhalb der Anstellzeiten (${a}–${b}): kein neues Anstellen.`,
+    fullNote: (n: number) => `Warteschlange voll (max. ${n} Gruppen): kein neues Anstellen.`,
     keepOpenTitle: "Lassen Sie diese Seite geöffnet",
     keepOpen: "Die Standortprüfung nutzt den Standort dieses Geräts. Wird die Seite geschlossen, der Bildschirm gesperrt oder die Ortungsdienste ausgeschaltet, kann sich nach wenigen Minuten niemand mehr anstellen.",
     keepOpenPrinted: "Auch ein ausgedruckter QR-Code funktioniert nur, solange diese Seite geöffnet ist.",
@@ -207,6 +223,11 @@ const T = pick({
     noFit: (t: string) => `Для «${t}» нет подходящей группы. Стол ждёт среди свободных и будет отдан автоматически, когда придёт подходящая группа.`,
     staticQr: "Этот QR-код постоянный и не меняется. Его можно распечатать и повесить у очереди.",
     hereOn: "📍 Местоположение получено: встать в очередь можно только рядом с вами.",
+    pause: "Остановить запись",
+    resume: "Возобновить запись",
+    pausedNote: "Запись новых посетителей остановлена. Ожидающие группы по-прежнему вызываются.",
+    hoursNote: (a: string, b: string) => `Вне времени записи (${a}–${b}): новых посетителей нет.`,
+    fullNote: (n: number) => `Очередь заполнена (макс. ${n} групп): новых посетителей нет.`,
     keepOpenTitle: "Не закрывайте эту страницу",
     keepOpen: "Проверка идёт по местоположению этого устройства. Если страница закроется, экран заблокируется или службы геолокации выключатся, через несколько минут встать в очередь будет нельзя.",
     keepOpenPrinted: "Распечатанный QR-код тоже работает только пока эта страница открыта.",
@@ -365,8 +386,20 @@ function HostPage() {
 
   return (
     <Page>
-      <Title>{s?.name ?? T.title}</Title>
+      <div className="flex flex-wrap items-center gap-2">
+        <Title className="flex-1">{s?.name ?? T.title}</Title>
+        {s && (
+          <Button variant={s.paused ? "default" : "secondary"} className="print:hidden" onClick={() => act({ action: s.paused ? "resume" : "pause" })}>
+            {s.paused ? <PlayIcon /> : <PauseIcon />} {s.paused ? T.resume : T.pause}
+          </Button>
+        )}
+      </div>
       {s && <p className="text-sm text-muted-foreground print:hidden">{T.waitingSum(waiting.length, waiting.reduce((n, e) => n + e.size, 0))}</p>}
+      {s && (s.paused || !s.open || s.full) && (
+        <p className="rounded-lg border border-destructive p-3 text-sm font-semibold text-destructive print:hidden">
+          {s.paused ? T.pausedNote : !s.open && s.hours ? T.hoursNote(s.hours.from, s.hours.to) : T.fullNote(s.cap ?? 0)}
+        </p>
+      )}
       <ErrorText>{err}</ErrorText>
       {dynamic && (
         <Alert className="border-amber-400 bg-amber-50 text-base print:hidden">

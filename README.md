@@ -24,6 +24,11 @@ QRWait is a location-aware queue system for places where people wait: beaches an
 - Two queue modes: **seats** (a pool of free places, e.g. sunbeds or bus seats) and **tables** (restaurants).
 - Enter how many places opened up and the next groups are called automatically; flexible groups can accept fewer places (4 people may settle for 2 sunbeds), and optionally smaller groups that fit are moved ahead.
 - Drop a no-show with one tap; their place goes to the next group.
+- Optional time to arrive (3–30 min): a called group that doesn't show up is dropped automatically, with a countdown on the visitor's screen.
+- Visitors see an estimated wait based on the recent call rate and get a "your turn is coming up" push two groups ahead.
+- Joins can be paused from the attendant panel, limited to set hours, or capped at a maximum number of waiting groups.
+- Per-queue daily statistics (joined, served, no-shows, average wait, joins by hour) with CSV export; counts only, no personal data.
+- Location check per queue: fixed point, the attendant's live location, or off.
 - Each queue is placed on a map and gets its own address (`<user>.qrwait.app/<queue>`) with a public status page. Hidden queues get an unguessable address instead.
 - Attendant panel runs in the browser, no installation. Web Push notifications for visitors.
 - Self-service sign-up with 1000 free tickets; more are bought as one-time USD packages via Lemon Squeezy (public price list at `/pricing`).

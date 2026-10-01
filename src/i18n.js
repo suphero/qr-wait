@@ -35,6 +35,30 @@ const M = {
     de: "Sie scheinen nicht in der Nähe des Personals zu sein. Die Standortfreigabe muss aktiviert sein und Sie müssen sich in der Nähe der Person befinden, die den QR-Code zeigt.",
     ru: "Похоже, вы не рядом с сотрудником. Разрешите доступ к геолокации и подойдите к сотруднику, который показывает QR-код.",
   },
+  paused: {
+    tr: "Sıra şu an yeni katılıma kapalı. Lütfen görevliye danışın.",
+    en: "The queue isn't taking new people right now. Please ask the attendant.",
+    de: "Die Warteschlange nimmt gerade niemanden neu auf. Bitte fragen Sie das Personal.",
+    ru: "Очередь сейчас не принимает новых посетителей. Обратитесь к сотруднику.",
+  },
+  hoursClosed: (from, to) => ({
+    tr: `Sıra şu an kapalı. Katılım saatleri: ${from}-${to}.`,
+    en: `The queue is closed right now. Joining hours: ${from}–${to}.`,
+    de: `Die Warteschlange ist gerade geschlossen. Anstellzeiten: ${from}–${to}.`,
+    ru: `Очередь сейчас закрыта. Время записи: ${from}–${to}.`,
+  }),
+  capFull: {
+    tr: "Sıra dolu. Biraz sonra yeniden deneyin.",
+    en: "The queue is full. Please try again a little later.",
+    de: "Die Warteschlange ist voll. Bitte versuchen Sie es etwas später erneut.",
+    ru: "Очередь заполнена. Попробуйте чуть позже.",
+  },
+  capRange: (n) => ({
+    tr: `En fazla bekleyen grup 1-${n} olmalı`,
+    en: `Maximum waiting groups must be 1–${n}`,
+    de: `Die maximale Anzahl wartender Gruppen muss 1–${n} sein`,
+    ru: `Максимум ожидающих групп: от 1 до ${n}`,
+  }),
   noHost: {
     tr: "Görevlinin konumu şu an alınamıyor. Görevliden panelini açık tutmasını ve konum izni vermesini isteyin.",
     en: "The attendant's location isn't available right now. Ask the attendant to keep their panel open and allow location access.",
@@ -261,6 +285,14 @@ const M = {
     en: `${name} · No. ${no}${table ? ` · ${table}` : ""}. Go to the attendant and show your number.`,
     de: `${name} · Nr. ${no}${table ? ` · ${table}` : ""}. Gehen Sie zum Personal und zeigen Sie Ihre Nummer.`,
     ru: `${name} · № ${no}${table ? ` · ${table}` : ""}. Подойдите к сотруднику и покажите свой номер.`,
+  }),
+  soonTitle: { tr: "Sıranız yaklaşıyor", en: "Your turn is coming up", de: "Sie sind bald dran", ru: "Ваша очередь скоро" },
+  // ahead: önündeki grup sayısı
+  soonBody: (name, no, ahead) => ({
+    tr: `${name} · ${no} numara. ${ahead ? `Önünüzde ${ahead} grup var` : "Sıradaki sizsiniz"}, hazır olun.`,
+    en: `${name} · No. ${no}. ${ahead ? `${ahead} ${ahead === 1 ? "group" : "groups"} ahead of you` : "You're next"}, get ready.`,
+    de: `${name} · Nr. ${no}. ${ahead ? `${ahead} ${ahead === 1 ? "Gruppe" : "Gruppen"} vor Ihnen` : "Sie sind als Nächstes dran"}, halten Sie sich bereit.`,
+    ru: `${name} · № ${no}. ${ahead ? `Перед вами групп: ${ahead}` : "Вы следующий"}, приготовьтесь.`,
   }),
   timeUp: { tr: "Süreniz doldu", en: "Your time is up", de: "Ihre Zeit ist abgelaufen", ru: "Время вышло" },
   // Gelme süresi dolup sıradan düşen ziyaretçiye

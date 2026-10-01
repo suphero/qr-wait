@@ -17,6 +17,27 @@ const MAX_ENTRIES = 1000;
 const GEOS = new Set(["off", "fixed", "dynamic"]);
 const WAITS = [3, 5, 10, 15, 20, 30]; // çağrılanın gelme süresi seçenekleri (dk); süre dolunca sıradan düşer
 const HERE_TTL = 5 * 60 * 1000; // dinamik konum: görevli konumu bundan eskiyse ziyaretçi giremez (panel kapalı / konum alınamıyor)
+const SOON = 2; // önünde en fazla bu kadar grup kalınca "sıranız yaklaşıyor" bildirimi
+const ETA_WINDOW = 60 * 60 * 1000; // tahmini bekleme: son 1 saatteki çağrı hızından
+const STAT_DAYS = 90; // günlük istatistiklerin saklandığı gün sayısı
+const TZ = "Europe/Istanbul"; // saat dilimi gönderilmeyen eski sıralar
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// Saat dilimine göre gün ("2026-10-01"), saat (0-23) ve gün içindeki dakika
+const fmts = {};
+function clock(tz, t = Date.now()) {
+  const f = (fmts[tz] ??= new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }));
+  const p = Object.fromEntries(f.formatToParts(t).map((x) => [x.type, x.value]));
+  return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), min: Number(p.hour) * 60 + Number(p.minute) };
+}
+const validTz = (tz) => { try { return typeof tz === "string" && !!new Intl.DateTimeFormat("en", { timeZone: tz }) && tz; } catch { return false; } };
+const mins = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+// Açılış saatleri; from > to gece yarısını geçen aralık (ör. 18:00-02:00)
+function isOpen(hours, tz) {
+  if (!hours) return true;
+  const now = clock(tz).min, a = mins(hours.from), b = mins(hours.to);
+  return a < b ? now >= a && now < b : now >= a || now < b;
+}
 
 // Haversine mesafesi, metre
 function meters(a, b) {
@@ -48,6 +69,9 @@ const conf = (s) => {
     // Konum kontrolü: "fixed" sıranın haritadaki noktası, "dynamic" QR'ı gösteren görevlinin konumu, "off" yok
     geo: GEOS.has(s.geo) ? s.geo : "fixed",
     wait: s.wait ?? null, // null: süresiz, görevli "Geldi"/"Gelmedi" diyene kadar bekler
+    hours: s.hours ?? null, // { from, to } "HH:MM": bu saatler dışında yeni katılım yok; null: her zaman açık
+    cap: s.cap ?? null, // en fazla bekleyen grup; null: sınır yok (görevlinin elle eklemesi sınıra takılmaz)
+    tz: s.tz ?? TZ,
   };
 };
 
@@ -106,6 +130,7 @@ export class Room extends DurableObject {
     const now = Date.now(), late = this.s.entries.filter((e) => this.due(e) !== null && this.due(e) <= now);
     for (const e of late) {
       this.drop(e.id);
+      this.stat("expired");
       if (e.push) (this.lost ??= []).push(e); // notify() "süreniz doldu" bildirimi gönderir
     }
     if (!late.length) return false;
@@ -141,7 +166,7 @@ export class Room extends DurableObject {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
       name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, radius: s.radius, private: !!s.private, key: s.key, ...conf(s),
-      waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), called: s.entries.length - w.length,
+      waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), called: s.entries.length - w.length, paused: !!s.paused,
     };
   }
 
@@ -153,7 +178,41 @@ export class Room extends DurableObject {
       category: conf(s).category, maxGroup: conf(s).maxGroup, geo: conf(s).geo, wait: conf(s).wait,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), next: w[0]?.no ?? null,
       called: s.entries.filter((e) => e.status === "called").map((e) => e.no), lastNo: s.lastNo ?? null,
+      ...this.gate(w.length), hours: conf(s).hours,
+      eta: this.eta(w.length), // şimdi girene tahmini bekleme (dk); veri azsa null
     };
+  }
+
+  // Yeni katılım açık mı: görevli durdurmadı, açılış saatlerinde, kapasite dolmadı
+  gate(waiting) {
+    const s = this.s, c = conf(s);
+    return { paused: !!s.paused, open: isOpen(c.hours, c.tz), full: c.cap !== null && waiting >= c.cap };
+  }
+
+  // Önünde ahead grup olana tahmini bekleme (dk): son 1 saatteki çağrı hızı. En az 3 çağrı yoksa ya da sıra durdurulduysa null.
+  // Boş geçen süre de hesaba girer (now - ilk çağrı): görevli ara verince tahmin uzar.
+  eta(ahead) {
+    const now = Date.now(), calls = (this.s.calls ?? []).filter((t) => now - t < ETA_WINDOW);
+    if (calls.length < 3 || this.s.paused) return null;
+    const perMin = calls.length / (Math.max(now - calls[0], 5 * 60000) / 60000);
+    return Math.max(1, Math.ceil((ahead + 1) / perMin));
+  }
+
+  // Günlük sayaçlar (saat dilimine göre gün); kişisel veri yok. Son STAT_DAYS gün tutulur.
+  stat(key, n = 1, t = Date.now()) {
+    const s = this.s, { day, hour } = clock(conf(s).tz, t);
+    s.stats ??= {};
+    if (!s.stats[day]) {
+      s.stats[day] = { joined: 0, manual: 0, called: 0, waitMs: 0, served: 0, noShow: 0, expired: 0, left: 0, removed: 0, hours: Array(24).fill(0) };
+      for (const d of Object.keys(s.stats).sort().slice(0, -STAT_DAYS)) delete s.stats[d];
+    }
+    s.stats[day][key] += n;
+    if (key === "joined") s.stats[day].hours[hour] += n;
+  }
+
+  stats() {
+    const s = this.need();
+    return { tz: conf(s).tz, days: Object.entries(s.stats ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([day, d]) => ({ day, ...d })) };
   }
 
   async update(fields) {
@@ -202,10 +261,17 @@ export class Room extends DurableObject {
     if (typeof device !== "string" || device.length < 16) throw fail("device");
     size = int(size, 1, c.maxGroup, "group", c.maxGroup);
     accept = acceptList(accept, size, c.flex);
-    // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner. Sahibin bilet hakkı bittiyse ziyaretçi yalnızca sıranın kapalı olduğunu görür.
-    const e = s.entries.find((x) => x.device === device) ?? await this.ticket(size, accept, "qr", device, "", lang).catch((err) => {
-      throw failed(err, "quota") || failed(err, "suspended") ? fail("closed") : err;
-    });
+    // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner (sıra kapansa da). Sahibin bilet hakkı bittiyse ziyaretçi yalnızca sıranın kapalı olduğunu görür.
+    let e = s.entries.find((x) => x.device === device);
+    if (!e) {
+      const g = this.gate(s.entries.filter((x) => x.status === "waiting").length);
+      if (g.paused) throw fail("paused");
+      if (!g.open) throw fail("hoursClosed", c.hours.from, c.hours.to);
+      if (g.full) throw fail("capFull");
+      e = await this.ticket(size, accept, "qr", device, "", lang).catch((err) => {
+        throw failed(err, "quota") || failed(err, "suspended") ? fail("closed") : err;
+      });
+    }
     this.fill(); // boş yer / bekleyen masa varsa hemen çağrılır
     await this.save();
     await this.notify();
@@ -223,13 +289,19 @@ export class Room extends DurableObject {
   // onu bulur, MAX_ENTRIES aşılmaz. Hak yoksa bilet geri alınır (bu arada çağrıldıysa ayrılan yer de döner).
   async ticket(...args) {
     const e = this.add(...args);
-    if (!this.s.owner) return e;
+    if (!this.s.owner) {
+      this.stat("joined");
+      if (e.src === "manual") this.stat("manual");
+      return e;
+    }
     try {
       await this.env.ACCOUNT.getByName(this.s.owner).spend();
     } catch (err) {
       this.drop(e.id);
       throw err;
     }
+    this.stat("joined");
+    if (e.src === "manual") this.stat("manual");
     return e;
   }
 
@@ -244,11 +316,12 @@ export class Room extends DurableObject {
       aheadGroups: ahead.length, aheadPeople: ahead.reduce((n, x) => n + x.size, 0),
       // Süreli sırada kalan süre (ms); istemci saati farklı olabileceği için bitiş anı değil kalan gönderilir
       wait: conf(s).wait, remaining: due === null ? null : Math.max(0, due - Date.now()),
+      eta: e.status === "waiting" ? this.eta(ahead.length) : null,
     };
   }
 
   async leave(id) {
-    this.need();
+    if (this.need().entries.some((e) => e.id === id)) this.stat("left");
     this.drop(id);
     this.fill();
     await this.save();
@@ -269,14 +342,18 @@ export class Room extends DurableObject {
   // Süresi dolup düşenlere de (this.lost) gider; aynı etiketle "sıra size geldi" bildiriminin yerini alır.
   async notify() {
     const list = (this.outbox ?? []).filter((e) => this.s?.entries.includes(e)); // hakkı yetmeyip geri alınan bilet çıkar
-    const lost = this.lost ?? [];
+    const lost = this.lost ?? [], soon = (this.soon ?? []).filter((e) => e.status === "waiting" && this.s?.entries.includes(e));
     this.outbox = [];
     this.lost = [];
-    if (!(list.length || lost.length) || !this.env.VAPID_PRIVATE_KEY) return;
+    this.soon = [];
+    if (!(list.length || lost.length || soon.length) || !this.env.VAPID_PRIVATE_KEY) return;
     const s = this.s, url = s.slug ? `/join?r=${s.slug}` : "/";
     let dead = false;
-    await Promise.all([...list.map((e) => [e, false]), ...lost.map((e) => [e, true])].map(async ([e, gone]) => {
-      const note = gone
+    const waiting = s.entries.filter((x) => x.status === "waiting");
+    await Promise.all([...list.map((e) => [e, false]), ...lost.map((e) => [e, true]), ...soon.map((e) => [e, "soon"])].map(async ([e, gone]) => {
+      const note = gone === "soon"
+        ? { title: msg(e.lang, "soonTitle"), body: msg(e.lang, "soonBody", s.name, e.no, waiting.indexOf(e)), tag: `called-${e.id}`, url }
+        : gone
         ? { title: msg(e.lang, "timeUp"), body: msg(e.lang, "expiredBody", s.name, e.no), tag: `called-${e.id}`, url }
         : {
           title: msg(e.lang, e.table ? "tableReady" : "yourTurn"),
@@ -286,7 +363,7 @@ export class Room extends DurableObject {
         };
       try {
         // Düşen kaydın aboneliği zaten silindi; yalnızca sıradakilerin geçersiz aboneliği temizlenir
-        if (!(await sendPush(e.push, note, this.env)) && !gone) { delete e.push; dead = true; }
+        if (!(await sendPush(e.push, note, this.env)) && gone !== true) { delete e.push; dead = true; }
       } catch (err) { console.error("push", err.message); }
     }));
     if (dead) await this.save();
@@ -297,6 +374,9 @@ export class Room extends DurableObject {
   call(e, table) {
     e.status = "called";
     e.calledAt = Date.now();
+    this.s.calls = [...(this.s.calls ?? []), e.calledAt].slice(-20); // tahmini bekleme için
+    this.stat("called");
+    this.stat("waitMs", e.calledAt - e.at);
     this.s.lastNo = e.no;
     if (conf(this.s).tables) {
       if (table) {
@@ -339,13 +419,24 @@ export class Room extends DurableObject {
         const t = e.status === "waiting" && this.bestTable(e.size, conf(s).maxEmpty);
         if (t) this.call(e, t);
       }
-      return;
+    } else {
+      for (const e of s.entries) {
+        if (e.status !== "waiting") continue;
+        if (fit(e, this.s.available) !== null) this.call(e);
+        else if (!conf(s).skip) break;
+      }
     }
-    for (const e of s.entries) {
-      if (e.status !== "waiting") continue;
-      if (fit(e, this.s.available) !== null) this.call(e);
-      else if (!conf(s).skip) break;
-    }
+    this.nearing();
+  }
+
+  // Önünde SOON grup ya da daha azı kalan bekleyen bir kez işaretlenir; bildirim aboneliği varsa notify() "yaklaşıyor" gönderir.
+  // Zaten öndeyken giren (ya da aboneliği sonradan gelen) işaretlenir ama bildirim almaz: sayfası açık.
+  nearing() {
+    this.s.entries.filter((e) => e.status === "waiting").slice(0, SOON + 1).forEach((e) => {
+      if (e.soon) return;
+      e.soon = true;
+      if (e.push) (this.soon ??= []).push(e);
+    });
   }
 
   // Dinamik konumda görevli panelinin her yoklamada gönderdiği konum. Bellekte hep güncellenir; depoya yalnızca
@@ -382,27 +473,36 @@ export class Room extends DurableObject {
       case "untable": s.tables = s.tables.filter((t) => t.id !== id); break;
       // Masa modunda elle çağırma boş kalma sınırına bakmaz: sığan en küçük boş masa, yoksa masasız
       case "call": if (e?.status === "waiting") this.call(e, c.tables ? this.bestTable(e.size, null) : undefined); break;
-      case "arrived": s.entries = s.entries.filter((x) => x !== e); break;
-      case "drop": this.drop(id); break;
+      case "arrived":
+        if (e?.status === "called") this.stat("served");
+        s.entries = s.entries.filter((x) => x !== e);
+        break;
+      case "drop":
+        if (e) this.stat(e.status === "called" ? "noShow" : "removed");
+        this.drop(id);
+        break;
+      case "pause": s.paused = true; break;
+      case "resume": s.paused = false; break;
       case "add": {
         const sz = int(size, 1, conf(s).maxGroup, "badGroup");
         added = await this.ticket(sz, acceptList(accept, sz, c.flex), "manual", null, String(note ?? "").slice(0, 60));
         break;
       }
-      case "reset": Object.assign(s, { seq: 0, available: 0, tables: [], entries: [], expired: [] }); break;
+      case "reset": Object.assign(s, { seq: 0, available: 0, tables: [], entries: [], expired: [], calls: [] }); break;
     }
     this.fill();
     if (action || moved || expired) await this.save();
     await this.notify();
-    const { qr, ttl, maxGroup, flex, tables, maxEmpty, geo, wait } = c;
+    const { qr, ttl, maxGroup, flex, tables, maxEmpty, geo, wait, hours, cap } = c;
     return {
-      name: s.name, flex, tables, maxEmpty, available: s.available, added: added?.no, qr, ttl, maxGroup, geo, wait,
+      name: s.name, flex, tables, maxEmpty, available: s.available, added: added?.no, qr, ttl, maxGroup, geo, wait, hours, cap,
+      ...this.gate(s.entries.filter((x) => x.status === "waiting").length),
       now: Date.now(), // panel kalan süreyi sunucu saatine göre hesaplar
       // Boşalan masa: çağrılan grubun numarası, uygun grup yoksa null (masa bekleyenlere düştü)
       seated: table && (s.entries.find((x) => x.table === table)?.no ?? null),
       freeTables: s.tables,
       token: await this.token(),
-      entries: s.entries.map(({ device, push, ...x }) => x),
+      entries: s.entries.map(({ device, push, soon, ...x }) => x),
     };
   }
 }
@@ -757,6 +857,9 @@ function roomFields(b, prev) {
     qr: b.qr === "static" ? "static" : "dynamic", // sabit: basılı QR, giriş yalnızca konumla sınırlı
     geo,
     wait: b.wait == null || b.wait === "" || Number(b.wait) === 0 ? null : WAITS.includes(Number(b.wait)) ? Number(b.wait) : 10,
+    hours: HHMM.test(b.hours?.from) && HHMM.test(b.hours?.to) && b.hours.from !== b.hours.to ? { from: b.hours.from, to: b.hours.to } : null,
+    cap: b.cap == null || b.cap === "" ? null : int(b.cap, 1, MAX_ENTRIES, "capRange", MAX_ENTRIES),
+    tz: validTz(b.tz) || prev?.tz || TZ, // yönetim sayfasını açan tarayıcının saat dilimi
     ttl: TTLS.includes(Number(b.ttl)) ? Number(b.ttl) : 90,
   };
 }
@@ -854,7 +957,7 @@ async function adminApi(req, env, url, body) {
   }
   const own = await accountApi(req, env, reg, url, body, owner, u);
   if (own) return own;
-  const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import|reslug))?)?$/);
+  const m = url.pathname.match(/^\/api\/admin\/rooms(?:\/([a-f0-9]{10})(?:\/(rotate|import|reslug|stats))?)?$/);
   if (!m) throw fail("badRequest");
   const [, id, op] = m;
   if (!id && req.method === "GET") {
@@ -885,6 +988,7 @@ async function adminApi(req, env, url, body) {
   }
   if (!(await reg.owns(id, owner))) throw fail("notFound");
   if (op === "rotate" && req.method === "POST") return { key: await room.rotate() };
+  if (op === "stats" && req.method === "GET") return room.stats();
   if (op === "reslug" && req.method === "POST") {
     // Gizli sıranın adresi sızarsa: yeni rastgele adres, eski adres ve ziyaretçi linkleri anında geçersiz olur
     const prev = await room.info();

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { api, catIcon, locate, poll, type Me, type Status } from "@/lib/api";
-import { geoErrors, lang, orList, pick, pl, tableLabel } from "@/lib/i18n";
+import { closedText, fmtWait, geoErrors, lang, orList, pick, pl, S, tableLabel } from "@/lib/i18n";
 import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
@@ -265,6 +265,7 @@ function JoinPage() {
   }, []);
 
   const called = me?.status === "called";
+  const closed = st ? closedText(st) : null; // yeni katılım kapalıysa nedeni
   // Geri sayım her saniye; süre dolunca sunucunun düşürdüğü hemen görülsün diye yenilenir
   const timed = called && due.current !== null;
   useEffect(() => {
@@ -328,7 +329,9 @@ function JoinPage() {
                 <p className="text-sm text-muted-foreground">{T.acceptHint}</p>
               </div>
             )}
-            <Button size="lg" onClick={join} disabled={busy}>{T.join}</Button>
+            {st?.eta && !closed && <p className="font-semibold">{S.eta(fmtWait(st.eta))}</p>}
+            {closed && <p className="font-semibold text-destructive">{closed}</p>}
+            <Button size="lg" onClick={join} disabled={busy || !!closed}>{T.join}</Button>
             {st?.wait && <p className="text-sm text-muted-foreground">{T.waitNote(st.wait)}</p>}
             {st?.geo !== "off" && <p className="text-sm text-muted-foreground">{st?.geo === "dynamic" ? T.geoNoteHost : T.geoNote}</p>}
           </CardContent>
@@ -361,6 +364,7 @@ function JoinPage() {
                   {me.aheadGroups === 0
                     ? <b>{T.next}</b>
                     : T.ahead(me.aheadGroups, me.aheadPeople)}
+                  {me.eta && <><br /><b>{S.eta(fmtWait(me.eta))}</b></>}
                   {(me.accept.length > 1 || me.accept[0] !== me.size) && (
                     <><br /><span className="text-sm text-muted-foreground">{T.accepting(me.size, orList(me.accept))}</span></>
                   )}
