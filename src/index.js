@@ -14,6 +14,8 @@ const GROUP_LIMIT = 20;
 const TABLE_LIMIT = 50;
 const CATEGORIES = new Set(["plaj", "iskele", "gise", "restoran", "saglik", "resmi", "etkinlik", "diger"]); // ikonları public/app.js'te
 const MAX_ENTRIES = 1000;
+const GEOS = new Set(["off", "fixed", "dynamic"]);
+const HERE_TTL = 5 * 60 * 1000; // dinamik konum: görevli konumu bundan eskiyse ziyaretçi giremez (panel kapalı / konum alınamıyor)
 
 // Haversine mesafesi, metre
 function meters(a, b) {
@@ -42,6 +44,8 @@ const conf = (s) => {
   return {
     category: s.category ?? "diger", mode, tables, flex: !!s.flex && !tables, skip: !!s.skip && !tables, maxEmpty: tables ? s.maxEmpty ?? null : null,
     maxGroup: s.maxGroup ?? MAX_GROUP, qr: s.qr ?? "dynamic", ttl: s.ttl ?? 90,
+    // Konum kontrolü: "fixed" sıranın haritadaki noktası, "dynamic" QR'ı gösteren görevlinin konumu, "off" yok
+    geo: GEOS.has(s.geo) ? s.geo : "fixed",
   };
 };
 
@@ -105,7 +109,7 @@ export class Room extends DurableObject {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
       name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, flex: conf(s).flex, private: !!s.private,
-      category: conf(s).category, maxGroup: conf(s).maxGroup,
+      category: conf(s).category, maxGroup: conf(s).maxGroup, geo: conf(s).geo,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), next: w[0]?.no ?? null,
       called: s.entries.filter((e) => e.status === "called").map((e) => e.no), lastNo: s.lastNo ?? null,
     };
@@ -149,8 +153,11 @@ export class Room extends DurableObject {
       if (!(age > -5000 && age < c.ttl * 1000) || !same(sig, await sign(s.key, ts)))
         throw fail("qrExpired");
     }
-    if (!(meters(s, { lat: Number(lat), lng: Number(lng) }) <= s.radius))
-      throw fail("far");
+    if (c.geo !== "off") {
+      const at = c.geo === "dynamic" ? s.here : s;
+      if (c.geo === "dynamic" && !(Date.now() - (at?.at ?? 0) < HERE_TTL)) throw fail("noHost");
+      if (!(meters(at, { lat: Number(lat), lng: Number(lng) }) <= s.radius)) throw fail(c.geo === "dynamic" ? "farHost" : "far");
+    }
     if (typeof device !== "string" || device.length < 16) throw fail("device");
     size = int(size, 1, c.maxGroup, "group", c.maxGroup);
     accept = acceptList(accept, size, c.flex);
@@ -292,9 +299,22 @@ export class Room extends DurableObject {
     }
   }
 
-  async admin(key, { action, id, n, size, accept, note, name }) {
+  // Dinamik konumda görevli panelinin her yoklamada gönderdiği konum. Bellekte hep güncellenir; depoya yalnızca
+  // 10 m'den fazla kaydıysa ya da son yazımdan 1 dk geçtiyse yazılır (DO bellekten düşerse tazelik bilgisi kalsın).
+  here(p) {
+    const s = this.s, lat = Number(p?.lat), lng = Number(p?.lng);
+    if (conf(s).geo !== "dynamic" || !(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) return false;
+    const prev = s.here, now = Date.now();
+    s.here = { lat, lng, at: now };
+    if (prev && meters(prev, s.here) < 10 && now - (this.hereSaved ?? 0) < 60000) return false;
+    this.hereSaved = now;
+    return true;
+  }
+
+  async admin(key, { action, id, n, size, accept, note, name, here }) {
     const s = this.need(), c = conf(s);
     if (!same(key, s.key)) throw fail("unauthorized");
+    const moved = this.here(here);
     s.tables ??= [];
     const e = s.entries.find((x) => x.id === id);
     let added, table;
@@ -322,11 +342,11 @@ export class Room extends DurableObject {
       case "reset": Object.assign(s, { seq: 0, available: 0, tables: [], entries: [] }); break;
     }
     this.fill();
-    if (action) await this.save();
+    if (action || moved) await this.save();
     await this.notify();
-    const { qr, ttl, maxGroup, flex, tables, maxEmpty } = c;
+    const { qr, ttl, maxGroup, flex, tables, maxEmpty, geo } = c;
     return {
-      name: s.name, flex, tables, maxEmpty, available: s.available, added: added?.no, qr, ttl, maxGroup,
+      name: s.name, flex, tables, maxEmpty, available: s.available, added: added?.no, qr, ttl, maxGroup, geo,
       // Boşalan masa: çağrılan grubun numarası, uygun grup yoksa null (masa bekleyenlere düştü)
       seated: table && (s.entries.find((x) => x.table === table)?.no ?? null),
       freeTables: s.tables,
@@ -678,6 +698,7 @@ function roomFields(b, prev) {
     maxEmpty: b.maxEmpty === "" || b.maxEmpty == null ? null : int(b.maxEmpty, 0, TABLE_LIMIT, "maxEmpty", TABLE_LIMIT),
     maxGroup: int(b.maxGroup ?? MAX_GROUP, 1, GROUP_LIMIT, "maxGroup", GROUP_LIMIT),
     qr: b.qr === "static" ? "static" : "dynamic", // sabit: basılı QR, giriş yalnızca konumla sınırlı
+    geo: GEOS.has(b.geo) ? b.geo : "fixed",
     ttl: TTLS.includes(Number(b.ttl)) ? Number(b.ttl) : 90,
   };
 }

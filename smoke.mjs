@@ -192,6 +192,23 @@ await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}
 const { key: okey } = await post(`/api/admin/rooms/${o.room}/rotate`, {}, PW);
 assert.match((await ojoin("opt-device-00000003", 2, st1.token)).error, /geçerli değil/, "link yenilenince basılı QR çalışmaz");
 assert.notEqual((await post(`/api/r/${o.room}/admin`, {}, { "x-key": okey })).token, st1.token);
+// Konum kontrolü: kapalıyken konumsuz girilir; dinamikte görevli panelinin gönderdiği son konuma göre
+const gadmin = (body = {}) => post(`/api/r/${o.room}/admin`, body, { "x-key": okey });
+const far = { lat: 36.9, lng: 30.7056 }; // ~1.8 km uzak
+const gjoin = (device, pos) => post(`/api/r/${o.room}/join`, { t: gst.token, ...pos, size: 1, device });
+await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300, qr: "static", geo: "off", ...spot }, PW);
+const gst = await gadmin();
+assert.equal(gst.geo, "off");
+assert.equal((await ofind()).geo, "off");
+assert.ok((await gjoin("geo-device-0000001", {})).no, "konum kontrolü kapalıyken konumsuz girilir");
+await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300, qr: "static", geo: "dynamic", ...spot }, PW);
+assert.match((await gjoin("geo-device-0000002", spot)).error, /Görevlinin konumu/, "görevli konumu yokken girilmez");
+await gadmin({ here: far });
+assert.match((await gjoin("geo-device-0000002", spot)).error, /Görevlinin yanında/, "sıranın noktası değil görevlinin konumu");
+assert.ok((await gjoin("geo-device-0000002", far)).no, "görevlinin yanından girilir");
+await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300, qr: "static", ...spot }, PW);
+assert.equal((await ofind()).geo, "fixed", "varsayılan sabit konum");
+assert.match((await gjoin("geo-device-0000003", far)).error, /bulunduğu yerde görünmüyorsunuz/);
 assert.match((await post("/api/admin/rooms", { name: "X", slug: `${slug}-x`, radius: 300, maxGroup: 50, ...spot }, PW)).error, /1-20/);
 await req("DELETE", `/api/admin/rooms/${o.room}`, undefined, PW);
 // Masa modu: masa bölünmez, sığan en küçük masa, boş sandalye sınırı, bekleyen masa, masa adı

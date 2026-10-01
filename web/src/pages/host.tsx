@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { api, mins, poll, type AdminState, type Entry } from "@/lib/api";
-import { lang, LANGS, pick, pl, tableLabel, type Lang } from "@/lib/i18n";
+import { geoErrors, lang, LANGS, pick, pl, tableLabel, type Lang } from "@/lib/i18n";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +42,9 @@ const T = pick({
     seated: (t: string, n: number) => `${t} → #${n} çağrıldı.`,
     noFit: (t: string) => `${t} için uygun grup yok. Boş masalarda bekliyor, uygun grup gelince otomatik çağrılır.`,
     staticQr: "Bu QR sabittir, değişmez. Yazdırıp sıranın başına asabilirsiniz.",
+    hereOn: "📍 Konum kontrolü sizin konumunuza göre: ziyaretçiler yalnızca yakınınızdayken sıraya girebilir. Bu sayfayı açık tutun.",
+    hereWait: "📍 Konumunuz alınıyor…",
+    hereErr: (m: string) => `⚠ ${m} Konumunuz alınamadıkça ziyaretçiler sıraya giremez.`,
     fullscreen: "Tam ekran QR",
     print: "Yazdır",
     tableFreed: "Masa boşaldı",
@@ -89,6 +92,9 @@ const T = pick({
     seated: (t: string, n: number) => `${t} → #${n} called.`,
     noFit: (t: string) => `No suitable group for ${t}. It waits among the free tables and is assigned automatically when a suitable group arrives.`,
     staticQr: "This QR code is fixed and doesn't change. You can print it and post it at the queue.",
+    hereOn: "📍 Location check follows your location: visitors can only join while near you. Keep this page open.",
+    hereWait: "📍 Getting your location…",
+    hereErr: (m: string) => `⚠ ${m} Visitors can't join until your location is available.`,
     fullscreen: "Full-screen QR",
     print: "Print",
     tableFreed: "Table freed",
@@ -136,6 +142,9 @@ const T = pick({
     seated: (t: string, n: number) => `${t} → Nr. ${n} aufgerufen.`,
     noFit: (t: string) => `Keine passende Gruppe für ${t}. Der Tisch wartet bei den freien Tischen und wird automatisch vergeben, sobald eine passende Gruppe kommt.`,
     staticQr: "Dieser QR-Code ist fest und ändert sich nicht. Sie können ihn ausdrucken und an der Warteschlange aushängen.",
+    hereOn: "📍 Die Standortprüfung folgt Ihrem Standort: Besucher können sich nur in Ihrer Nähe anstellen. Lassen Sie diese Seite geöffnet.",
+    hereWait: "📍 Ihr Standort wird ermittelt…",
+    hereErr: (m: string) => `⚠ ${m} Solange Ihr Standort nicht verfügbar ist, können sich Besucher nicht anstellen.`,
     fullscreen: "QR im Vollbild",
     print: "Drucken",
     tableFreed: "Tisch frei geworden",
@@ -183,6 +192,9 @@ const T = pick({
     seated: (t: string, n: number) => `${t} → вызван № ${n}.`,
     noFit: (t: string) => `Для «${t}» нет подходящей группы. Стол ждёт среди свободных и будет отдан автоматически, когда придёт подходящая группа.`,
     staticQr: "Этот QR-код постоянный и не меняется. Его можно распечатать и повесить у очереди.",
+    hereOn: "📍 Проверка местоположения идёт по вашему местоположению: встать в очередь можно только рядом с вами. Не закрывайте эту страницу.",
+    hereWait: "📍 Определяем ваше местоположение…",
+    hereErr: (m: string) => `⚠ ${m} Пока ваше местоположение недоступно, посетители не смогут встать в очередь.`,
     fullscreen: "QR на весь экран",
     print: "Печать",
     tableFreed: "Стол освободился",
@@ -261,10 +273,13 @@ function HostPage() {
   const [addAccept, setAddAccept] = useState([2]);
   const [addNote, setAddNote] = useState("");
   const qr = useRef({ at: 0, text: "" });
+  // Dinamik konumda görevlinin son konumu; her yoklamayla odaya gider
+  const here = useRef<{ lat: number; lng: number } | null>(null);
+  const [hereErr, setHereErr] = useState("");
 
   async function act(body: Record<string, unknown> = {}) {
     try {
-      const st = await api<AdminState>(`/api/r/${room}/admin`, body, { "x-key": key });
+      const st = await api<AdminState>(`/api/r/${room}/admin`, { ...body, here: here.current }, { "x-key": key });
       // Değişen QR: sürenin dörtte birinde bir yeni kod (okutana sürenin en az 3/4'ü kalır). Sabit QR: yalnızca değişirse.
       const fixed = st.qr === "static", q = qr.current;
       if (fixed ? st.token !== q.text : q.text.startsWith("s.") || Date.now() - q.at > st.ttl * 250) {
@@ -284,6 +299,21 @@ function HostPage() {
       .catch((e) => setErr(T.badLink(e.message)));
     return () => stop();
   }, []);
+
+  // Konum yalnızca dinamik konumlu sırada izlenir; ayar değişirse panel yeni yoklamada başlar/bırakır
+  const dynamic = s?.geo === "dynamic";
+  useEffect(() => {
+    if (!dynamic) return;
+    if (!navigator.geolocation) return setHereErr(geoErrors.unsupported);
+    const id = navigator.geolocation.watchPosition((p) => {
+      const first = !here.current;
+      here.current = { lat: p.coords.latitude, lng: p.coords.longitude };
+      setHereErr("");
+      if (first) act(); // ziyaretçiler 4 sn beklemesin
+    }, () => { here.current = null; setHereErr(geoErrors.denied); }, // eski konum tazeymiş gibi gönderilmesin
+    { enableHighAccuracy: true, maximumAge: 10000 });
+    return () => { navigator.geolocation.clearWatch(id); here.current = null; };
+  }, [dynamic]);
 
   useEffect(() => {
     if (!s) return;
@@ -326,6 +356,11 @@ function HostPage() {
             {LANGS.filter((l) => l !== lang).map((l) => <p key={l} lang={l} className="text-sm text-muted-foreground">{SCAN[l]}</p>)}
           </div>
           {fixed && <p className="text-sm text-muted-foreground print:hidden">{T.staticQr}</p>}
+          {dynamic && (
+            <p className={cn("text-sm print:hidden", hereErr ? "font-semibold text-destructive" : "text-muted-foreground")}>
+              {hereErr ? T.hereErr(hereErr) : here.current ? T.hereOn : T.hereWait}
+            </p>
+          )}
           <div className="flex w-full gap-2 print:hidden">
             <Button variant="secondary" className="flex-1" onClick={() => setFull(!full)}>{T.fullscreen}</Button>
             {fixed && <Button variant="secondary" className="flex-1" onClick={() => print()}>{T.print}</Button>}

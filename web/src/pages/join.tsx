@@ -34,6 +34,7 @@ const T = pick({
     acceptHint: "Daha az yeri de kabul ederseniz sıranız daha hızlı gelebilir.",
     join: "Sıraya gir",
     geoNote: "Sıraya girebilmek için sıranın bulunduğu yerde olmanız ve konum izni vermeniz gerekir. Konumunuz yalnızca bu kontrol için kullanılır, saklanmaz.",
+    geoNoteHost: "Sıraya girebilmek için QR kodunu gösteren görevlinin yakınında olmanız ve konum izni vermeniz gerekir. Konumunuz yalnızca bu kontrol için kullanılır, saklanmaz.",
     yourNo: "Sıra numaranız",
     yourTurn: "Sıra size geldi!",
     tableReady: "Masanız hazır!",
@@ -63,6 +64,7 @@ const T = pick({
     acceptHint: "If you also accept fewer places, your turn may come sooner.",
     join: "Join the queue",
     geoNote: "To join, you need to be at the queue's location and allow location access. Your location is only used for this check and is not stored.",
+    geoNoteHost: "To join, you need to be near the attendant showing the QR code and allow location access. Your location is only used for this check and is not stored.",
     yourNo: "Your number",
     yourTurn: "It's your turn!",
     tableReady: "Your table is ready!",
@@ -92,6 +94,7 @@ const T = pick({
     acceptHint: "Wenn Sie auch weniger Plätze akzeptieren, sind Sie eventuell schneller dran.",
     join: "Anstellen",
     geoNote: "Zum Anstellen müssen Sie am Ort der Warteschlange sein und die Standortfreigabe erlauben. Ihr Standort wird nur für diese Prüfung verwendet und nicht gespeichert.",
+    geoNoteHost: "Zum Anstellen müssen Sie in der Nähe der Person sein, die den QR-Code zeigt, und die Standortfreigabe erlauben. Ihr Standort wird nur für diese Prüfung verwendet und nicht gespeichert.",
     yourNo: "Ihre Nummer",
     yourTurn: "Sie sind dran!",
     tableReady: "Ihr Tisch ist bereit!",
@@ -121,6 +124,7 @@ const T = pick({
     acceptHint: "Если согласиться и на меньшее число мест, очередь может подойти быстрее.",
     join: "Встать в очередь",
     geoNote: "Чтобы встать в очередь, нужно находиться на месте и разрешить доступ к геолокации. Местоположение используется только для этой проверки и не сохраняется.",
+    geoNoteHost: "Чтобы встать в очередь, нужно находиться рядом с сотрудником, который показывает QR-код, и разрешить доступ к геолокации. Местоположение используется только для этой проверки и не сохраняется.",
     yourNo: "Ваш номер",
     yourTurn: "Ваша очередь!",
     tableReady: "Ваш столик готов!",
@@ -256,8 +260,9 @@ function JoinPage() {
     try {
       // Bildirim izni kullanıcı hareketi gerektirir, bu yüzden burada istenir
       const perm = window.PushManager && Notification.requestPermission();
-      const c = await locate(geoErrors);
-      const r = await api<{ id: string }>(`/api/r/${room}/join`, { t: token, lat: c.latitude, lng: c.longitude, size, accept, device, lang });
+      // Durum henüz gelmediyse konum yine istenir; gerekmiyorsa sunucu yok sayar
+      const c = st?.geo === "off" ? null : await locate(geoErrors);
+      const r = await api<{ id: string }>(`/api/r/${room}/join`, { t: token, lat: c?.latitude, lng: c?.longitude, size, accept, device, lang });
       localStorage.setItem(slot, r.id);
       await perm;
       history.replaceState(null, "", ref ? `?r=${ref}` : location.pathname); // süresi dolacak token'ı adres çubuğundan kaldır
@@ -296,7 +301,7 @@ function JoinPage() {
               </div>
             )}
             <Button size="lg" onClick={join} disabled={busy}>{T.join}</Button>
-            <p className="text-sm text-muted-foreground">{T.geoNote}</p>
+            {st?.geo !== "off" && <p className="text-sm text-muted-foreground">{st?.geo === "dynamic" ? T.geoNoteHost : T.geoNote}</p>}
           </CardContent>
         </Card>
       )}

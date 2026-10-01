@@ -47,8 +47,10 @@ export function poll(fn: () => void, ms: number, whenHidden = false) {
 }
 
 // --- API yanıt tipleri (src/index.js) ---
+// Konum kontrolü: sıranın sabit noktası, QR'ı gösteren görevlinin konumu ya da yok
+export type Geo = "off" | "fixed" | "dynamic";
 export type Status = {
-  name: string; slug?: string; lat: number; lng: number; flex: boolean; private: boolean; category: string; maxGroup: number;
+  name: string; slug?: string; lat: number; lng: number; flex: boolean; private: boolean; category: string; maxGroup: number; geo: Geo;
   waiting: number; people: number; next: number | null; called: number[]; lastNo: number | null;
 };
 export type PublicRoom = Status & { link: string };
@@ -63,10 +65,10 @@ export type Entry = {
 };
 export type AdminState = {
   name: string; flex: boolean; tables: boolean; maxEmpty: number | null; available: number; added?: number;
-  seated?: number | null; freeTables: Table[]; qr: "dynamic" | "static"; ttl: number; maxGroup: number;
+  seated?: number | null; freeTables: Table[]; qr: "dynamic" | "static"; ttl: number; maxGroup: number; geo: Geo;
   token: string; entries: Entry[];
 };
 export type RoomInfo = {
   room: string; name: string; slug?: string; lat: number; lng: number; radius: number; flex: boolean; skip: boolean; private: boolean; key: string;
-  category: string; mode: "seats" | "tables"; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; waiting: number; people: number; called: number; link: string; page: string;
+  category: string; mode: "seats" | "tables"; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; geo: Geo; waiting: number; people: number; called: number; link: string; page: string;
 };

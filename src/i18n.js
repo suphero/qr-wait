@@ -29,6 +29,18 @@ const M = {
     de: "Sie scheinen nicht am Ort der Warteschlange zu sein. Die Standortfreigabe muss aktiviert sein und Sie müssen vor Ort sein.",
     ru: "Похоже, вы не находитесь у очереди. Разрешите доступ к геолокации — и нужно быть на месте.",
   },
+  farHost: {
+    tr: "Görevlinin yanında görünmüyorsunuz. Konum izniniz açık olmalı ve QR kodunu gösteren görevlinin yakınında olmalısınız.",
+    en: "You don't seem to be near the attendant. Location access must be on and you need to be close to the attendant showing the QR code.",
+    de: "Sie scheinen nicht in der Nähe des Personals zu sein. Die Standortfreigabe muss aktiviert sein und Sie müssen sich in der Nähe der Person befinden, die den QR-Code zeigt.",
+    ru: "Похоже, вы не рядом с сотрудником. Разрешите доступ к геолокации и подойдите к сотруднику, который показывает QR-код.",
+  },
+  noHost: {
+    tr: "Görevlinin konumu şu an alınamıyor. Görevliden panelini açık tutmasını ve konum izni vermesini isteyin.",
+    en: "The attendant's location isn't available right now. Ask the attendant to keep their panel open and allow location access.",
+    de: "Der Standort des Personals ist gerade nicht verfügbar. Bitten Sie das Personal, das Panel geöffnet zu lassen und die Standortfreigabe zu erlauben.",
+    ru: "Местоположение сотрудника сейчас недоступно. Попросите сотрудника не закрывать панель и разрешить доступ к геолокации.",
+  },
   device: { tr: "Geçersiz cihaz", en: "Invalid device", de: "Ungültiges Gerät", ru: "Недопустимое устройство" },
   group: (n) => ({
     tr: `Grup 1-${n} kişi olmalı`,

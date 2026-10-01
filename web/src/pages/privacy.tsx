@@ -22,7 +22,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Sıraya giren ziyaretçilerin verileri", ul: [
       <><b>Sıra kaydı:</b> grup büyüklüğü, kabul edilen yer sayıları, sıra numarası, giriş ve çağrılma zamanı, arayüz dili.</>,
       <><b>Cihaz kimliği:</b> tarayıcınızda üretilen rastgele bir kimlik; aynı telefonla ikinci numara alınmasını önler. Adınızla ya da telefon numaranızla ilişkili değildir.</>,
-      <><b>Konum:</b> yalnızca sıraya girerken, sıranın alanında olduğunuzu doğrulamak için o anda kullanılır. <b>Konumunuz saklanmaz.</b></>,
+      <><b>Konum:</b> sıra konum kontrolü kullanıyorsa yalnızca sıraya girerken, sıranın alanında ya da görevlinin yakınında olduğunuzu doğrulamak için o anda kullanılır. <b>Konumunuz saklanmaz.</b></>,
       <><b>Bildirim aboneliği:</b> "sıra size geldi" bildirimine izin verirseniz tarayıcınızın bildirim adresi.</>,
       <><b>Görevli notu:</b> görevli sizi elle eklerse yazdığı kısa not.</>,
       <>Ziyaretçilerden ad, telefon numarası ya da e-posta adresi istenmez.</>,
@@ -30,7 +30,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Hesap sahiplerinin verileri", ul: [
       <><b>Hesap:</b> kullanıcı adı, e-posta adresi, dil tercihi, kullanım koşullarının kabul edildiği sürüm ve zaman.</>,
       <><b>Şifre:</b> yalnızca geri döndürülemeyen özeti (PBKDF2) saklanır. Şifrenin bilinen veri sızıntılarında geçip geçmediği, özetin yalnızca ilk 5 karakteri gönderilerek (k-anonimlik) kontrol edilir; şifre ya da tam özet hiçbir yere gönderilmez.</>,
-      <><b>Sıralar:</b> sıra adı, adresi, konumu ve ayarları.</>,
+      <><b>Sıralar:</b> sıra adı, adresi, konumu ve ayarları. Konum kontrolü görevlinin konumuna göre yapılan sıralarda, görevli panelinin gönderdiği son konum (yalnızca en sonuncusu, kontrol için).</>,
       <><b>Kullanım ve ödeme kayıtları:</b> kullanılan ve kalan bilet sayısı, sipariş numarası, paket ve tutar. Kart bilgileriniz bize ulaşmaz; ödemeyi Lemon Squeezy alır.</>,
     ] },
     { h: "Tüm ziyaretçiler", ul: [
@@ -78,7 +78,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Data of visitors joining a queue", ul: [
       <><b>Queue entry:</b> group size, accepted numbers of places, queue number, time of joining and being called, interface language.</>,
       <><b>Device ID:</b> a random identifier generated in your browser to prevent a second number from the same phone. It is not linked to your name or phone number.</>,
-      <><b>Location:</b> used only at the moment you join, to check that you are at the queue's location. <b>Your location is not stored.</b></>,
+      <><b>Location:</b> if the queue uses a location check, used only at the moment you join, to check that you are at the queue's location or near the attendant. <b>Your location is not stored.</b></>,
       <><b>Notification subscription:</b> your browser's push address, if you allow "it's your turn" notifications.</>,
       <><b>Attendant note:</b> a short note if the attendant adds you manually.</>,
       <>Visitors are never asked for their name, phone number or email address.</>,
@@ -86,7 +86,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Data of account holders", ul: [
       <><b>Account:</b> username, email address, language, the version and time you accepted the terms of use.</>,
       <><b>Password:</b> only an irreversible hash (PBKDF2) is stored. Whether a password appears in known data breaches is checked by sending only the first 5 characters of its hash (k-anonymity); the password or full hash is never sent anywhere.</>,
-      <><b>Queues:</b> queue name, address, location and settings.</>,
+      <><b>Queues:</b> queue name, address, location and settings. For queues that check location against the attendant, the last location sent by the attendant panel (only the latest one, for the check).</>,
       <><b>Usage and payment records:</b> tickets used and remaining, order number, pack and amount. Your card details never reach us; payment is taken by Lemon Squeezy.</>,
     ] },
     { h: "All visitors", ul: [
@@ -134,7 +134,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Daten von Besuchern einer Warteschlange", ul: [
       <><b>Eintrag:</b> Gruppengröße, akzeptierte Platzanzahlen, Nummer, Zeitpunkt des Eintritts und des Aufrufs, Sprache.</>,
       <><b>Geräte-ID:</b> eine in Ihrem Browser erzeugte Zufallskennung, die eine zweite Nummer vom selben Telefon verhindert. Sie ist nicht mit Ihrem Namen oder Ihrer Telefonnummer verknüpft.</>,
-      <><b>Standort:</b> wird nur beim Eintritt verwendet, um zu prüfen, dass Sie am Ort der Warteschlange sind. <b>Ihr Standort wird nicht gespeichert.</b></>,
+      <><b>Standort:</b> wird, falls die Warteschlange eine Standortprüfung nutzt, nur beim Eintritt verwendet, um zu prüfen, dass Sie am Ort der Warteschlange oder in der Nähe des Personals sind. <b>Ihr Standort wird nicht gespeichert.</b></>,
       <><b>Benachrichtigungsabo:</b> die Push-Adresse Ihres Browsers, wenn Sie „Sie sind dran“-Benachrichtigungen erlauben.</>,
       <><b>Notiz des Personals:</b> eine kurze Notiz, wenn das Personal Sie manuell hinzufügt.</>,
       <>Besucher werden nie nach Name, Telefonnummer oder E-Mail-Adresse gefragt.</>,
@@ -142,7 +142,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Daten der Kontoinhaber", ul: [
       <><b>Konto:</b> Benutzername, E-Mail-Adresse, Sprache, Version und Zeitpunkt der Zustimmung zu den Nutzungsbedingungen.</>,
       <><b>Passwort:</b> gespeichert wird nur ein nicht umkehrbarer Hash (PBKDF2). Ob ein Passwort in bekannten Datenlecks vorkommt, wird geprüft, indem nur die ersten 5 Zeichen seines Hashes gesendet werden (k-Anonymität); Passwort oder vollständiger Hash werden nie übermittelt.</>,
-      <><b>Warteschlangen:</b> Name, Adresse, Standort und Einstellungen.</>,
+      <><b>Warteschlangen:</b> Name, Adresse, Standort und Einstellungen. Bei Warteschlangen, die den Standort des Personals prüfen, der zuletzt vom Personal-Panel gesendete Standort (nur der jeweils letzte, für die Prüfung).</>,
       <><b>Nutzungs- und Zahlungsdaten:</b> verbrauchte und verbleibende Tickets, Bestellnummer, Paket und Betrag. Ihre Kartendaten erreichen uns nicht; die Zahlung wickelt Lemon Squeezy ab.</>,
     ] },
     { h: "Alle Besucher", ul: [
@@ -190,7 +190,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Данные посетителей очереди", ul: [
       <><b>Запись в очереди:</b> размер группы, подходящее количество мест, номер, время записи и вызова, язык интерфейса.</>,
       <><b>Идентификатор устройства:</b> случайный идентификатор, созданный в вашем браузере, чтобы с одного телефона нельзя было взять второй номер. Он не связан с вашим именем или номером телефона.</>,
-      <><b>Местоположение:</b> используется только в момент записи, чтобы проверить, что вы находитесь у очереди. <b>Местоположение не сохраняется.</b></>,
+      <><b>Местоположение:</b> если очередь проверяет местоположение, используется только в момент записи, чтобы проверить, что вы находитесь у очереди или рядом с сотрудником. <b>Местоположение не сохраняется.</b></>,
       <><b>Подписка на уведомления:</b> push-адрес браузера, если вы разрешили уведомления «ваша очередь».</>,
       <><b>Заметка сотрудника:</b> короткая заметка, если сотрудник добавил вас вручную.</>,
       <>У посетителей не запрашиваются имя, номер телефона или адрес электронной почты.</>,
@@ -198,7 +198,7 @@ const S: Section[] = pick<Section[]>({
     { h: "Данные владельцев учётных записей", ul: [
       <><b>Учётная запись:</b> имя пользователя, адрес почты, язык, версия и время принятия условий использования.</>,
       <><b>Пароль:</b> хранится только необратимый хеш (PBKDF2). Наличие пароля в известных утечках проверяется отправкой лишь первых 5 символов хеша (k-анонимность); пароль и полный хеш никуда не передаются.</>,
-      <><b>Очереди:</b> название, адрес, местоположение и настройки.</>,
+      <><b>Очереди:</b> название, адрес, местоположение и настройки. Для очередей с проверкой по местоположению сотрудника — последнее местоположение, отправленное панелью сотрудника (только последнее, для проверки).</>,
       <><b>Данные об использовании и оплате:</b> использованные и оставшиеся билеты, номер заказа, пакет и сумма. Данные карты к нам не попадают — оплату принимает Lemon Squeezy.</>,
     ] },
     { h: "Все посетители", ul: [

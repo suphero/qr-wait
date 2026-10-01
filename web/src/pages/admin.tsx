@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { api, CATEGORIES, catIcon, locate, packName, perThousand, poll, type Pkg, type RoomInfo } from "@/lib/api";
+import { api, CATEGORIES, catIcon, locate, packName, perThousand, poll, type Geo, type Pkg, type RoomInfo } from "@/lib/api";
 import { fmtDistL, lang } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
 import { mount } from "@/lib/mount";
@@ -36,7 +36,7 @@ const slugify = (t: string) => t.toLocaleLowerCase("tr").replace(/[çğıöşü]
 type Pt = { lat: number; lng: number };
 type Form = {
   name: string; category: string; private: boolean; slug: string; radius: string; flex: boolean; skip: boolean;
-  mode: "seats" | "tables"; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string;
+  mode: "seats" | "tables"; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string; geo: Geo;
 };
 
 // Onay kutusu + başlık + açıklama
@@ -59,6 +59,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     name: room?.name ?? "", category: room?.category ?? "diger", private: !!room?.private,
     slug: room?.private ? "" : room?.slug ?? "", // gizli odanın rastgele adresi açık adrese taşınmasın
     radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
+    geo: room?.geo ?? "fixed",
   });
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
   const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
@@ -80,19 +81,21 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     return () => { map.remove(); m.current = {}; };
   }, []);
 
-  // İşaretçi ve kabul dairesi seçilen noktayı ve yarıçapı izler
+  // İşaretçi ve kabul dairesi seçilen noktayı ve yarıçapı izler; daire yalnızca sabit konum kontrolünde anlamlı
+  const fixedGeo = f.geo === "fixed";
   useEffect(() => {
     const c = m.current;
     if (!pt || !c.map) return;
     if (!c.marker) {
       c.marker = L.marker(pt, { draggable: true }).addTo(c.map).on("dragend", () => setPt(c.marker!.getLatLng()));
-      c.circle = L.circle(pt, { radius }).addTo(c.map);
+      c.circle = L.circle(pt, { radius });
     }
     c.marker.setLatLng(pt);
     c.circle!.setLatLng(pt).setRadius(radius);
+    if (fixedGeo) c.circle!.addTo(c.map); else c.circle!.remove();
     if (fitNext.current) { fitNext.current = false; c.map.fitBounds(c.circle!.getBounds()); }
     setPos(T.picked(`${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}`));
-  }, [pt, radius]);
+  }, [pt, radius, fixedGeo]);
 
   const pickAndFit = (p: Pt) => { fitNext.current = true; setPt(p); };
 
@@ -166,11 +169,27 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
             }}>{T.useMyLoc}</Button>
             <p className="text-sm text-muted-foreground">{pos}</p>
           </div>
-          <Field>
-            <FieldLabel htmlFor="radius">{T.radius}</FieldLabel>
-            <Input id="radius" type="number" min={50} max={2000} required value={f.radius} onChange={(e) => set("radius", e.target.value)} />
-            <FieldDescription>{T.radiusDesc}</FieldDescription>
-          </Field>
+          <FieldSet className="rounded-lg border p-4">
+            <FieldLegend>{T.geo}</FieldLegend>
+            <RadioGroup value={f.geo} onValueChange={(v) => set("geo", v as Geo)} className="gap-4">
+              {([["fixed", T.geoFixed, T.geoFixedDesc], ["dynamic", T.geoDynamic, T.geoDynamicDesc], ["off", T.geoOff, T.geoOffDesc]] as const).map(([v, title, desc]) => (
+                <Field key={v} orientation="horizontal">
+                  <RadioGroupItem value={v} id={`geo-${v}`} />
+                  <FieldContent>
+                    <FieldLabel htmlFor={`geo-${v}`} className="text-base font-semibold">{title}</FieldLabel>
+                    <FieldDescription>{desc}</FieldDescription>
+                  </FieldContent>
+                </Field>
+              ))}
+            </RadioGroup>
+            {f.geo !== "off" && (
+              <Field>
+                <FieldLabel htmlFor="radius">{T.radius}</FieldLabel>
+                <Input id="radius" type="number" min={50} max={2000} required value={f.radius} onChange={(e) => set("radius", e.target.value)} />
+                <FieldDescription>{T.radiusDesc}</FieldDescription>
+              </Field>
+            )}
+          </FieldSet>
           <FieldSet className="rounded-lg border p-4">
             <FieldLegend>{T.mode}</FieldLegend>
             <RadioGroup value={f.mode} onValueChange={(v) => { modeTouched.current = true; set("mode", v as Form["mode"]); }} className="gap-4">
@@ -276,7 +295,7 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
           {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? T.hiddenTag : bare(r.page)}</a> : T.noSlug}
         </div>
         <div className="text-xs text-muted-foreground">
-          {[`${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag, r.skip && T.skipTag,
+          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag, r.skip && T.skipTag,
             r.qr === "static" ? T.staticTag : T.ttlTag(r.ttl)].filter(Boolean).join(" · ")}
         </div>
       </TableCell>
