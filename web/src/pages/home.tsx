@@ -259,9 +259,13 @@ function Ticket() {
   );
 }
 
+// Haritada yalnızca sabit konumlu sıralar; görevlinin konumuna bağlı ya da konumsuz sıraların noktası yok
+type Spot = PublicRoom & { lat: number; lng: number };
+const hasSpot = (r: PublicRoom): r is Spot => r.lat != null && r.lng != null;
+
 // Yakındaki sıralar: harita + mesafeye göre liste
 function Nearby() {
-  const [rooms, setRooms] = useState<PublicRoom[]>([]);
+  const [rooms, setRooms] = useState<Spot[]>([]);
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [me, setMe] = useState<{ lat: number; lng: number } | null>(null);
@@ -271,8 +275,8 @@ function Nearby() {
   const m = useRef<{ map?: L.Map; me?: L.CircleMarker; markers: Record<string, L.Marker> }>({ markers: {} });
 
   async function load(fit: boolean) {
-    let list: PublicRoom[];
-    try { list = await api<PublicRoom[]>("/api/rooms"); } catch { return setFailed(true); }
+    let list: Spot[];
+    try { list = (await api<PublicRoom[]>("/api/rooms")).filter(hasSpot); } catch { return setFailed(true); }
     setFailed(false);
     setRooms(list);
     setLoaded(true);

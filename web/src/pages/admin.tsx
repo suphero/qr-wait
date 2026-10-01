@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -52,50 +52,44 @@ function Check({ checked, onChange, title, children }: { checked: boolean; onCha
   );
 }
 
-// Yeni + düzenle formu. room: düzenlenen oda, yoksa yeni oda.
-function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: RoomInfo | null; rooms: RoomInfo[]; home: string; onDone: () => void; onCancel: () => void; onError: (m: string) => void }) {
-  const confirm = useConfirm();
-  const [f, setF] = useState<Form>({
-    name: room?.name ?? "", category: room?.category ?? "diger", private: !!room?.private,
-    slug: room?.private ? "" : room?.slug ?? "", // gizli odanın rastgele adresi açık adrese taşınmasın
-    radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
-    geo: room?.geo ?? "fixed",
-  });
-  const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
-  const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
-  const slugTouched = useRef(!!room?.slug && !room.private); // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
-  const [pt, setPt] = useState<Pt | null>(room && { lat: room.lat, lng: room.lng });
-  const [pos, setPos] = useState(room ? "" : T.pickSpot);
-  const [q, setQ] = useState("");
-  const mapEl = useRef<HTMLDivElement>(null), formEl = useRef<HTMLFormElement>(null);
-  const m = useRef<{ map?: L.Map; marker?: L.Marker; circle?: L.Circle }>({});
-  const fitNext = useRef(!!room); // nokta aramadan/konumdan ya da mevcut odadan geldiyse haritayı daireye sığdır
+// Formun bir bölümü: başlıklı kart
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-lg font-semibold">{title}</CardTitle></CardHeader>
+      <CardContent className="flex flex-col gap-5 text-base">{children}</CardContent>
+    </Card>
+  );
+}
 
-  const radius = +f.radius || 300;
+// Sabit konumlu sıranın noktası: adres arama, harita, kabul dairesi. Yalnızca sabit konum kontrolünde görünür.
+function SpotPicker({ pt, setPt, radius }: { pt: Pt | null; setPt: (p: Pt) => void; radius: number }) {
+  const [pos, setPos] = useState(pt ? "" : T.pickSpot);
+  const [q, setQ] = useState("");
+  const mapEl = useRef<HTMLDivElement>(null);
+  const m = useRef<{ map?: L.Map; marker?: L.Marker; circle?: L.Circle }>({});
+  const fitNext = useRef(!!pt); // nokta aramadan/konumdan ya da mevcut odadan geldiyse haritayı daireye sığdır
 
   useEffect(() => {
     const map = baseMap(mapEl.current!).setView([39, 35], 6);
     map.on("click", (e) => setPt({ lat: e.latlng.lat, lng: e.latlng.lng }));
     m.current.map = map;
-    formEl.current?.scrollIntoView({ behavior: "smooth" });
     return () => { map.remove(); m.current = {}; };
   }, []);
 
-  // İşaretçi ve kabul dairesi seçilen noktayı ve yarıçapı izler; daire yalnızca sabit konum kontrolünde anlamlı
-  const fixedGeo = f.geo === "fixed";
+  // İşaretçi ve kabul dairesi seçilen noktayı ve yarıçapı izler
   useEffect(() => {
     const c = m.current;
     if (!pt || !c.map) return;
     if (!c.marker) {
       c.marker = L.marker(pt, { draggable: true }).addTo(c.map).on("dragend", () => setPt(c.marker!.getLatLng()));
-      c.circle = L.circle(pt, { radius });
+      c.circle = L.circle(pt, { radius }).addTo(c.map);
     }
     c.marker.setLatLng(pt);
     c.circle!.setLatLng(pt).setRadius(radius);
-    if (fixedGeo) c.circle!.addTo(c.map); else c.circle!.remove();
     if (fitNext.current) { fitNext.current = false; c.map.fitBounds(c.circle!.getBounds()); }
     setPos(T.picked(`${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}`));
-  }, [pt, radius, fixedGeo]);
+  }, [pt, radius]);
 
   const pickAndFit = (p: Pt) => { fitNext.current = true; setPt(p); };
 
@@ -108,11 +102,70 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     } catch { setPos(T.searchDown); }
   }
 
+  return (
+    <>
+      <Field>
+        <FieldLabel htmlFor="q">{T.searchAddr}</FieldLabel>
+        <div className="flex gap-2">
+          <Input id="q" placeholder={T.searchPh} value={q} onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(); } }} />
+          <Button type="button" onClick={search}>{T.search}</Button>
+        </div>
+      </Field>
+      <div className="flex flex-col gap-2">
+        <div ref={mapEl} className="z-0 h-[360px] rounded-lg" />
+        <Button type="button" variant="secondary" onClick={async () => {
+          try { const c = await locate(); pickAndFit({ lat: c.latitude, lng: c.longitude }); } catch (e: any) { setPos(e.message); }
+        }}>{T.useMyLoc}</Button>
+        <p className="text-sm text-muted-foreground">{pos}</p>
+      </div>
+    </>
+  );
+}
+
+// Seçenek listesi: her biri başlık + açıklama, seçilenin altında ek alanlar (extra)
+function Choice<V extends string>({ name, value, onChange, items }: {
+  name: string; value: V; onChange: (v: V) => void; items: { v: V; title: string; desc: ReactNode; extra?: ReactNode }[];
+}) {
+  return (
+    <RadioGroup value={value} onValueChange={(v) => onChange(v as V)} className="gap-4">
+      {items.map(({ v, title, desc, extra }) => (
+        <div key={v} className="flex flex-col gap-4">
+          <Field orientation="horizontal">
+            <RadioGroupItem value={v} id={`${name}-${v}`} />
+            <FieldContent>
+              <FieldLabel htmlFor={`${name}-${v}`} className="text-base font-semibold">{title}</FieldLabel>
+              <FieldDescription>{desc}</FieldDescription>
+            </FieldContent>
+          </Field>
+          {value === v && extra && <div className="flex flex-col gap-4 pl-6">{extra}</div>}
+        </div>
+      ))}
+    </RadioGroup>
+  );
+}
+
+// Yeni + düzenle sayfası (#yeni, #duzenle-<id>). room: düzenlenen oda, yoksa yeni oda.
+function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: RoomInfo | null; rooms: RoomInfo[]; home: string; onDone: () => void; onCancel: () => void; onError: (m: string) => void }) {
+  const confirm = useConfirm();
+  const [f, setF] = useState<Form>({
+    name: room?.name ?? "", category: room?.category ?? "diger", private: !!room?.private,
+    slug: room?.private ? "" : room?.slug ?? "", // gizli odanın rastgele adresi açık adrese taşınmasın
+    radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
+    geo: room?.geo ?? "fixed",
+  });
+  const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
+  const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
+  const slugTouched = useRef(!!room?.slug && !room.private); // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
+  const [pt, setPt] = useState<Pt | null>(room?.lat != null ? { lat: room.lat, lng: room.lng! } : null);
+  const fixed = f.geo === "fixed";
+
   async function submit(ev: FormEvent) {
     ev.preventDefault();
-    if (!pt) return onError(T.pickOnMap);
+    if (fixed && !pt) return onError(T.pickOnMap);
     const { slug, ...rest } = f;
-    const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, ...pt };
+    // Nokta yalnızca sabit konumda anlamlı; diğerlerinde sıra haritada görünmez
+    const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, ...(fixed ? pt : {}) };
     const prev = rooms.find((r) => r.room === room?.room);
     const changed = prev?.slug && (f.private ? !prev.private : prev.slug !== slug);
     if (changed && !(await confirm({ title: T.slugChangeTitle, description: T.slugChangeDesc, action: T.cont }))) return;
@@ -122,153 +175,108 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     } catch (e: any) { onError(e.message); }
   }
 
+  const radiusField = (desc: string) => (
+    <Field>
+      <FieldLabel htmlFor="radius">{T.radius}</FieldLabel>
+      <Input id="radius" type="number" min={50} max={2000} required value={f.radius} onChange={(e) => set("radius", e.target.value)} />
+      <FieldDescription>{desc}</FieldDescription>
+    </Field>
+  );
+
   return (
-    <Card>
-      <CardHeader><CardTitle className="text-lg font-semibold">{room ? T.edit(room.name) : T.newRoom}</CardTitle></CardHeader>
-      <CardContent>
-        <form ref={formEl} onSubmit={submit} className="flex flex-col gap-5 text-base">
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="ghost" onClick={onCancel}><ChevronLeftIcon /> {T.queues}</Button>
+        <Title className="mt-0 flex-1">{room ? T.edit(room.name) : T.newRoom}</Title>
+      </div>
+
+      <Section title={T.secBasics}>
+        <Field>
+          <FieldLabel htmlFor="name">{T.name}</FieldLabel>
+          <Input id="name" required maxLength={60} placeholder={T.namePh} value={f.name}
+            onChange={(e) => { set("name", e.target.value); if (!slugTouched.current) set("slug", slugify(e.target.value)); }} />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="category">{T.category}</FieldLabel>
+          <NativeSelect id="category" value={f.category} onChange={(e) => {
+            set("category", e.target.value);
+            if (!modeTouched.current) set("mode", e.target.value === "restoran" ? "tables" : "seats");
+          }}>
+            {Object.entries(CATEGORIES).map(([k, [i, t]]) => <NativeSelectOption key={k} value={k}>{i} {t}</NativeSelectOption>)}
+          </NativeSelect>
+        </Field>
+        <Check title={T.hidden} checked={f.private} onChange={(v) => set("private", v)}>
+          {T.hiddenDesc}
+        </Check>
+        {f.private ? (
+          <p className="text-sm text-muted-foreground">{room?.private ? T.keepSecret(room.slug ?? "") : T.secretNew}</p>
+        ) : (
           <Field>
-            <FieldLabel htmlFor="name">{T.name}</FieldLabel>
-            <Input id="name" required maxLength={60} placeholder={T.namePh} value={f.name}
-              onChange={(e) => { set("name", e.target.value); if (!slugTouched.current) set("slug", slugify(e.target.value)); }} />
+            <FieldLabel htmlFor="slug">{T.slug}</FieldLabel>
+            <Input id="slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve" value={f.slug}
+              onChange={(e) => { slugTouched.current = true; set("slug", e.target.value); }} />
+            <FieldDescription>{T.slugDesc(`${bare(home)}${f.slug || "…"}`)}</FieldDescription>
           </Field>
-          <Field>
-            <FieldLabel htmlFor="category">{T.category}</FieldLabel>
-            <NativeSelect id="category" value={f.category} onChange={(e) => {
-              set("category", e.target.value);
-              if (!modeTouched.current) set("mode", e.target.value === "restoran" ? "tables" : "seats");
-            }}>
-              {Object.entries(CATEGORIES).map(([k, [i, t]]) => <NativeSelectOption key={k} value={k}>{i} {t}</NativeSelectOption>)}
-            </NativeSelect>
-          </Field>
-          <Check title={T.hidden} checked={f.private} onChange={(v) => set("private", v)}>
-            {T.hiddenDesc}
-          </Check>
-          {f.private ? (
-            <p className="text-sm text-muted-foreground">{room?.private ? T.keepSecret(room.slug ?? "") : T.secretNew}</p>
-          ) : (
+        )}
+      </Section>
+
+      <Section title={T.geo}>
+        <Choice name="geo" value={f.geo} onChange={(v) => set("geo", v)} items={[
+          { v: "fixed", title: T.geoFixed, desc: T.geoFixedDesc, extra: <>
+            <SpotPicker pt={pt} setPt={setPt} radius={+f.radius || 300} />
+            {radiusField(T.radiusDesc)}
+          </> },
+          { v: "dynamic", title: T.geoDynamic, desc: T.geoDynamicDesc, extra: radiusField(T.radiusHostDesc) },
+          { v: "off", title: T.geoOff, desc: T.geoOffDesc },
+        ]} />
+        {f.qr === "static" && f.geo === "dynamic" && <p className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm">{T.staticHostWarn}</p>}
+      </Section>
+
+      <Section title={T.mode}>
+        <Choice name="mode" value={f.mode} onChange={(v) => { modeTouched.current = true; set("mode", v); }} items={[
+          { v: "seats", title: T.seats, desc: T.seatsDesc, extra: <>
+            <Check title={T.flex} checked={f.flex} onChange={(v) => set("flex", v)}>{T.flexDesc}</Check>
+            <Check title={T.skip} checked={f.skip} onChange={(v) => set("skip", v)}>{T.skipDesc}</Check>
+          </> },
+          { v: "tables", title: T.tables, desc: T.tablesDesc, extra: (
             <Field>
-              <FieldLabel htmlFor="slug">{T.slug}</FieldLabel>
-              <Input id="slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve" value={f.slug}
-                onChange={(e) => { slugTouched.current = true; set("slug", e.target.value); }} />
-              <FieldDescription>{T.slugDesc(`${bare(home)}${f.slug || "…"}`)}</FieldDescription>
+              <FieldLabel htmlFor="maxEmpty">{T.maxEmptyQ}</FieldLabel>
+              <Input id="maxEmpty" type="number" min={0} max={50} inputMode="numeric" placeholder={T.noLimit} value={f.maxEmpty} onChange={(e) => set("maxEmpty", e.target.value)} />
+              <FieldDescription>{T.maxEmptyDesc}</FieldDescription>
             </Field>
-          )}
-          <Field>
-            <FieldLabel htmlFor="q">{T.searchAddr}</FieldLabel>
-            <div className="flex gap-2">
-              <Input id="q" placeholder={T.searchPh} value={q} onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(); } }} />
-              <Button type="button" onClick={search}>{T.search}</Button>
-            </div>
-          </Field>
-          <div className="flex flex-col gap-2">
-            <div ref={mapEl} className="z-0 h-[360px] rounded-lg" />
-            <Button type="button" variant="secondary" onClick={async () => {
-              try { const c = await locate(); pickAndFit({ lat: c.latitude, lng: c.longitude }); } catch (e: any) { setPos(e.message); }
-            }}>{T.useMyLoc}</Button>
-            <p className="text-sm text-muted-foreground">{pos}</p>
-          </div>
-          <FieldSet className="rounded-lg border p-4">
-            <FieldLegend>{T.geo}</FieldLegend>
-            <RadioGroup value={f.geo} onValueChange={(v) => set("geo", v as Geo)} className="gap-4">
-              {([["fixed", T.geoFixed, T.geoFixedDesc], ["dynamic", T.geoDynamic, T.geoDynamicDesc], ["off", T.geoOff, T.geoOffDesc]] as const).map(([v, title, desc]) => (
-                <Field key={v} orientation="horizontal">
-                  <RadioGroupItem value={v} id={`geo-${v}`} />
-                  <FieldContent>
-                    <FieldLabel htmlFor={`geo-${v}`} className="text-base font-semibold">{title}</FieldLabel>
-                    <FieldDescription>{desc}</FieldDescription>
-                  </FieldContent>
-                </Field>
-              ))}
-            </RadioGroup>
-            {f.geo !== "off" && (
-              <Field>
-                <FieldLabel htmlFor="radius">{T.radius}</FieldLabel>
-                <Input id="radius" type="number" min={50} max={2000} required value={f.radius} onChange={(e) => set("radius", e.target.value)} />
-                <FieldDescription>{T.radiusDesc}</FieldDescription>
-              </Field>
-            )}
-          </FieldSet>
-          <FieldSet className="rounded-lg border p-4">
-            <FieldLegend>{T.mode}</FieldLegend>
-            <RadioGroup value={f.mode} onValueChange={(v) => { modeTouched.current = true; set("mode", v as Form["mode"]); }} className="gap-4">
-              <Field orientation="horizontal">
-                <RadioGroupItem value="seats" id="mode-seats" />
-                <FieldContent>
-                  <FieldLabel htmlFor="mode-seats" className="text-base font-semibold">{T.seats}</FieldLabel>
-                  <FieldDescription>{T.seatsDesc}</FieldDescription>
-                </FieldContent>
-              </Field>
-              {f.mode === "seats" && (
-                <div className="flex flex-col gap-4 pl-6">
-                  <Check title={T.flex} checked={f.flex} onChange={(v) => set("flex", v)}>
-                    {T.flexDesc}
-                  </Check>
-                  <Check title={T.skip} checked={f.skip} onChange={(v) => set("skip", v)}>
-                    {T.skipDesc}
-                  </Check>
-                </div>
-              )}
-              <Field orientation="horizontal">
-                <RadioGroupItem value="tables" id="mode-tables" />
-                <FieldContent>
-                  <FieldLabel htmlFor="mode-tables" className="text-base font-semibold">{T.tables}</FieldLabel>
-                  <FieldDescription>{T.tablesDesc}</FieldDescription>
-                </FieldContent>
-              </Field>
-              {f.mode === "tables" && (
-                <Field className="pl-6">
-                  <FieldLabel htmlFor="maxEmpty">{T.maxEmptyQ}</FieldLabel>
-                  <Input id="maxEmpty" type="number" min={0} max={50} inputMode="numeric" placeholder={T.noLimit} value={f.maxEmpty} onChange={(e) => set("maxEmpty", e.target.value)} />
-                  <FieldDescription>{T.maxEmptyDesc}</FieldDescription>
-                </Field>
-              )}
-            </RadioGroup>
-          </FieldSet>
-          <Field>
-            <FieldLabel htmlFor="maxGroup">{T.maxGroupQ}</FieldLabel>
-            <Input id="maxGroup" type="number" min={1} max={20} required inputMode="numeric" value={f.maxGroup} onChange={(e) => set("maxGroup", e.target.value)} />
-            <FieldDescription>{T.maxGroupDesc}</FieldDescription>
-          </Field>
-          <FieldSet className="rounded-lg border p-4">
-            <FieldLegend>{T.qr}</FieldLegend>
-            <RadioGroup value={f.qr} onValueChange={(v) => set("qr", v as Form["qr"])} className="gap-4">
-              <Field orientation="horizontal">
-                <RadioGroupItem value="dynamic" id="qr-dynamic" />
-                <FieldContent>
-                  <FieldLabel htmlFor="qr-dynamic" className="text-base font-semibold">{T.dynamic}</FieldLabel>
-                  <FieldDescription>{T.dynamicDesc}</FieldDescription>
-                </FieldContent>
-              </Field>
-              {f.qr === "dynamic" && (
-                <Field className="pl-6">
-                  <FieldLabel htmlFor="ttl">{T.ttlQ}</FieldLabel>
-                  <NativeSelect id="ttl" value={f.ttl} onChange={(e) => set("ttl", e.target.value)}>
-                    <NativeSelectOption value="60">{T.sec(60)}</NativeSelectOption>
-                    <NativeSelectOption value="90">{T.sec(90)}</NativeSelectOption>
-                    <NativeSelectOption value="180">{T.min(3)}</NativeSelectOption>
-                    <NativeSelectOption value="300">{T.min(5)}</NativeSelectOption>
-                  </NativeSelect>
-                  <FieldDescription>{T.ttlDesc}</FieldDescription>
-                </Field>
-              )}
-              <Field orientation="horizontal">
-                <RadioGroupItem value="static" id="qr-static" />
-                <FieldContent>
-                  <FieldLabel htmlFor="qr-static" className="text-base font-semibold">{T.static}</FieldLabel>
-                  <FieldDescription>{T.staticDesc}</FieldDescription>
-                </FieldContent>
-              </Field>
-            </RadioGroup>
-          </FieldSet>
-          <div className="flex gap-2">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onCancel}>{T.cancel}</Button>
-            <Button className="flex-1">{T.save}</Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+          ) },
+        ]} />
+        <Field>
+          <FieldLabel htmlFor="maxGroup">{T.maxGroupQ}</FieldLabel>
+          <Input id="maxGroup" type="number" min={1} max={20} required inputMode="numeric" value={f.maxGroup} onChange={(e) => set("maxGroup", e.target.value)} />
+          <FieldDescription>{T.maxGroupDesc}</FieldDescription>
+        </Field>
+      </Section>
+
+      <Section title={T.qr}>
+        <Choice name="qr" value={f.qr} onChange={(v) => set("qr", v)} items={[
+          { v: "dynamic", title: T.dynamic, desc: T.dynamicDesc, extra: (
+            <Field>
+              <FieldLabel htmlFor="ttl">{T.ttlQ}</FieldLabel>
+              <NativeSelect id="ttl" value={f.ttl} onChange={(e) => set("ttl", e.target.value)}>
+                <NativeSelectOption value="60">{T.sec(60)}</NativeSelectOption>
+                <NativeSelectOption value="90">{T.sec(90)}</NativeSelectOption>
+                <NativeSelectOption value="180">{T.min(3)}</NativeSelectOption>
+                <NativeSelectOption value="300">{T.min(5)}</NativeSelectOption>
+              </NativeSelect>
+              <FieldDescription>{T.ttlDesc}</FieldDescription>
+            </Field>
+          ) },
+          { v: "static", title: T.static, desc: T.staticDesc },
+        ]} />
+        {f.qr === "static" && f.geo === "dynamic" && <p className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm">{T.staticHostWarn}</p>}
+      </Section>
+
+      <div className="sticky bottom-0 -mx-4 flex gap-2 border-t bg-background px-4 py-3">
+        <Button type="button" variant="secondary" className="flex-1" onClick={onCancel}>{T.cancel}</Button>
+        <Button className="flex-1">{T.save}</Button>
+      </div>
+    </form>
   );
 }
 
@@ -359,7 +367,7 @@ function RoomTable({ rooms, onChange, onEdit, onError }: { rooms: RoomInfo[]; on
 
   const words = norm(q).split(/\s+/).filter(Boolean);
   const rows = rooms
-    .map((r) => ({ r, d: me ? meters(me, r) : undefined, hay: norm(`${r.name} ${r.slug ?? ""} ${CATEGORIES[r.category]?.[1] ?? ""} ${r.private ? T.hiddenWord : ""}`) }))
+    .map((r) => ({ r, d: me && r.lat != null ? meters(me, { lat: r.lat, lng: r.lng! }) : undefined, hay: norm(`${r.name} ${r.slug ?? ""} ${CATEGORIES[r.category]?.[1] ?? ""} ${r.private ? T.hiddenWord : ""}`) }))
     .filter((x) => words.every((w) => x.hay.includes(w)))
     .sort((a, b) => {
       const v = sort.key === "name" ? a.r.name.localeCompare(b.r.name, lang)
@@ -597,22 +605,28 @@ function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: st
 }
 
 function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; reloadMe: () => Promise<void>; logout: (msg?: string) => void }) {
-  const [rooms, setRooms] = useState<RoomInfo[]>([]);
+  const [rooms, setRooms] = useState<RoomInfo[] | null>(null); // null: henüz yüklenmedi
   const [note, setNote] = useState("");
-  const [editing, setEditing] = useState<RoomInfo | null | undefined>(); // undefined: form kapalı, null: yeni oda
   const [pwOpen, setPwOpen] = useState(false);
   const [err, setErr] = useState("");
   const [tickets, setTickets] = useState(location.hash === "#bilet" || paid); // bilet yükleme sayfası
+  // Sıra formu kendi sayfasında: #yeni, #duzenle-<oda id>
+  const [hash, setHash] = useState(location.hash);
+  const editId = hash.startsWith("#duzenle-") ? hash.slice(9) : null;
+  const editing = hash === "#yeni" ? null : editId ? rooms?.find((r) => r.room === editId) : undefined; // undefined: form kapalı, null: yeni oda
   const formOpen = useRef(false);
-  formOpen.current = editing !== undefined;
+  formOpen.current = hash === "#yeni" || !!editId;
 
   // #bilet adresi paylaşılabilir (e-postadaki bağlantı), geri tuşu sıralara döner
   useEffect(() => {
-    const on = () => setTickets(location.hash === "#bilet");
+    const on = () => { setTickets(location.hash === "#bilet"); setHash(location.hash); window.scrollTo(0, 0); };
     addEventListener("hashchange", on);
     return () => removeEventListener("hashchange", on);
   }, []);
-  const openTickets = (v: boolean) => { location.hash = v ? "bilet" : ""; setTickets(v); window.scrollTo(0, 0); };
+  const go = (h: string) => { location.hash = h; setHash(h && `#${h}`); setTickets(h === "bilet"); window.scrollTo(0, 0); };
+  const openTickets = (v: boolean) => go(v ? "bilet" : "");
+  // Silinmiş ya da başkasının sırası: listeye dön
+  useEffect(() => { if (editId && rooms && !editing) go(""); }, [editId, rooms]);
   const low = me.balance?.left != null && me.balance.left <= 100;
 
   async function load() {
@@ -641,6 +655,16 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
     try { await call("/api/admin/verify", {}); setNote(T.resent); } catch (e: any) { setErr(e.message); }
   }
 
+  if (formOpen.current) return (
+    <Page className="max-w-3xl">
+      {editing !== undefined && (
+        <RoomForm key={editing?.room ?? "new"} room={editing} rooms={rooms ?? []} home={me.home || ""} onError={setErr}
+          onDone={() => { go(""); load(); }} onCancel={() => go("")} />
+      )}
+      <ErrorText>{err}</ErrorText>
+    </Page>
+  );
+
   if (tickets) return (
     <Page className="max-w-5xl">
       <TicketsPage me={me} paid={paid} onBack={() => openTickets(false)} onError={setErr} />
@@ -656,7 +680,7 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
           {me.home && <a className="text-sm text-muted-foreground underline-offset-2 hover:underline" href={me.home} target="_blank">{bare(me.home)}</a>}
         </div>
         <BalanceChip me={me} onTopUp={() => openTickets(true)} />
-        <Button disabled={me.verified === false} onClick={() => setEditing(null)}>{T.addRoom}</Button>
+        <Button disabled={me.verified === false} onClick={() => go("yeni")}>{T.addRoom}</Button>
         <Button variant="secondary" title={T.changePw} onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> {T.accountBtn}</Button>
         <Button variant="secondary" onClick={() => logout()}>{T.logout}</Button>
       </div>
@@ -675,11 +699,7 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
       )}
       {pwOpen && <PasswordForm onDone={() => setPwOpen(false)} onError={setErr} />}
       {pwOpen && <DeleteAccount onDeleted={() => logout(T.deleted)} onError={setErr} />}
-      <RoomTable rooms={rooms} onChange={load} onEdit={setEditing} onError={setErr} />
-      {editing !== undefined && (
-        <RoomForm key={editing?.room ?? "new"} room={editing} rooms={rooms} home={me.home || ""} onError={setErr}
-          onDone={() => { setEditing(undefined); load(); }} onCancel={() => setEditing(undefined)} />
-      )}
+      <RoomTable rooms={rooms ?? []} onChange={load} onEdit={(r) => go(`duzenle-${r.room}`)} onError={setErr} />
       <ErrorText>{err}</ErrorText>
     </Page>
   );

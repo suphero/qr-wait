@@ -180,9 +180,11 @@ function StatusPage() {
             <CardHeader><CardTitle className="text-lg font-semibold">{T.howTitle}</CardTitle></CardHeader>
             <CardContent className="flex flex-col gap-3 text-base">
               <p>{T.how}</p>
-              <Button variant="secondary" asChild>
-                <a href={`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`} target="_blank" rel="noopener">{T.directions}</a>
-              </Button>
+              {s.lat != null && (
+                <Button variant="secondary" asChild>
+                  <a href={`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`} target="_blank" rel="noopener">{T.directions}</a>
+                </Button>
+              )}
             </CardContent>
           </Card>
         </>

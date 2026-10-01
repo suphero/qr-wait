@@ -680,8 +680,13 @@ function secretSlug() {
 
 // prev: düzenlenen odanın mevcut bilgisi. Gizli oda gizli kaldıkça adresi korunur, gizliye geçerken yenisi üretilir.
 function roomFields(b, prev) {
-  const lat = Number(b.lat), lng = Number(b.lng);
-  if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) throw fail("badLocation");
+  // Nokta yalnızca sabit konum kontrolünde: kabul dairesinin merkezi ve haritadaki yeri. Diğerleri haritada görünmez.
+  const geo = GEOS.has(b.geo) ? b.geo : "fixed";
+  let lat = null, lng = null;
+  if (geo === "fixed") {
+    lat = Number(b.lat); lng = Number(b.lng);
+    if (b.lat == null || b.lng == null || !(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) throw fail("badLocation");
+  }
   const hidden = b.private === true || b.private === "on"; // haritada/listede görünmez, adresi rastgele
   const slug = hidden ? (prev?.private && prev.slug) || secretSlug() : String(b.slug ?? "").trim();
   if (!NAME_RE.test(slug) || ID_RE.test(slug) || RESERVED.has(slug))
@@ -689,7 +694,8 @@ function roomFields(b, prev) {
   return {
     private: hidden,
     name: String(b.name ?? "").trim().slice(0, 60) || "Sıra",
-    slug, lat, lng, radius: int(b.radius, 50, 2000, "radius"),
+    slug, lat, lng,
+    radius: geo === "off" ? prev?.radius ?? 300 : int(b.radius, 50, 2000, "radius"),
     flex: b.flex === true || b.flex === "on", // grup, kişi sayısından az yeri de kabul edebilir (plaj şezlongu gibi)
     skip: b.skip === true || b.skip === "on", // sığmayan grubun arkasındaki küçük gruplar öne geçebilir
     category: CATEGORIES.has(b.category) ? b.category : "diger",
@@ -698,7 +704,7 @@ function roomFields(b, prev) {
     maxEmpty: b.maxEmpty === "" || b.maxEmpty == null ? null : int(b.maxEmpty, 0, TABLE_LIMIT, "maxEmpty", TABLE_LIMIT),
     maxGroup: int(b.maxGroup ?? MAX_GROUP, 1, GROUP_LIMIT, "maxGroup", GROUP_LIMIT),
     qr: b.qr === "static" ? "static" : "dynamic", // sabit: basılı QR, giriş yalnızca konumla sınırlı
-    geo: GEOS.has(b.geo) ? b.geo : "fixed",
+    geo,
     ttl: TTLS.includes(Number(b.ttl)) ? Number(b.ttl) : 90,
   };
 }
