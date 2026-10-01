@@ -52,13 +52,14 @@ export type Geo = "off" | "fixed" | "dynamic";
 // lat/lng: yalnızca sabit konumlu sıralarda; diğerleri haritada görünmez
 export type Status = {
   name: string; slug?: string; lat: number | null; lng: number | null; flex: boolean; private: boolean; category: string; maxGroup: number; geo: Geo;
+  wait: number | null; // çağrılanın gelme süresi (dk), null: süresiz
   waiting: number; people: number; next: number | null; called: number[]; lastNo: number | null;
 };
 export type PublicRoom = Status & { link: string };
 export type Table = { id: string; cap: number; name: string; at: number };
 export type Me = {
-  name: string; status: "waiting" | "called" | "gone"; no: number; size: number; accept: number[]; alloc?: number; table?: Table; calledAt?: number;
-  aheadGroups: number; aheadPeople: number;
+  name: string; status: "waiting" | "called" | "gone" | "expired"; no: number; size: number; accept: number[]; alloc?: number; table?: Table; calledAt?: number;
+  aheadGroups: number; aheadPeople: number; wait: number | null; remaining: number | null;
 };
 export type Entry = {
   id: string; no: number; size: number; accept?: number[]; alloc?: number; table?: Table; src: "qr" | "manual"; note: string;
@@ -66,10 +67,10 @@ export type Entry = {
 };
 export type AdminState = {
   name: string; flex: boolean; tables: boolean; maxEmpty: number | null; available: number; added?: number;
-  seated?: number | null; freeTables: Table[]; qr: "dynamic" | "static"; ttl: number; maxGroup: number; geo: Geo;
+  seated?: number | null; freeTables: Table[]; qr: "dynamic" | "static"; ttl: number; maxGroup: number; geo: Geo; wait: number | null; now: number;
   token: string; entries: Entry[];
 };
 export type RoomInfo = {
   room: string; name: string; slug?: string; lat: number | null; lng: number | null; radius: number; flex: boolean; skip: boolean; private: boolean; key: string;
-  category: string; mode: "seats" | "tables"; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; geo: Geo; waiting: number; people: number; called: number; link: string; page: string;
+  category: string; mode: "seats" | "tables"; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; geo: Geo; wait: number | null; waiting: number; people: number; called: number; link: string; page: string;
 };

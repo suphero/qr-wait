@@ -212,6 +212,24 @@ assert.ok((await gjoin("geo-device-0000002", far)).no, "görevlinin yanından gi
 await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300, qr: "static", ...spot }, PW);
 assert.equal((await ofind()).geo, "fixed", "varsayılan sabit konum");
 assert.match((await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300 }, PW)).error, /Geçersiz konum/, "sabitte nokta zorunlu");
+// Gelme süresi: çağrılan sürede gelmezse düşer, yeri geri döner. Gerçek süre dolumu SLOW=1 ile (3 dk bekler).
+await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300, qr: "static", wait: 3, ...spot }, PW);
+assert.equal((await ofind()).wait, 3);
+assert.equal((await req("GET", `/api/r/${o.room}/status`)).wait, 3);
+await gadmin({ action: "reset" });
+const wj = await gjoin("wait-device-000001", spot);
+const wme = () => req("GET", `/api/r/${o.room}/me?id=${wj.id}`);
+assert.equal((await wme()).remaining, null, "beklerken süre işlemez");
+await gadmin({ action: "free", n: 1 });
+const wm = await wme();
+assert.ok(wm.status === "called" && wm.remaining > 170000 && wm.remaining <= 180000, "çağrılınca 3 dk geri sayım");
+if (process.env.SLOW) {
+  await new Promise((r) => setTimeout(r, 185000));
+  assert.equal((await wme()).status, "expired", "süresi dolan düşer");
+  assert.equal((await gadmin()).available, 1, "yeri geri döner");
+}
+await req("PUT", `/api/admin/rooms/${o.room}`, { name: "Ayarlı", slug: `${slug}-ayar`, radius: 300, qr: "static", ...spot }, PW);
+assert.equal((await ofind()).wait, null, "varsayılan süresiz");
 assert.match((await gjoin("geo-device-0000003", far)).error, /bulunduğu yerde görünmüyorsunuz/);
 assert.match((await post("/api/admin/rooms", { name: "X", slug: `${slug}-x`, radius: 300, maxGroup: 50, ...spot }, PW)).error, /1-20/);
 await req("DELETE", `/api/admin/rooms/${o.room}`, undefined, PW);

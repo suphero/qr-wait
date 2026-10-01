@@ -5,7 +5,7 @@ import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { api, catIcon, locate, mins, poll, type Me, type Status } from "@/lib/api";
+import { api, catIcon, locate, poll, type Me, type Status } from "@/lib/api";
 import { geoErrors, lang, orList, pick, pl, tableLabel } from "@/lib/i18n";
 import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
@@ -40,7 +40,10 @@ const T = pick({
     tableReady: "Masanız hazır!",
     alloc: (n: number) => <><b>{n} yer</b> ayrıldı. </>,
     show: "Görevliye gidip bu numarayı gösterin.",
-    left: (n: number) => `Yaklaşık ${n} dk içinde gelmezseniz sıranız düşebilir.`,
+    within: "Bu süre içinde gelmezseniz sıranız düşer ve sıradakine geçer.",
+    timeUp: "Süreniz doldu.",
+    expired: "Belirlenen sürede gelmediğiniz için sıradan çıkarıldınız. Yeniden sıraya girmek için görevlinin QR kodunu okutun.",
+    waitNote: (n: number) => `Sıranız geldiğinde ${n} dakika içinde görevliye gitmeniz gerekir, yoksa sıranız düşer.`,
     now: "Lütfen hemen gelin.",
     next: "Sıradaki sizsiniz, hazır olun.",
     ahead: (g: number, p: number) => <>Önünüzde <b>{g}</b> grup (<b>{p}</b> kişi) var.</>,
@@ -70,7 +73,10 @@ const T = pick({
     tableReady: "Your table is ready!",
     alloc: (n: number) => <><b>{pl(n, { one: "place", other: "places" })}</b> reserved. </>,
     show: "Go to the attendant and show this number.",
-    left: (n: number) => `If you don't come within about ${n} min, you may lose your place.`,
+    within: "If you don't come within this time, you lose your place and it goes to the next group.",
+    timeUp: "Your time is up.",
+    expired: "You were removed from the queue because you didn't arrive in time. Scan the attendant's QR code to join again.",
+    waitNote: (n: number) => `When it's your turn, you have ${n} minutes to reach the attendant, otherwise you lose your place.`,
     now: "Please come right away.",
     next: "You're next, get ready.",
     ahead: (g: number, p: number) => <><b>{pl(g, { one: "group", other: "groups" })}</b> (<b>{pl(p, { one: "person", other: "people" })}</b>) ahead of you.</>,
@@ -100,7 +106,10 @@ const T = pick({
     tableReady: "Ihr Tisch ist bereit!",
     alloc: (n: number) => <><b>{pl(n, { one: "Platz", other: "Plätze" })}</b> reserviert. </>,
     show: "Gehen Sie zum Personal und zeigen Sie diese Nummer.",
-    left: (n: number) => `Wenn Sie nicht innerhalb von etwa ${n} Min. kommen, kann Ihr Platz verfallen.`,
+    within: "Wenn Sie nicht innerhalb dieser Zeit kommen, verfällt Ihr Platz und geht an die Nächsten.",
+    timeUp: "Ihre Zeit ist abgelaufen.",
+    expired: "Sie wurden aus der Warteschlange entfernt, weil Sie nicht rechtzeitig gekommen sind. Scannen Sie den QR-Code des Personals, um sich erneut anzustellen.",
+    waitNote: (n: number) => `Wenn Sie an der Reihe sind, haben Sie ${n} Minuten, um zum Personal zu kommen, sonst verfällt Ihr Platz.`,
     now: "Bitte kommen Sie sofort.",
     next: "Sie sind als Nächstes dran, halten Sie sich bereit.",
     ahead: (g: number, p: number) => <>Vor Ihnen: <b>{pl(g, { one: "Gruppe", other: "Gruppen" })}</b> (<b>{pl(p, { one: "Person", other: "Personen" })}</b>).</>,
@@ -130,7 +139,10 @@ const T = pick({
     tableReady: "Ваш столик готов!",
     alloc: (n: number) => <>Зарезервировано: <b>{pl(n, { one: "место", few: "места", many: "мест", other: "места" })}</b>. </>,
     show: "Подойдите к сотруднику и покажите этот номер.",
-    left: (n: number) => `Если вы не подойдёте примерно за ${n} мин, место может быть потеряно.`,
+    within: "Если не подойдёте за это время, место перейдёт следующим.",
+    timeUp: "Время вышло.",
+    expired: "Вы выбыли из очереди, потому что не подошли вовремя. Чтобы встать снова, отсканируйте QR-код сотрудника.",
+    waitNote: (n: number) => `Когда подойдёт ваша очередь, у вас будет ${n} мин, чтобы подойти к сотруднику, иначе место будет потеряно.`,
     now: "Пожалуйста, подойдите сейчас.",
     next: "Вы следующий, будьте готовы.",
     ahead: (g: number, p: number) => <>Перед вами: <b>{pl(g, { one: "группа", few: "группы", many: "групп", other: "группы" })}</b> (<b>{pl(p, { one: "человек", few: "человека", many: "человек", other: "человека" })}</b>).</>,
@@ -186,6 +198,8 @@ function JoinPage() {
   const [hint, setHint] = useState<ReactNode>(T.keepOpen);
   const [pushBtn, setPushBtn] = useState(false);
   const notified = useRef(false), pushShown = useRef(false);
+  const due = useRef<number | null>(null); // süreli sırada gelme süresinin bittiği an
+  const [, tick] = useState(0);
 
   // Bekleme ekranındaki bildirim durumu; sayfa açılışında bir kez
   async function pushUI(id: string) {
@@ -215,13 +229,15 @@ function JoinPage() {
     try {
       const s = await api<Me>(`/api/r/${room}/me?id=${encodeURIComponent(id)}`);
       setErr("");
-      if (s.status === "gone") {
+      if (s.status === "gone" || s.status === "expired") {
         localStorage.removeItem(slot);
         setMe(undefined);
         setView(null);
-        setErr(T.gone);
+        setErr(s.status === "expired" ? T.expired : T.gone);
         return;
       }
+      // Bitiş anı bu cihazın saatine göre: sunucu kalan süreyi gönderir
+      due.current = s.remaining === null ? null : Date.now() + s.remaining;
       setMe(s);
       setView("wait");
       if (s.status === "called") {
@@ -249,6 +265,17 @@ function JoinPage() {
   }, []);
 
   const called = me?.status === "called";
+  // Geri sayım her saniye; süre dolunca sunucunun düşürdüğü hemen görülsün diye yenilenir
+  const timed = called && due.current !== null;
+  useEffect(() => {
+    if (!timed) return;
+    let done = false;
+    const t = setInterval(() => {
+      tick((n) => n + 1);
+      if (!done && Date.now() >= due.current!) { done = true; setTimeout(refresh, 2000); }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [timed]);
   // Çağrılınca ekranın tamamı yeşil, numara ve mesaj beyaz
   useEffect(() => {
     document.body.classList.toggle("bg-success", called);
@@ -280,7 +307,8 @@ function JoinPage() {
 
   const name = me?.name ?? st?.name;
   const soon = me?.status === "waiting" && me.aheadGroups <= 2;
-  const left = me?.calledAt ? 10 - mins(me.calledAt) : 0;
+  const left = timed ? Math.max(0, Math.ceil((due.current! - Date.now()) / 1000)) : 0;
+  const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
 
   return (
     <Page>
@@ -301,6 +329,7 @@ function JoinPage() {
               </div>
             )}
             <Button size="lg" onClick={join} disabled={busy}>{T.join}</Button>
+            {st?.wait && <p className="text-sm text-muted-foreground">{T.waitNote(st.wait)}</p>}
             {st?.geo !== "off" && <p className="text-sm text-muted-foreground">{st?.geo === "dynamic" ? T.geoNoteHost : T.geoNote}</p>}
           </CardContent>
         </Card>
@@ -317,9 +346,16 @@ function JoinPage() {
                 {me.table && <span className="my-2 block text-4xl font-extrabold">{tableLabel(me.table)}</span>}
                 {me.alloc && me.alloc !== me.size ? T.alloc(me.alloc) : null}
                 {T.show}<br />
-                {left > 0 ? T.left(left) : T.now}
+                {!timed && T.now}
               </p>
-            ) : (
+            ) : null}
+            {called && timed ? (
+              <div>
+                <div className="text-6xl leading-tight font-extrabold tabular-nums" role="timer" aria-live="off">{left > 0 ? clock : "0:00"}</div>
+                <p>{left > 0 ? T.within : <b>{T.timeUp}</b>}</p>
+              </div>
+            ) : null}
+            {!called && (
               <>
                 <p>
                   {me.aheadGroups === 0

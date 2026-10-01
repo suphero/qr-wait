@@ -15,6 +15,7 @@ const TABLE_LIMIT = 50;
 const CATEGORIES = new Set(["plaj", "iskele", "gise", "restoran", "saglik", "resmi", "etkinlik", "diger"]); // ikonları public/app.js'te
 const MAX_ENTRIES = 1000;
 const GEOS = new Set(["off", "fixed", "dynamic"]);
+const WAITS = [3, 5, 10, 15, 20, 30]; // çağrılanın gelme süresi seçenekleri (dk); süre dolunca sıradan düşer
 const HERE_TTL = 5 * 60 * 1000; // dinamik konum: görevli konumu bundan eskiyse ziyaretçi giremez (panel kapalı / konum alınamıyor)
 
 // Haversine mesafesi, metre
@@ -46,6 +47,7 @@ const conf = (s) => {
     maxGroup: s.maxGroup ?? MAX_GROUP, qr: s.qr ?? "dynamic", ttl: s.ttl ?? 90,
     // Konum kontrolü: "fixed" sıranın haritadaki noktası, "dynamic" QR'ı gösteren görevlinin konumu, "off" yok
     geo: GEOS.has(s.geo) ? s.geo : "fixed",
+    wait: s.wait ?? null, // null: süresiz, görevli "Geldi"/"Gelmedi" diyene kadar bekler
   };
 };
 
@@ -78,7 +80,43 @@ export class Room extends DurableObject {
     return this.s;
   }
 
-  save() { return this.ctx.storage.put("s", this.s); }
+  // Her kayıtta alarm, süreli sırada en erken dolacak çağrıya kurulur (yoksa kaldırılır)
+  async save() {
+    await this.ctx.storage.put("s", this.s);
+    const next = this.deadline();
+    if (next) await this.ctx.storage.setAlarm(next);
+    else await this.ctx.storage.deleteAlarm();
+  }
+
+  // Çağrılan grubun gelme süresinin dolduğu an; süresiz sırada null
+  due(e) {
+    const w = conf(this.s).wait;
+    return w && e.status === "called" ? e.calledAt + w * 60000 : null;
+  }
+
+  deadline() {
+    if (!this.s) return null;
+    const all = this.s.entries.map((e) => this.due(e)).filter(Boolean);
+    return all.length ? Math.min(...all) : null;
+  }
+
+  // Süresi dolan çağrılar sıradan düşer; ayrılan yer / masa sıradakilere geçer.
+  // Düşenlerin id'leri kısa süre tutulur: ziyaretçi sayfası "süreniz doldu" diyebilsin.
+  expire() {
+    const now = Date.now(), late = this.s.entries.filter((e) => this.due(e) !== null && this.due(e) <= now);
+    for (const e of late) this.drop(e.id);
+    if (!late.length) return false;
+    this.s.expired = [...(this.s.expired ?? []), ...late.map((e) => e.id)].slice(-200);
+    this.fill();
+    return true;
+  }
+
+  async alarm() {
+    if (!this.s) return;
+    const changed = this.expire();
+    await this.save();
+    if (changed) await this.notify();
+  }
 
   // owner: biletler bu kullanıcının hesabından düşer (billing.js); sahipsiz eski odalarda yok
   async create(fields, owner) {
@@ -109,7 +147,7 @@ export class Room extends DurableObject {
     const s = this.need(), w = s.entries.filter((e) => e.status === "waiting");
     return {
       name: s.name, slug: s.slug, lat: s.lat, lng: s.lng, flex: conf(s).flex, private: !!s.private,
-      category: conf(s).category, maxGroup: conf(s).maxGroup, geo: conf(s).geo,
+      category: conf(s).category, maxGroup: conf(s).maxGroup, geo: conf(s).geo, wait: conf(s).wait,
       waiting: w.length, people: w.reduce((n, e) => n + e.size, 0), next: w[0]?.no ?? null,
       called: s.entries.filter((e) => e.status === "called").map((e) => e.no), lastNo: s.lastNo ?? null,
     };
@@ -195,12 +233,14 @@ export class Room extends DurableObject {
   me(id) {
     const s = this.need();
     const i = s.entries.findIndex((e) => e.id === id);
-    if (i < 0) return { name: s.name, status: "gone" };
-    const e = s.entries[i];
+    if (i < 0) return { name: s.name, status: s.expired?.includes(id) ? "expired" : "gone" };
+    const e = s.entries[i], due = this.due(e);
     const ahead = s.entries.slice(0, i).filter((x) => x.status === "waiting");
     return {
       name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, table: e.table, status: e.status, calledAt: e.calledAt,
       aheadGroups: ahead.length, aheadPeople: ahead.reduce((n, x) => n + x.size, 0),
+      // Süreli sırada kalan süre (ms); istemci saati farklı olabileceği için bitiş anı değil kalan gönderilir
+      wait: conf(s).wait, remaining: due === null ? null : Math.max(0, due - Date.now()),
     };
   }
 
@@ -315,6 +355,7 @@ export class Room extends DurableObject {
     const s = this.need(), c = conf(s);
     if (!same(key, s.key)) throw fail("unauthorized");
     const moved = this.here(here);
+    const expired = this.expire(); // alarm gecikse de panel güncel listeyi görsün
     s.tables ??= [];
     const e = s.entries.find((x) => x.id === id);
     let added, table;
@@ -339,14 +380,15 @@ export class Room extends DurableObject {
         added = await this.ticket(sz, acceptList(accept, sz, c.flex), "manual", null, String(note ?? "").slice(0, 60));
         break;
       }
-      case "reset": Object.assign(s, { seq: 0, available: 0, tables: [], entries: [] }); break;
+      case "reset": Object.assign(s, { seq: 0, available: 0, tables: [], entries: [], expired: [] }); break;
     }
     this.fill();
-    if (action || moved) await this.save();
+    if (action || moved || expired) await this.save();
     await this.notify();
-    const { qr, ttl, maxGroup, flex, tables, maxEmpty, geo } = c;
+    const { qr, ttl, maxGroup, flex, tables, maxEmpty, geo, wait } = c;
     return {
-      name: s.name, flex, tables, maxEmpty, available: s.available, added: added?.no, qr, ttl, maxGroup, geo,
+      name: s.name, flex, tables, maxEmpty, available: s.available, added: added?.no, qr, ttl, maxGroup, geo, wait,
+      now: Date.now(), // panel kalan süreyi sunucu saatine göre hesaplar
       // Boşalan masa: çağrılan grubun numarası, uygun grup yoksa null (masa bekleyenlere düştü)
       seated: table && (s.entries.find((x) => x.table === table)?.no ?? null),
       freeTables: s.tables,
@@ -705,6 +747,7 @@ function roomFields(b, prev) {
     maxGroup: int(b.maxGroup ?? MAX_GROUP, 1, GROUP_LIMIT, "maxGroup", GROUP_LIMIT),
     qr: b.qr === "static" ? "static" : "dynamic", // sabit: basılı QR, giriş yalnızca konumla sınırlı
     geo,
+    wait: b.wait == null || b.wait === "" || Number(b.wait) === 0 ? null : WAITS.includes(Number(b.wait)) ? Number(b.wait) : 10,
     ttl: TTLS.includes(Number(b.ttl)) ? Number(b.ttl) : 90,
   };
 }

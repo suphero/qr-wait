@@ -37,6 +37,7 @@ type Pt = { lat: number; lng: number };
 type Form = {
   name: string; category: string; private: boolean; slug: string; radius: string; flex: boolean; skip: boolean;
   mode: "seats" | "tables"; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string; geo: Geo;
+  timed: "off" | "on"; wait: string;
 };
 
 // Onay kutusu + başlık + açıklama
@@ -153,6 +154,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     slug: room?.private ? "" : room?.slug ?? "", // gizli odanın rastgele adresi açık adrese taşınmasın
     radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
     geo: room?.geo ?? "fixed",
+    timed: room?.wait ? "on" : "off", wait: String(room?.wait ?? 10),
   });
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
   const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
@@ -163,9 +165,9 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
   async function submit(ev: FormEvent) {
     ev.preventDefault();
     if (fixed && !pt) return onError(T.pickOnMap);
-    const { slug, ...rest } = f;
+    const { slug, timed, ...rest } = f;
     // Nokta yalnızca sabit konumda anlamlı; diğerlerinde sıra haritada görünmez
-    const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, ...(fixed ? pt : {}) };
+    const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, wait: timed === "on" ? +f.wait : null, ...(fixed ? pt : {}) };
     const prev = rooms.find((r) => r.room === room?.room);
     const changed = prev?.slug && (f.private ? !prev.private : prev.slug !== slug);
     if (changed && !(await confirm({ title: T.slugChangeTitle, description: T.slugChangeDesc, action: T.cont }))) return;
@@ -253,6 +255,20 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
         </Field>
       </Section>
 
+      <Section title={T.waitSec}>
+        <Choice name="wait" value={f.timed} onChange={(v) => set("timed", v)} items={[
+          { v: "off", title: T.waitOff, desc: T.waitOffDesc },
+          { v: "on", title: T.waitOn, desc: T.waitOnDesc, extra: (
+            <Field>
+              <FieldLabel htmlFor="waitMin">{T.waitQ}</FieldLabel>
+              <NativeSelect id="waitMin" value={f.wait} onChange={(e) => set("wait", e.target.value)}>
+                {[3, 5, 10, 15, 20, 30].map((n) => <NativeSelectOption key={n} value={String(n)}>{T.min(n)}</NativeSelectOption>)}
+              </NativeSelect>
+            </Field>
+          ) },
+        ]} />
+      </Section>
+
       <Section title={T.qr}>
         <Choice name="qr" value={f.qr} onChange={(v) => set("qr", v)} items={[
           { v: "dynamic", title: T.dynamic, desc: T.dynamicDesc, extra: (
@@ -303,7 +319,7 @@ function RoomRow({ r, dist, onChange, onEdit, onError }: { r: RoomInfo; dist?: n
           {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? T.hiddenTag : bare(r.page)}</a> : T.noSlug}
         </div>
         <div className="text-xs text-muted-foreground">
-          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag, r.skip && T.skipTag,
+          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.flex && T.flexTag, r.skip && T.skipTag, r.wait && T.waitTag(r.wait),
             r.qr === "static" ? T.staticTag : T.ttlTag(r.ttl)].filter(Boolean).join(" · ")}
         </div>
       </TableCell>

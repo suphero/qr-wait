@@ -36,6 +36,7 @@ const T = pick({
     acceptOk: (list: string) => `${list} yer olur`,
     manual: "elle",
     ago: (n: number) => `${n} dk önce`,
+    remain: (n: number) => (n < 1 ? "1 dk'dan az kaldı" : `${n} dk kaldı`),
     min: (n: number) => `${n} dk`,
     waitingSum: (g: number, p: number) => `${g} grup / ${p} kişi bekliyor`,
     added: (n: number) => `Sıra numarası: ${n}`,
@@ -89,6 +90,7 @@ const T = pick({
     acceptOk: (list: string) => `${list} places OK`,
     manual: "added manually",
     ago: (n: number) => `${n} min ago`,
+    remain: (n: number) => (n < 1 ? "under 1 min left" : `${n} min left`),
     min: (n: number) => `${n} min`,
     waitingSum: (g: number, p: number) => `${pl(g, { one: "group", other: "groups" })} / ${pl(p, { one: "person", other: "people" })} waiting`,
     added: (n: number) => `Queue number: ${n}`,
@@ -142,6 +144,7 @@ const T = pick({
     acceptOk: (list: string) => `${list} Plätze möglich`,
     manual: "manuell",
     ago: (n: number) => `vor ${n} Min.`,
+    remain: (n: number) => (n < 1 ? "unter 1 Min. übrig" : `noch ${n} Min.`),
     min: (n: number) => `${n} Min.`,
     waitingSum: (g: number, p: number) => `${pl(g, { one: "Gruppe", other: "Gruppen" })} / ${pl(p, { one: "Person", other: "Personen" })} warten`,
     added: (n: number) => `Wartenummer: ${n}`,
@@ -195,6 +198,7 @@ const T = pick({
     acceptOk: (list: string) => `подойдёт мест: ${list}`,
     manual: "добавлен вручную",
     ago: (n: number) => `${n} мин назад`,
+    remain: (n: number) => (n < 1 ? "меньше 1 мин" : `осталось ${n} мин`),
     min: (n: number) => `${n} мин`,
     waitingSum: (g: number, p: number) => `Ждут: ${pl(g, { one: "группа", few: "группы", many: "групп", other: "группы" })} / ${pl(p, { one: "человек", few: "человека", many: "человек", other: "человека" })}`,
     added: (n: number) => `Номер в очереди: ${n}`,
@@ -251,8 +255,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 // Yer bilgisi: çağrılanda ayrılan yer, bekleyende (kişi sayısından farklıysa) kabul edilen yerler
-function Row({ e, children }: { e: Entry; children: ReactNode }) {
-  const late = e.calledAt && mins(e.calledAt) >= 10;
+// wait: süreli sırada gelme süresi (dk); skew: sunucu saati - bu cihazın saati
+function Row({ e, wait, skew, children }: { e: Entry; wait?: number | null; skew?: number; children: ReactNode }) {
+  const left = wait && e.calledAt ? Math.floor((e.calledAt + wait * 60000 - Date.now() - (skew ?? 0)) / 60000) : null;
+  const late = left !== null ? left < 1 : e.calledAt && mins(e.calledAt) >= 10;
   return (
     <div className="flex items-center gap-2 border-b py-2 last:border-0">
       <b className="min-w-[3.5em] tabular-nums">#{e.no}</b>
@@ -263,7 +269,7 @@ function Row({ e, children }: { e: Entry; children: ReactNode }) {
           : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${T.acceptOk(e.accept.join("/"))}` : ""}
         {e.src === "manual" && ` · ${T.manual}`}
         {e.note && ` · ${e.note}`}
-        {e.calledAt && <> · <span className={cn(late && "font-bold text-destructive")}>{T.ago(mins(e.calledAt))}</span></>}
+        {e.calledAt && <> · <span className={cn(late && "font-bold text-destructive")}>{left !== null ? T.remain(left) : T.ago(mins(e.calledAt))}</span></>}
       </span>
       {children}
     </div>
@@ -286,6 +292,7 @@ function HostPage() {
   const [addAccept, setAddAccept] = useState([2]);
   const [addNote, setAddNote] = useState("");
   const qr = useRef({ at: 0, text: "" });
+  const skew = useRef(0);
   // Dinamik konumda görevlinin son konumu; her yoklamayla odaya gider
   const here = useRef<{ lat: number; lng: number } | null>(null);
   const [hereErr, setHereErr] = useState("");
@@ -300,6 +307,7 @@ function HostPage() {
         qr.current = { at: Date.now(), text: st.token };
       }
       setS(st);
+      skew.current = st.now - Date.now();
       setErr("");
       return st;
     } catch (e: any) { setErr(e.message); }
@@ -434,7 +442,7 @@ function HostPage() {
 
       <Section title={T.called}>
         {called.map((e) => (
-          <Row key={e.id} e={e}>
+          <Row key={e.id} e={e} wait={s?.wait} skew={skew.current}>
             <Button variant="success" size="sm" onClick={() => act({ action: "arrived", id: e.id })}>{T.arrived}</Button>
             <Button variant="destructive" size="sm" onClick={() => act({ action: "drop", id: e.id })}>{T.noShow}</Button>
           </Row>
