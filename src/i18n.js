@@ -262,6 +262,14 @@ const M = {
     de: `${name} · Nr. ${no}${table ? ` · ${table}` : ""}. Gehen Sie zum Personal und zeigen Sie Ihre Nummer.`,
     ru: `${name} · № ${no}${table ? ` · ${table}` : ""}. Подойдите к сотруднику и покажите свой номер.`,
   }),
+  timeUp: { tr: "Süreniz doldu", en: "Your time is up", de: "Ihre Zeit ist abgelaufen", ru: "Время вышло" },
+  // Gelme süresi dolup sıradan düşen ziyaretçiye
+  expiredBody: (name, no) => ({
+    tr: `${name} · ${no} numara. Belirlenen sürede gelmediğiniz için sıradan çıkarıldınız.`,
+    en: `${name} · No. ${no}. You were removed from the queue because you didn't arrive in time.`,
+    de: `${name} · Nr. ${no}. Sie wurden aus der Warteschlange entfernt, weil Sie nicht rechtzeitig gekommen sind.`,
+    ru: `${name} · № ${no}. Вы выбыли из очереди, потому что не подошли вовремя.`,
+  }),
   table: tableNo,
   tableFor: (cap) => ({ tr: `${cap} kişilik masa`, en: `Table for ${cap}`, de: `Tisch für ${cap}`, ru: `Стол на ${cap}` }),
 };

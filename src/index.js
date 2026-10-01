@@ -104,7 +104,10 @@ export class Room extends DurableObject {
   // Düşenlerin id'leri kısa süre tutulur: ziyaretçi sayfası "süreniz doldu" diyebilsin.
   expire() {
     const now = Date.now(), late = this.s.entries.filter((e) => this.due(e) !== null && this.due(e) <= now);
-    for (const e of late) this.drop(e.id);
+    for (const e of late) {
+      this.drop(e.id);
+      if (e.push) (this.lost ??= []).push(e); // notify() "süreniz doldu" bildirimi gönderir
+    }
     if (!late.length) return false;
     this.s.expired = [...(this.s.expired ?? []), ...late.map((e) => e.id)].slice(-200);
     this.fill();
@@ -263,21 +266,27 @@ export class Room extends DurableObject {
   }
 
   // call() ile biriken çağrılara push gönderir. Sayfa açıksa yoklama zaten yakalar; push hatası isteği bozmamalı.
+  // Süresi dolup düşenlere de (this.lost) gider; aynı etiketle "sıra size geldi" bildiriminin yerini alır.
   async notify() {
     const list = (this.outbox ?? []).filter((e) => this.s?.entries.includes(e)); // hakkı yetmeyip geri alınan bilet çıkar
+    const lost = this.lost ?? [];
     this.outbox = [];
-    if (!list.length || !this.env.VAPID_PRIVATE_KEY) return;
-    const s = this.s;
+    this.lost = [];
+    if (!(list.length || lost.length) || !this.env.VAPID_PRIVATE_KEY) return;
+    const s = this.s, url = s.slug ? `/join?r=${s.slug}` : "/";
     let dead = false;
-    await Promise.all(list.map(async (e) => {
-      const note = {
-        title: msg(e.lang, e.table ? "tableReady" : "yourTurn"),
-        body: msg(e.lang, "pushBody", s.name, e.no, e.table?.name && tableLabel(e.table, e.lang)),
-        tag: `called-${e.id}`,
-        url: s.slug ? `/join?r=${s.slug}` : "/",
-      };
+    await Promise.all([...list.map((e) => [e, false]), ...lost.map((e) => [e, true])].map(async ([e, gone]) => {
+      const note = gone
+        ? { title: msg(e.lang, "timeUp"), body: msg(e.lang, "expiredBody", s.name, e.no), tag: `called-${e.id}`, url }
+        : {
+          title: msg(e.lang, e.table ? "tableReady" : "yourTurn"),
+          body: msg(e.lang, "pushBody", s.name, e.no, e.table?.name && tableLabel(e.table, e.lang)),
+          tag: `called-${e.id}`,
+          url,
+        };
       try {
-        if (!(await sendPush(e.push, note, this.env))) { delete e.push; dead = true; }
+        // Düşen kaydın aboneliği zaten silindi; yalnızca sıradakilerin geçersiz aboneliği temizlenir
+        if (!(await sendPush(e.push, note, this.env)) && !gone) { delete e.push; dead = true; }
       } catch (err) { console.error("push", err.message); }
     }));
     if (dead) await this.save();

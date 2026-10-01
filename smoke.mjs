@@ -219,6 +219,7 @@ assert.equal((await req("GET", `/api/r/${o.room}/status`)).wait, 3);
 await gadmin({ action: "reset" });
 const wj = await gjoin("wait-device-000001", spot);
 const wme = () => req("GET", `/api/r/${o.room}/me?id=${wj.id}`);
+assert.deepEqual(await post(`/api/r/${o.room}/push`, { id: wj.id, sub }), { ok: true }); // süre dolunca bildirim (hata akışı bozmamalı)
 assert.equal((await wme()).remaining, null, "beklerken süre işlemez");
 await gadmin({ action: "free", n: 1 });
 const wm = await wme();
