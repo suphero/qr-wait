@@ -25,6 +25,23 @@ function loadGA() {
 }
 if (consent() === "yes") loadGA();
 
+// Kayıt kaynağı: ilk gelişteki utm etiketi, yoksa yönlendiren dış site; ilk gelen kalır. Hesap açılınca
+// kullanıcı kaydına yazılır (admin.tsx), süper yönetici listesinde görünür. Çerez değil, siteden dışarı çıkmaz.
+export type Ref = { src: string; page: string };
+export function signupRef(): Ref | undefined {
+  try { return JSON.parse(localStorage.getItem("ref") ?? "null") ?? undefined; } catch { return undefined; }
+}
+try {
+  if (!localStorage.getItem("ref")) {
+    const q = new URLSearchParams(location.search), root = location.hostname.replace(/^www\./, "");
+    const from = document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, "") : "";
+    const src = q.get("utm_source")
+      ? ["utm_source", "utm_medium", "utm_campaign"].map((k) => q.get(k)).filter(Boolean).join("/")
+      : from && from !== root && !from.endsWith(`.${root}`) ? from : "";
+    if (src) localStorage.setItem("ref", JSON.stringify({ src, page: location.pathname }));
+  }
+} catch {}
+
 const C = pick({
   tr: { text: "Siteyi geliştirmek için Google Analytics çerezleriyle anonim kullanım istatistikleri toplamak istiyoruz.", yes: "Kabul et", no: "Reddet", more: "Ayrıntılar" },
   en: { text: "We'd like to use Google Analytics cookies to collect anonymous usage statistics and improve the site.", yes: "Accept", no: "Decline", more: "Details" },

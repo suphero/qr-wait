@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { Account, checkout, FREE, packages, webhook } from "./billing.js";
 import { human, ip, limit, pwned, secure } from "./guard.js";
-import { fail, failed, langOf, localize, msg, tableLabel } from "./i18n.js";
+import { fail, failed, LANGS, langOf, localize, msg, tableLabel } from "./i18n.js";
 import { mail } from "./mail.js";
 import { cleanSub, sendPush } from "./push.js";
 import { enc, hex, randomHex, same, sha256, sign } from "./util.js";
@@ -305,11 +305,13 @@ export class Room extends DurableObject {
     return e;
   }
 
-  me(id) {
+  // lang: ziyaretçi sayfanın dilini değiştirdiyse bildirim de o dilde gitsin (x-lang başlığı; yoksa dokunulmaz)
+  async me(id, lang) {
     const s = this.need();
     const i = s.entries.findIndex((e) => e.id === id);
     if (i < 0) return { name: s.name, status: s.expired?.includes(id) ? "expired" : "gone" };
     const e = s.entries[i], due = this.due(e);
+    if (LANGS.includes(lang) && e.lang !== lang) { e.lang = lang; await this.save(); }
     const ahead = s.entries.slice(0, i).filter((x) => x.status === "waiting");
     return {
       name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, table: e.table, status: e.status, calledAt: e.calledAt,
@@ -512,10 +514,14 @@ export class Room extends DurableObject {
 //   "<oda id>" → { at, owner }; eski kayıtlarda yalnızca oluşturulma zamanı (sahipsiz oda)
 //   "slug:<kullanıcı>/<slug>" → oda id; sahipsiz eski odalarda "slug:<slug>"
 //   "legacy:<slug>" → oda id: kullanıcıya taşınan eski odanın <slug>.qrwait.app adresi yeni adrese yönlenir
-//   "user:<ad>" → { salt, hash, at, email?, lang?, self?, verified?, suspended? }
+//   "user:<ad>" → { salt, hash, at, email?, lang?, self?, verified?, suspended?, emailTok?, ref?, renamedAt? }
+//     ref: { src, page } hesap açanın ilk geldiği kaynak (utm etiketi ya da dış site) ve sayfa
+//     emailTok: bekleyen e-posta değişikliği bağlantısının özeti; yeni istek eskisini geçersiz kılar
 //     self: kendisi hesap açtı (sıra sayısı sınırlı), verified: false → e-postası doğrulanmadı, sıra açamaz
 //   "email:<adres>" → kullanıcı adı, "susp:<ad>" → askıya alınan kullanıcının sıraları haritada görünmez
 //   "fail:<ad>" → { n, at } başarısız giriş sayacı
+//   "alias:<eski ad>" → yeni ad: kullanıcı adı değişti; eski alt alan adı yeni adrese yönlenir (basılı QR'lar çalışsın),
+//     eski ad başkasına verilmez. Ödeme sayfasından eski adla dönen siparişler de yeni ada yüklenir.
 //   "tok:<verify|reset|email>:<sha256(belirteç)>" → { name, exp, email? }: e-postayla giden tek kullanımlık bağlantı; belirtecin kendisi
 //     saklanmaz. email: onaylanınca hesaba yazılacak yeni adres
 // Sıcak yolda değil: sayfalar adresi açılışta bir kez çözer, sonra doğrudan odaya gider. Bilet hakkı kullanıcının
@@ -563,6 +569,8 @@ export class Registry extends DurableObject {
   // u: kullanıcı (alt alan adı ya da ?u=), r: slug ya da oda id'si.
   // Kullanıcı değilse eski tek seviyeli adrestir (bambus.qrwait.app, ?r=bambus); owner varsa sayfa yeni adrese yönlenir.
   async resolve(u, r) {
+    const moved = u && (await this.value(`alias:${u}`));
+    if (moved) return { moved };
     if (ID_RE.test(r)) return { room: r };
     if (u && (await this.value(`user:${u}`))) return r ? { room: await this.value(`slug:${u}/${r}`) } : { account: u };
     const name = r || u, room = name && ((await this.value(`legacy:${name}`)) ?? (await this.value(`slug:${name}`)));
@@ -574,7 +582,7 @@ export class Registry extends DurableObject {
     return [...(await this.ctx.storage.list({ prefix: "user:" }))].map(([k, v]) => {
       const name = k.slice(5);
       return {
-        name, at: v.at, email: v.email ?? null, self: !!v.self, verified: v.verified !== false, suspended: !!v.suspended,
+        name, at: v.at, email: v.email ?? null, ref: v.ref ?? null, self: !!v.self, verified: v.verified !== false, suspended: !!v.suspended,
         rooms: rooms.filter((r) => r.owner === name).length,
       };
     });
@@ -586,8 +594,9 @@ export class Registry extends DurableObject {
     return u;
   }
 
+  // Eski adlar da dolu sayılır: başkası alırsa o adın basılı QR'ları ona gider
   async nameFree(name) {
-    if (await this.value(`user:${name}`)) throw fail("userTaken");
+    if ((await this.value(`user:${name}`)) || (await this.value(`alias:${name}`))) throw fail("userTaken");
     // Eski sıra adresiyle aynı ad olursa eski adres yönlendirmesi bozulur
     if ((await this.value(`legacy:${name}`)) || (await this.value(`slug:${name}`))) throw fail("userLegacy");
   }
@@ -599,12 +608,15 @@ export class Registry extends DurableObject {
     await this.ctx.storage.put({ [`user:${name}`]: { ...cred, email, at: Date.now() }, ...(email && { [`email:${email}`]: name }) });
   }
 
-  // E-postayı hemen değiştirir (süper yönetici ya da onaylanan bağlantı); eski adres boşa çıkar
+  // E-postayı hemen değiştirir (süper yönetici ya da onaylanan bağlantı); eski adres boşa çıkar.
+  // Dönen değer değişiklik bildirimi gidecek eski adres ve dil; adres aynıysa ya da önceden yoksa old undefined.
   async setEmail(name, email) {
     const u = await this.user(name), owner = await this.value(`email:${email}`);
     if (owner && owner !== name) throw fail("emailTaken");
-    if (u.email && u.email !== email) await this.ctx.storage.delete(`email:${u.email}`);
+    const old = u.email && u.email !== email ? u.email : undefined;
+    if (old) await this.ctx.storage.delete(`email:${old}`);
     await this.ctx.storage.put({ [`user:${name}`]: { ...u, email }, [`email:${email}`]: name });
+    return { old, lang: u.lang };
   }
 
   // Kullanıcının kendi e-posta değişikliği: adres onay bağlantısı açılınca değişir, o zamana kadar eskisi geçerli kalır.
@@ -614,25 +626,26 @@ export class Registry extends DurableObject {
     if (owner === name) throw fail("sameEmail");
     if (owner) throw fail("emailTaken");
     if (!(await this.mailSlot(name, "email"))) throw fail("tooMany");
-    return { lang: u.lang, token: await this.token("email", name, 864e5, { email }) };
+    if (u.emailTok) await this.ctx.storage.delete(`tok:email:${u.emailTok}`); // önceki istek artık geçersiz
+    const token = await this.token("email", name, 864e5, { email });
+    await this.setUser(name, { emailTok: await sha256(token) });
+    return { lang: u.lang, token };
   }
 
-  // Dönen old: değişiklik bildirimi gidecek eski adres (yoksa undefined)
   async confirmEmail(t) {
-    const { name, email } = await this.redeem("email", t), { email: old, lang } = await this.user(name);
-    await this.setEmail(name, email);
-    await this.setUser(name, { verified: true }); // bağlantı yeni adrese gitti
-    return { name, email, old: old !== email ? old : undefined, lang };
+    const { name, email } = await this.redeem("email", t), r = await this.setEmail(name, email);
+    await this.setUser(name, { verified: true, emailTok: undefined }); // bağlantı yeni adrese gitti
+    return { name, email, ...r };
   }
 
   // Kendi hesap açan kullanıcı; dönen değer doğrulama bağlantısının belirteci.
   // 7 gün içinde doğrulanmayan ve sırası olmayan hesap silinir (alarm): kullanıcı adları boşuna tutulmasın.
   // terms: kabul edilen kullanım koşulları sürümü (web/src/components/legal.tsx TERMS_VERSION)
-  async signup(name, cred, email, lang, terms) {
+  async signup(name, cred, email, lang, terms, ref) {
     await this.nameFree(name);
     if (await this.value(`email:${email}`)) throw fail("emailTaken");
     await this.ctx.storage.put({
-      [`user:${name}`]: { ...cred, email, lang, terms, termsAt: Date.now(), self: true, verified: false, at: Date.now(), mailed: { verify: Date.now() } },
+      [`user:${name}`]: { ...cred, email, lang, terms, ref, termsAt: Date.now(), self: true, verified: false, at: Date.now(), mailed: { verify: Date.now() } },
       [`email:${email}`]: name,
     });
     await this.tidyLater();
@@ -687,6 +700,33 @@ export class Registry extends DurableObject {
     const { name } = await this.redeem("reset", t);
     await this.setPassword(name, { ...cred, verified: true });
     return name;
+  }
+
+  canonical(name) { return this.value(`alias:${name}`).then((n) => n ?? name); }
+
+  // Kullanıcı adını değiştirir: kayıt, e-posta eşlemesi, sıra adresleri ve odaların sahibi yeni ada geçer; eski ad yeni ada
+  // yönlenir. Kullanıcı kendi eski adına dönebilir. Dönen değer odaların id'leri (Worker odalardaki sahibi de günceller).
+  // force: süper yönetici; 30 gün sınırı uygulanmaz
+  async rename(old, name, force) {
+    const u = await this.user(old), s = this.ctx.storage;
+    if (name === old) throw fail("sameUser");
+    if (!force && Date.now() - (u.renamedAt ?? 0) < RENAME_MS) throw fail("renameSoon", Math.ceil(RENAME_MS / 864e5));
+    const back = (await this.value(`alias:${name}`)) === old;
+    if (!back) await this.nameFree(name);
+    if ((await this.value(`legacy:${name}`)) || (await this.value(`slug:${name}`))) throw fail("userLegacy");
+    const rooms = await this.rooms(old), del = [`user:${old}`, `fail:${old}`, `susp:${old}`];
+    const put = { [`user:${name}`]: { ...u, renamedAt: force ? u.renamedAt : Date.now() }, [`alias:${old}`]: name };
+    if (u.email) put[`email:${u.email}`] = name;
+    if (u.suspended) put[`susp:${name}`] = 1;
+    for (const [k, id] of await s.list({ prefix: `slug:${old}/` })) { del.push(k); put[`slug:${name}/${k.slice(old.length + 6)}`] = id; }
+    for (const r of rooms) put[r.id] = { at: r.at, owner: name };
+    // Daha eski adlar da doğrudan yeni ada yönlensin (zincir olmasın)
+    for (const [k, v] of await s.list({ prefix: "alias:" })) if (v === old && k !== `alias:${name}`) put[k] = name;
+    if (back) del.push(`alias:${name}`);
+    await s.delete(del);
+    const all = Object.entries(put);
+    for (let i = 0; i < all.length; i += 128) await s.put(Object.fromEntries(all.slice(i, i + 128)));
+    return rooms.map((r) => r.id);
   }
 
   async setUser(name, fields) {
@@ -781,6 +821,7 @@ const RESERVED = new Set([
 const CONTACT = "hello@qrwait.app"; // web/src/components/legal.tsx EMAIL ile aynı
 const SUPER = "admin"; // süper yönetici girişi: kullanıcı adı "admin", şifre ADMIN_PASSWORD
 const SESSION_MS = 30 * 864e5;
+const RENAME_MS = 30 * 864e5; // kullanıcı adı en fazla bu sürede bir değişir: eski adlar kalıcı olarak ayrılır
 const ROOM_LIMIT = 20; // kendi hesap açan kullanıcının en fazla sıra sayısı (herkese açık liste her sıraya sorar)
 
 // antalyabb.qrwait.app → "antalyabb"; ana alan adı ve www için "". Geliştirmede antalyabb.localhost:8787 de çalışır.
@@ -810,6 +851,13 @@ function userName(v) {
   if (!NAME_RE.test(name) || ID_RE.test(name) || RESERVED.has(name))
     throw fail("badUser");
   return name;
+}
+
+// Tarayıcının gönderdiği kayıt kaynağı (web/src/lib/mount.tsx signupRef): yalnızca kısa, düz metin
+function refOf(v) {
+  const clean = (x, n) => String(x ?? "").replace(/[^\w.:/@+-]/g, "").slice(0, n);
+  const src = clean(v?.src, 100);
+  return src ? { src, page: clean(v?.page, 60) || "/" } : undefined;
 }
 
 function emailOf(v) {
@@ -853,6 +901,22 @@ const acct = (env, name) => env.ACCOUNT.getByName(name);
 // kind: verify, reset, email; sayfa belirteci aynı adlı parametreden okur (/admin?email=<belirteç>)
 async function sendLink(env, url, { to, lang, kind, user, token }) {
   await mail(env, { to, lang, kind, user, link: `${url.origin}/admin?${kind}=${token}` }).catch((e) => console.error("mail", e.message));
+}
+
+// Kullanıcı adı değişikliği (kullanıcı ya da süper yönetici): Registry kaydı taşır, bakiye yeni ada ait Account DO'ya,
+// odaların sahibi yeni ada geçer. Taşıma ile odaların sahibi değişene kadar harcanan birkaç bilet kaybolabilir (kullanıcı lehine).
+async function renameUser(env, reg, old, user, force = false) {
+  const name = userName(user), rooms = await reg.rename(old, name, force);
+  const a = await acct(env, old).export();
+  await acct(env, name).import({ ...a, user: name });
+  await Promise.all(rooms.map((id) => env.ROOM.getByName(id).setOwner(name).catch(() => {})));
+  await acct(env, old).destroy();
+  return name;
+}
+
+// Hesap ele geçirildiyse sahibi haberdar olsun: adres değişince eski adrese bildirim (önceden adres yoksa gitmez)
+async function emailChanged(env, { old, lang, name, email }) {
+  if (old) await mail(env, { to: old, lang, kind: "changed", user: name, link: `mailto:${CONTACT}`, n: email }).catch((e) => console.error("mail", e.message));
 }
 
 // Gizli sıranın adresi: 20 karakter [a-z0-9] (~103 bit), tahmin edilemez; slug kuralına uyar, ID_RE'ye uymaz
@@ -911,10 +975,10 @@ function statusLink(url, env, owner, ref) {
   return owner ? `https://${owner}.${env.BASE_DOMAIN}/${ref}` : `https://${ref}.${env.BASE_DOMAIN}/`;
 }
 
-// Süper yönetici: kullanıcı açar, şifre sıfırlar, siler; hesaplardan önceki sıraları bir kullanıcıya taşır;
+// Süper yönetici: kullanıcı açar, şifre sıfırlar, adını değiştirir, siler; hesaplardan önceki sıraları bir kullanıcıya taşır;
 // bilet hakkı verir, sayaçlı/sınırsız yapar, askıya alır
 async function usersApi(req, env, reg, url, body) {
-  const m = url.pathname.match(/^\/api\/admin\/users(?:\/([a-z0-9-]+)(?:\/(adopt|plan))?)?$/);
+  const m = url.pathname.match(/^\/api\/admin\/users(?:\/([a-z0-9-]+)(?:\/(adopt|plan|rename))?)?$/);
   if (!m) throw fail("badRequest");
   const [, name, op] = m;
   if (!name && req.method === "GET") {
@@ -927,6 +991,7 @@ async function usersApi(req, env, reg, url, body) {
     await acct(env, n).set({ metered: false, email, user: n });
   }
   else if (op === "adopt" && req.method === "POST") return { moved: await reg.adopt(name) };
+  else if (op === "rename" && req.method === "POST") return { user: await renameUser(env, reg, name, body.user, true) };
   else if (op === "plan" && req.method === "POST") {
     await reg.user(name);
     const a = acct(env, name);
@@ -938,9 +1003,9 @@ async function usersApi(req, env, reg, url, body) {
     }
     if (body.verified) await reg.setUser(name, { verified: true });
     if (body.email) {
-      const email = emailOf(body.email);
-      await reg.setEmail(name, email);
+      const email = emailOf(body.email), r = await reg.setEmail(name, email);
       await a.set({ email, user: name });
+      await emailChanged(env, { ...r, name, email });
     }
     return a.balance();
   } else if (!op && req.method === "PUT") await reg.setPassword(name, await credential(body.password));
@@ -951,7 +1016,7 @@ async function usersApi(req, env, reg, url, body) {
   return { ok: true };
 }
 
-// Kullanıcının kendi hesabı: /me, şifre, e-posta değiştirme, doğrulama e-postası, bilet paketi alma, hesabı silme
+// Kullanıcının kendi hesabı: /me, şifre, e-posta değiştirme, dil, doğrulama e-postası, bilet paketi alma, hesabı silme
 async function accountApi(req, env, reg, url, body, owner, u) {
   const p = url.pathname;
   if (p === "/api/admin/me") {
@@ -970,6 +1035,17 @@ async function accountApi(req, env, reg, url, body, owner, u) {
     await checkLogin(env, reg, owner, body.password);
     const email = emailOf(body.email), r = await reg.requestEmail(owner, email);
     await sendLink(env, url, { to: email, lang: r.lang, kind: "email", user: owner, token: r.token });
+    return { ok: true };
+  }
+  if (p === "/api/admin/rename" && req.method === "POST") {
+    await checkLogin(env, reg, owner, body.password);
+    const name = await renameUser(env, reg, owner, body.user);
+    return { ...(await session(name, u.hash)), home: accountLink(url, env, name) };
+  }
+  if (p === "/api/admin/lang" && req.method === "POST") {
+    const l = langOf(body.lang); // hesap e-postalarının dili
+    await reg.setUser(owner, { lang: l });
+    await acct(env, owner).set({ lang: l });
     return { ok: true };
   }
   if (p === "/api/admin/verify" && req.method === "POST") {
@@ -1069,7 +1145,7 @@ async function publicAuth(req, env, reg, url, body) {
       const name = userName(body.user), email = emailOf(body.email), lang = langOf(body.lang);
       if (typeof body.terms !== "string" || !body.terms) throw fail("terms");
       const cred = await credential(body.password, true);
-      const token = await reg.signup(name, cred, email, lang, body.terms.slice(0, 20));
+      const token = await reg.signup(name, cred, email, lang, body.terms.slice(0, 20), refOf(body.ref));
       await acct(env, name).set({ metered: true, suspended: false, email, lang, user: name });
       await sendLink(env, url, { to: email, lang, kind: "verify", user: name, token });
       return session(name, cred.hash);
@@ -1078,8 +1154,7 @@ async function publicAuth(req, env, reg, url, body) {
     case "/api/email": {
       const { name, email, old, lang } = await reg.confirmEmail(body.token);
       await acct(env, name).set({ email, user: name }); // bilet azaldı e-postaları yeni adrese
-      // Hesap ele geçirildiyse sahibi haberdar olsun: eski adrese bildirim
-      if (old) await mail(env, { to: old, lang, kind: "changed", user: name, link: `mailto:${CONTACT}`, n: email }).catch((e) => console.error("mail", e.message));
+      await emailChanged(env, { old, lang, name, email });
       return { user: name, email };
     }
     case "/api/forgot": {
@@ -1104,7 +1179,7 @@ async function publicRooms(req, env, url, reg) {
   const key = new Request(`${url.origin}/api/rooms?u=${encodeURIComponent(u)}`), cache = env.DEV === "1" ? null : caches.default;
   const hit = await cache?.match(key);
   if (hit) return hit;
-  const list = await reg.listed(u || undefined);
+  const list = await reg.listed(u ? await reg.canonical(u) : undefined); // eski kullanıcı adı yeni ada
   const rooms = await Promise.all(list.map(({ id, owner }) => env.ROOM.getByName(id).status()
     .then((st) => ({ ...st, link: statusLink(url, env, owner, st.slug ?? id) }), () => null)));
   const res = Response.json(rooms.filter((r) => r && !r.private), { headers: { "cache-control": "public, max-age=30" } });
@@ -1128,6 +1203,11 @@ async function page(req, env, url) {
   }
   if (!sub) return path === "/" ? env.ASSETS.fetch(new Request(new URL("/home", url), req)) : env.ASSETS.fetch(req);
   const r = await env.REGISTRY.getByName("main").resolve(sub, url.searchParams.get("r") ?? "");
+  if (r.moved) { // kullanıcı adı değişti: aynı yol ve sorgu yeni alt alan adında
+    const to = new URL(url);
+    to.hostname = `${r.moved}.${url.hostname.slice(sub.length + 1)}`;
+    return Response.redirect(to, 302);
+  }
   if (r.owner) {
     const { slug } = await env.ROOM.getByName(r.room).status();
     const to = new URL(url);
@@ -1168,8 +1248,10 @@ async function handle(req, env) {
       // ?r= oda id'si ya da slug, ?u= kullanıcı (yoksa alt alan adından: antalyabb.qrwait.app).
       // r'siz kullanıcı adresi { account } döner: sayfa kullanıcının sıralarını listeler.
       const r = await reg.resolve(url.searchParams.get("u") || subdomain(url, env), url.searchParams.get("r") ?? "");
-      if (!r.room && !r.account) throw fail("notFound");
-      return Response.json(r.account ? { account: r.account } : { room: r.room });
+      const n = r.moved && (await reg.resolve(r.moved, url.searchParams.get("r") ?? "")); // eski adla açık kalmış sayfa
+      const x = n || r;
+      if (!x.room && !x.account) throw fail("notFound");
+      return Response.json(x.account ? { account: x.account } : { room: x.room });
     }
     const m = url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/(join|me|leave|push|admin|status)$/);
     if (!m) return new Response("Not found", { status: 404 });
@@ -1179,7 +1261,7 @@ async function handle(req, env) {
         // Her bilet sıra sahibinin hakkından düştüğü için rastgele cihaz kimliğiyle toplu girişi IP başına sınırlar
         await limit(env, "JOIN_LIMIT", `${m[1]}:${ip(req)}`);
         return Response.json(await room.join(body));
-      case "me": return Response.json(await room.me(url.searchParams.get("id")));
+      case "me": return Response.json(await room.me(url.searchParams.get("id"), req.headers.get("x-lang")));
       case "leave": return Response.json(await room.leave(body.id));
       case "push": return Response.json(await room.subscribe(body.id, body.sub));
       case "admin": return Response.json(await room.admin(req.headers.get("x-key"), body));

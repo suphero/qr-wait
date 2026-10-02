@@ -3,9 +3,10 @@ import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import {
   BanIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsUpDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon,
   ChartColumnIcon, ExternalLinkIcon, InfinityIcon, KeyRoundIcon, LocateFixedIcon, LockIcon, MailCheckIcon, MailIcon, PencilIcon, RefreshCwIcon, SearchIcon, TicketIcon,
-  Trash2Icon, UsersIcon,
+  Trash2Icon, UserIcon, UsersIcon,
 } from "lucide-react";
 import { useConfirm } from "@/components/confirm";
+import { LangSwitch } from "@/components/lang";
 import { siteUrl, TERMS_VERSION } from "@/components/legal";
 import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, CATEGORIES, catIcon, locate, packName, perThousand, poll, type Geo, type Pkg, type RoomInfo, type Stats } from "@/lib/api";
 import { fmtDistL, lang } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
-import { mount } from "@/lib/mount";
+import { mount, signupRef } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 import { T } from "./admin.i18n";
 
@@ -494,7 +495,7 @@ function RoomTable({ rooms, onChange, onEdit, onStats, onError }: { rooms: RoomI
 type Order = { id: string; tickets: number; status: "paid" | "refunded"; total: string; at: number };
 type Balance = { metered: boolean; suspended: boolean; used: number; free: number; bought: number; granted: number; left: number | null; orders?: Order[] };
 type Me = { user: string; super: boolean; home: string | false; email?: string | null; verified?: boolean; balance?: Balance; packages?: Pkg[] };
-type User = { name: string; at: number; rooms: number; link: string; email: string | null; verified: boolean; suspended: boolean; balance: Balance };
+type User = { name: string; at: number; rooms: number; link: string; email: string | null; verified: boolean; suspended: boolean; balance: Balance; ref: { src: string; page: string } | null };
 type Config = { turnstile: string; free: number; packages: Pkg[] };
 
 // Cloudflare Turnstile (bot doğrulaması); betik ilk kullanımda yüklenir. Belirteç tek kullanımlık:
@@ -627,7 +628,7 @@ function DeleteAccount({ onDeleted, onError }: { onDeleted: () => void; onError:
 }
 
 // Kendi e-postasını ekleme ya da değiştirme: yeni adrese onay bağlantısı gider, açılana kadar eski adres geçerli kalır
-function EmailForm({ me, onSent, onDone, onError }: { me: Me; onSent: (email: string) => void; onDone: () => void; onError: (m: string) => void }) {
+function EmailForm({ me, onSent, onError }: { me: Me; onSent: (email: string) => void; onError: (m: string) => void }) {
   const [email, setEmail] = useState(""), [pw, setPw] = useState("");
   async function submit(ev: FormEvent) {
     ev.preventDefault();
@@ -652,10 +653,7 @@ function EmailForm({ me, onSent, onDone, onError }: { me: Me; onSent: (email: st
             <FieldLabel htmlFor="emailpw">{T.oldPw}</FieldLabel>
             <Input id="emailpw" type="password" required autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
           </Field>
-          <div className="flex gap-2">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onDone}>{T.cancel}</Button>
-            <Button className="flex-1">{T.sendLink}</Button>
-          </div>
+          <Button>{T.sendLink}</Button>
         </form>
       </CardContent>
     </Card>
@@ -670,6 +668,7 @@ function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: st
     try {
       const r = await call<{ token: string }>("/api/admin/password", { old, password: pw });
       localStorage.setItem("session", (token = r.token));
+      setOld(""); setPw("");
       onDone();
     } catch (e: any) { onError(e.message); }
   }
@@ -687,13 +686,79 @@ function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: st
             <Input id="new" type="password" required minLength={8} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
             <FieldDescription>{T.newPwDesc}</FieldDescription>
           </Field>
-          <div className="flex gap-2">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onDone}>{T.cancel}</Button>
-            <Button className="flex-1">{T.save}</Button>
-          </div>
+          <Button>{T.save}</Button>
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+// Kullanıcı adını (ve alt alan adını) değiştirme; yeni oturum anahtarı döner. Eski adres yeni adrese yönlenir.
+function RenameForm({ me, onDone, onError }: { me: Me; onDone: (name: string) => void; onError: (m: string) => void }) {
+  const confirm = useConfirm();
+  const [name, setName] = useState(""), [pw, setPw] = useState("");
+  // Kullanıcı adreslerinin alan adı (demo-isletme.qrwait.app → qrwait.app); alan adı yoksa bu site
+  const host = me.home && me.home.startsWith(`https://${me.user}.`) ? new URL(me.home).hostname.slice(me.user.length + 1) : location.hostname;
+  async function submit(ev: FormEvent) {
+    ev.preventDefault();
+    if (!(await confirm({ title: T.renameTitle, description: T.renameConfirm(me.user, name, host), action: T.renameBtn }))) return;
+    try {
+      const r = await call<{ token: string }>("/api/admin/rename", { user: name, password: pw });
+      localStorage.setItem("session", (token = r.token));
+      setName(""); setPw("");
+      onDone(name);
+    } catch (e: any) { onError(e.message); }
+  }
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-lg font-semibold">{T.renameTitle}</CardTitle></CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="flex flex-col gap-4 text-base">
+          <Field>
+            <FieldLabel htmlFor="newuser">{T.newUsername}</FieldLabel>
+            <Input id="newuser" required minLength={3} maxLength={40} pattern="(?!..--)[a-z0-9][a-z0-9\-]*[a-z0-9]" autoCapitalize="none" autoComplete="off"
+              value={name} onChange={(e) => setName(e.target.value.toLowerCase())} />
+            <FieldDescription>{T.renameDesc(`${name || "…"}.${host}`)}</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="renamepw">{T.oldPw}</FieldLabel>
+            <Input id="renamepw" type="password" required autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          </Field>
+          <Button>{T.renameBtn}</Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Hesap sayfası (#hesap): adres ve e-posta özeti, e-posta ve şifre değiştirme, hesabı silme
+function AccountPage({ me, onBack, onDeleted, reloadMe, onError }: { me: Me; onBack: () => void; onDeleted: () => void; reloadMe: () => Promise<void>; onError: (m: string) => void }) {
+  const [note, setNote] = useState("");
+  const done = (m: string) => { setNote(m); onError(""); window.scrollTo(0, 0); };
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="ghost" onClick={onBack}><ChevronLeftIcon /> {T.queues}</Button>
+        <Title className="mt-0 flex-1">{T.accountBtn}</Title>
+      </div>
+      {note && <p role="status" className="text-sm font-semibold">{note}</p>}
+      <Card>
+        <CardContent className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
+          <span className="text-muted-foreground">{T.username}</span>
+          <span className="font-semibold">{me.user}</span>
+          {me.home && <><span className="text-muted-foreground">{T.address}</span><a className="break-all underline-offset-2 hover:underline" href={me.home} target="_blank">{bare(me.home)}</a></>}
+          <span className="text-muted-foreground">{T.language}</span>
+          {/* Hesap e-postaları da bu dilde gelir */}
+          <LangSwitch before={(l) => call("/api/admin/lang", { lang: l })} />
+          <span className="text-muted-foreground">{T.email}</span>
+          <span>{me.email ? <>{me.email}{me.verified === false && <span className="text-muted-foreground"> · ⚠ {T.unverifiedTag}</span>}</> : <span className="text-muted-foreground">—</span>}</span>
+        </CardContent>
+      </Card>
+      <EmailForm me={me} onSent={(e) => done(T.emailSent(e))} onError={onError} />
+      <PasswordForm onDone={() => done(T.pwChanged)} onError={onError} />
+      <RenameForm me={me} onDone={async (n) => { await reloadMe(); done(T.renamed(n)); }} onError={onError} />
+      <DeleteAccount onDeleted={onDeleted} onError={onError} />
+    </>
   );
 }
 
@@ -824,9 +889,9 @@ function StatsPage({ room, onBack, onError }: { room: RoomInfo; onBack: () => vo
 function RoomsPanel({ me, paid, notice, reloadMe, logout }: { me: Me; paid: boolean; notice: string; reloadMe: () => Promise<void>; logout: (msg?: string) => void }) {
   const [rooms, setRooms] = useState<RoomInfo[] | null>(null); // null: henüz yüklenmedi
   const [note, setNote] = useState(notice);
-  const [pwOpen, setPwOpen] = useState(false);
   const [err, setErr] = useState("");
   const [tickets, setTickets] = useState(location.hash === "#bilet" || paid); // bilet yükleme sayfası
+  // Hesap sayfası: #hesap
   // Sıra formu kendi sayfasında: #yeni, #duzenle-<oda id>
   const [hash, setHash] = useState(location.hash);
   const editId = hash.startsWith("#duzenle-") ? hash.slice(9) : null;
@@ -835,6 +900,7 @@ function RoomsPanel({ me, paid, notice, reloadMe, logout }: { me: Me; paid: bool
   const editing = hash === "#yeni" ? null : editId ? rooms?.find((r) => r.room === editId) : undefined; // undefined: form kapalı, null: yeni oda
   const formOpen = useRef(false);
   formOpen.current = hash === "#yeni" || !!editId || !!statsId; // açıkken liste yenilenmez
+  const account = hash === "#hesap";
 
   // #bilet adresi paylaşılabilir (e-postadaki bağlantı), geri tuşu sıralara döner
   useEffect(() => {
@@ -891,6 +957,13 @@ function RoomsPanel({ me, paid, notice, reloadMe, logout }: { me: Me; paid: bool
     </Page>
   );
 
+  if (account) return (
+    <Page className="max-w-3xl">
+      <AccountPage me={me} onBack={() => go("")} onDeleted={() => logout(T.deleted)} reloadMe={reloadMe} onError={setErr} />
+      <ErrorText>{err}</ErrorText>
+    </Page>
+  );
+
   if (tickets) return (
     <Page className="max-w-5xl">
       <TicketsPage me={me} paid={paid} onBack={() => openTickets(false)} onError={setErr} />
@@ -907,13 +980,13 @@ function RoomsPanel({ me, paid, notice, reloadMe, logout }: { me: Me; paid: bool
         </div>
         <BalanceChip me={me} onTopUp={() => openTickets(true)} />
         <Button disabled={me.verified === false} onClick={() => go("yeni")}>{T.addRoom}</Button>
-        <Button variant="secondary" title={T.changePw} onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> {T.accountBtn}</Button>
+        <Button variant="secondary" onClick={() => go("hesap")}><UserIcon /> {T.accountBtn}</Button>
         <Button variant="secondary" onClick={() => logout()}>{T.logout}</Button>
       </div>
       {!me.email && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm">
           <span className="flex-1">{T.noEmailBanner}</span>
-          <Button size="sm" variant="secondary" onClick={() => setPwOpen(true)}><MailIcon /> {T.addEmail}</Button>
+          <Button size="sm" variant="secondary" onClick={() => go("hesap")}><MailIcon /> {T.addEmail}</Button>
         </div>
       )}
       {me.verified === false && (
@@ -929,9 +1002,6 @@ function RoomsPanel({ me, paid, notice, reloadMe, logout }: { me: Me; paid: bool
           <Button size="sm" onClick={() => openTickets(true)}>{T.topUp}</Button>
         </div>
       )}
-      {pwOpen && <EmailForm me={me} onSent={(e) => { setPwOpen(false); setNote(T.emailSent(e)); }} onDone={() => setPwOpen(false)} onError={setErr} />}
-      {pwOpen && <PasswordForm onDone={() => setPwOpen(false)} onError={setErr} />}
-      {pwOpen && <DeleteAccount onDeleted={() => logout(T.deleted)} onError={setErr} />}
       <RoomTable rooms={rooms ?? []} onChange={load} onEdit={(r) => go(`duzenle-${r.room}`)} onStats={(r) => go(`istatistik-${r.room}`)} onError={setErr} />
       <ErrorText>{err}</ErrorText>
     </Page>
@@ -945,6 +1015,7 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
   const [form, setForm] = useState<{ user: string; password: string; email?: string; reset?: string }>();
   const [grant, setGrant] = useState<{ user: string; n: string }>();
   const [mailFor, setMailFor] = useState<{ user: string; email: string }>();
+  const [renameFor, setRenameFor] = useState<{ user: string; name: string }>();
   const [err, setErr] = useState("");
   const plan = (u: string, body: object) => run(() => call(`/api/admin/users/${u}/plan`, body));
 
@@ -1002,6 +1073,7 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
                   <div className="text-xs text-muted-foreground">
                     {[u.email, !u.verified && `⚠ ${T.unverifiedTag}`, u.suspended && `⛔ ${T.suspendedTag}`].filter(Boolean).join(" · ")}
                   </div>
+                  {u.ref && <div className="text-xs text-muted-foreground" title={T.refTitle}>↪ {u.ref.src} · {u.ref.page}</div>}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{u.rooms}</TableCell>
                 <TableCell className="text-right tabular-nums">
@@ -1013,6 +1085,7 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
                       <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title={T.more}><EllipsisIcon /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onSelect={() => setForm({ user: u.name, password: "", reset: u.name })}><KeyRoundIcon /> {T.setPw}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setRenameFor({ user: u.name, name: "" })}><PencilIcon /> {T.renameTitle}</DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setMailFor({ user: u.name, email: u.email ?? "" })}><MailIcon /> {T.setEmail}</DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setGrant({ user: u.name, n: "" })}><TicketIcon /> {T.grant}</DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => plan(u.name, { metered: !u.balance.metered })}><InfinityIcon /> {u.balance.metered ? T.unmeter : T.meter}</DropdownMenuItem>
@@ -1044,6 +1117,28 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
           </TableBody>
         </Table>
       </Card>
+      {renameFor && (
+        <Card>
+          <CardHeader><CardTitle className="text-lg font-semibold">{T.renameFor(renameFor.user)}</CardTitle></CardHeader>
+          <CardContent>
+            <form className="flex flex-col gap-4 text-base" onSubmit={(ev) => {
+              ev.preventDefault();
+              run(() => call(`/api/admin/users/${renameFor.user}/rename`, { user: renameFor.name }).then(() => setRenameFor(undefined)));
+            }}>
+              <Field>
+                <FieldLabel htmlFor="rname">{T.newUsername}</FieldLabel>
+                <Input id="rname" required minLength={3} maxLength={40} pattern="(?!..--)[a-z0-9][a-z0-9\-]*[a-z0-9]" autoComplete="off"
+                  value={renameFor.name} onChange={(e) => setRenameFor({ ...renameFor, name: e.target.value.toLowerCase() })} />
+                <FieldDescription>{T.renameAdminDesc}</FieldDescription>
+              </Field>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" className="flex-1" onClick={() => setRenameFor(undefined)}>{T.cancel}</Button>
+                <Button className="flex-1">{T.save}</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
       {mailFor && (
         <Card>
           <CardHeader><CardTitle className="text-lg font-semibold">{T.setEmailFor(mailFor.user)}</CardTitle></CardHeader>
@@ -1182,7 +1277,7 @@ function AdminPage() {
       if (mode === "login" || mode === "signup") {
         const r = mode === "login"
           ? await api<{ token: string }>("/api/login", { user: f.user, password: f.password })
-          : await api<{ token: string }>("/api/signup", { ...f, captcha, lang, terms: agree ? TERMS_VERSION : "" });
+          : await api<{ token: string }>("/api/signup", { ...f, captcha, lang, terms: agree ? TERMS_VERSION : "", ref: signupRef() });
         localStorage.setItem("session", (token = r.token));
         set("password", "");
         await start();
@@ -1249,6 +1344,7 @@ function AdminPage() {
             {mode === "login" && <p>{link("forgot", T.forgotLink)}</p>}
             {mode === "signup" && <p>{T.haveAccount} {link("login", T.loginLink)}</p>}
             {(mode === "forgot" || mode === "reset") && <p>{link("login", T.back)}</p>}
+            <LangSwitch className="mt-2" />
           </div>
         </CardContent>
       </Card>

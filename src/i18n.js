@@ -190,6 +190,18 @@ const M = {
     de: "Der Link ist ungültig oder abgelaufen. Fordern Sie einen neuen an.",
     ru: "Ссылка недействительна или устарела. Запросите новую.",
   },
+  sameUser: {
+    tr: "Kullanıcı adınız zaten bu",
+    en: "This is already your username",
+    de: "Das ist bereits Ihr Benutzername",
+    ru: "Это уже ваше имя пользователя",
+  },
+  renameSoon: (n) => ({
+    tr: `Kullanıcı adı ${n} günde bir değiştirilebilir`,
+    en: `The username can be changed once every ${n} days`,
+    de: `Der Benutzername kann alle ${n} Tage einmal geändert werden`,
+    ru: `Имя пользователя можно менять раз в ${n} дней`,
+  }),
   sameEmail: {
     tr: "Hesabınızın e-postası zaten bu adres",
     en: "This is already your account's email address",

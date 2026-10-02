@@ -28,7 +28,7 @@ const S: Section[] = pick<Section[]>({
       <>Ziyaretçilerden ad, telefon numarası ya da e-posta adresi istenmez.</>,
     ] },
     { h: "Hesap sahiplerinin verileri", ul: [
-      <><b>Hesap:</b> kullanıcı adı, e-posta adresi, dil tercihi, kullanım koşullarının kabul edildiği sürüm ve zaman.</>,
+      <><b>Hesap:</b> kullanıcı adı, e-posta adresi, dil tercihi, kullanım koşullarının kabul edildiği sürüm ve zaman, siteye ilk geldiğiniz kaynak (kampanya etiketi ya da sizi yönlendiren site) ve sayfa.</>,
       <><b>Şifre:</b> yalnızca geri döndürülemeyen özeti (PBKDF2) saklanır. Şifrenin bilinen veri sızıntılarında geçip geçmediği, özetin yalnızca ilk 5 karakteri gönderilerek (k-anonimlik) kontrol edilir; şifre ya da tam özet hiçbir yere gönderilmez.</>,
       <><b>Sıralar:</b> sıra adı, adresi, konumu ve ayarları. Konum kontrolü görevlinin konumuna göre yapılan sıralarda, görevli panelinin gönderdiği son konum (yalnızca en sonuncusu, kontrol için). Günlük istatistikler yalnızca sayılardan oluşur (kaç grup katıldı, çağrıldı, ortalama bekleme), ziyaretçiye ait bilgi içermez.</>,
       <><b>Kullanım ve ödeme kayıtları:</b> kullanılan ve kalan bilet sayısı, sipariş numarası, paket ve tutar. Kart bilgileriniz bize ulaşmaz; ödemeyi Lemon Squeezy alır.</>,
@@ -40,7 +40,7 @@ const S: Section[] = pick<Section[]>({
     ] },
     { h: "Amaçlar ve hukuki sebepler", ul: [
       <>Sıra hizmeti, hesap yönetimi, bilet takibi ve ödemelerin hesaba yansıtılması: sözleşmenin kurulması ve ifası (KVKK m. 5/2-c; GDPR m. 6/1-b).</>,
-      <>Güvenlik, sahte kayıt ve kötüye kullanımın önlenmesi, hesap doğrulama: meşru menfaat (KVKK m. 5/2-f; GDPR m. 6/1-f).</>,
+      <>Güvenlik, sahte kayıt ve kötüye kullanımın önlenmesi, hesap doğrulama, hangi tanıtım kanalının işe yaradığını ölçmek: meşru menfaat (KVKK m. 5/2-f; GDPR m. 6/1-f).</>,
       <>Yasal yükümlülükler ve yetkili makam talepleri: hukuki yükümlülük (KVKK m. 5/2-ç; GDPR m. 6/1-c).</>,
       <>Analitik çerezler: açık rıza (KVKK m. 5/1; GDPR m. 6/1-a); dilediğiniz zaman geri alabilirsiniz.</>,
     ] },
@@ -84,7 +84,7 @@ const S: Section[] = pick<Section[]>({
       <>Visitors are never asked for their name, phone number or email address.</>,
     ] },
     { h: "Data of account holders", ul: [
-      <><b>Account:</b> username, email address, language, the version and time you accepted the terms of use.</>,
+      <><b>Account:</b> username, email address, language, the version and time you accepted the terms of use, and how you first reached the site (campaign tag or referring site) and the page you landed on.</>,
       <><b>Password:</b> only an irreversible hash (PBKDF2) is stored. Whether a password appears in known data breaches is checked by sending only the first 5 characters of its hash (k-anonymity); the password or full hash is never sent anywhere.</>,
       <><b>Queues:</b> queue name, address, location and settings. For queues that check location against the attendant, the last location sent by the attendant panel (only the latest one, for the check). Daily statistics are counts only (how many groups joined, were called, average wait) and contain no visitor information.</>,
       <><b>Usage and payment records:</b> tickets used and remaining, order number, pack and amount. Your card details never reach us; payment is taken by Lemon Squeezy.</>,
@@ -96,7 +96,7 @@ const S: Section[] = pick<Section[]>({
     ] },
     { h: "Purposes and legal bases", ul: [
       <>Providing the queue service, managing accounts, tracking tickets and crediting payments: performance of a contract (KVKK Art. 5/2-c; GDPR Art. 6/1-b).</>,
-      <>Security, preventing fake sign-ups and abuse, account verification: legitimate interests (KVKK Art. 5/2-f; GDPR Art. 6/1-f).</>,
+      <>Security, preventing fake sign-ups and abuse, account verification, measuring which marketing channels work: legitimate interests (KVKK Art. 5/2-f; GDPR Art. 6/1-f).</>,
       <>Legal obligations and requests from authorities: legal obligation (KVKK Art. 5/2-ç; GDPR Art. 6/1-c).</>,
       <>Analytics cookies: consent (KVKK Art. 5/1; GDPR Art. 6/1-a), which you can withdraw at any time.</>,
     ] },
@@ -140,7 +140,7 @@ const S: Section[] = pick<Section[]>({
       <>Besucher werden nie nach Name, Telefonnummer oder E-Mail-Adresse gefragt.</>,
     ] },
     { h: "Daten der Kontoinhaber", ul: [
-      <><b>Konto:</b> Benutzername, E-Mail-Adresse, Sprache, Version und Zeitpunkt der Zustimmung zu den Nutzungsbedingungen.</>,
+      <><b>Konto:</b> Benutzername, E-Mail-Adresse, Sprache, Version und Zeitpunkt der Zustimmung zu den Nutzungsbedingungen sowie die Quelle Ihres ersten Besuchs (Kampagnen-Tag oder verweisende Website) und die Einstiegsseite.</>,
       <><b>Passwort:</b> gespeichert wird nur ein nicht umkehrbarer Hash (PBKDF2). Ob ein Passwort in bekannten Datenlecks vorkommt, wird geprüft, indem nur die ersten 5 Zeichen seines Hashes gesendet werden (k-Anonymität); Passwort oder vollständiger Hash werden nie übermittelt.</>,
       <><b>Warteschlangen:</b> Name, Adresse, Standort und Einstellungen. Bei Warteschlangen, die den Standort des Personals prüfen, der zuletzt vom Personal-Panel gesendete Standort (nur der jeweils letzte, für die Prüfung). Tägliche Statistiken bestehen nur aus Zahlen (wie viele Gruppen sich angestellt haben, aufgerufen wurden, durchschnittliche Wartezeit) und enthalten keine Besucherdaten.</>,
       <><b>Nutzungs- und Zahlungsdaten:</b> verbrauchte und verbleibende Tickets, Bestellnummer, Paket und Betrag. Ihre Kartendaten erreichen uns nicht; die Zahlung wickelt Lemon Squeezy ab.</>,
@@ -152,7 +152,7 @@ const S: Section[] = pick<Section[]>({
     ] },
     { h: "Zwecke und Rechtsgrundlagen", ul: [
       <>Bereitstellung des Dienstes, Kontoverwaltung, Ticketverwaltung und Gutschrift von Zahlungen: Vertragserfüllung (KVKK Art. 5/2-c; DSGVO Art. 6 Abs. 1 lit. b).</>,
-      <>Sicherheit, Verhinderung von Scheinregistrierungen und Missbrauch, Kontobestätigung: berechtigte Interessen (KVKK Art. 5/2-f; DSGVO Art. 6 Abs. 1 lit. f).</>,
+      <>Sicherheit, Verhinderung von Scheinregistrierungen und Missbrauch, Kontobestätigung, Messung, welche Marketingkanäle wirken: berechtigte Interessen (KVKK Art. 5/2-f; DSGVO Art. 6 Abs. 1 lit. f).</>,
       <>Gesetzliche Pflichten und behördliche Anfragen: rechtliche Verpflichtung (KVKK Art. 5/2-ç; DSGVO Art. 6 Abs. 1 lit. c).</>,
       <>Analyse-Cookies: Einwilligung (KVKK Art. 5/1; DSGVO Art. 6 Abs. 1 lit. a), jederzeit widerrufbar.</>,
     ] },
@@ -196,7 +196,7 @@ const S: Section[] = pick<Section[]>({
       <>У посетителей не запрашиваются имя, номер телефона или адрес электронной почты.</>,
     ] },
     { h: "Данные владельцев учётных записей", ul: [
-      <><b>Учётная запись:</b> имя пользователя, адрес почты, язык, версия и время принятия условий использования.</>,
+      <><b>Учётная запись:</b> имя пользователя, адрес почты, язык, версия и время принятия условий использования, а также откуда вы впервые пришли на сайт (метка кампании или ссылающийся сайт) и на какую страницу.</>,
       <><b>Пароль:</b> хранится только необратимый хеш (PBKDF2). Наличие пароля в известных утечках проверяется отправкой лишь первых 5 символов хеша (k-анонимность); пароль и полный хеш никуда не передаются.</>,
       <><b>Очереди:</b> название, адрес, местоположение и настройки. Для очередей с проверкой по местоположению сотрудника — последнее местоположение, отправленное панелью сотрудника (только последнее, для проверки). Ежедневная статистика содержит только числа (сколько групп встало, было вызвано, среднее ожидание) и не содержит данных посетителей.</>,
       <><b>Данные об использовании и оплате:</b> использованные и оставшиеся билеты, номер заказа, пакет и сумма. Данные карты к нам не попадают — оплату принимает Lemon Squeezy.</>,
@@ -208,7 +208,7 @@ const S: Section[] = pick<Section[]>({
     ] },
     { h: "Цели и правовые основания", ul: [
       <>Работа сервиса очередей, управление учётной записью, учёт билетов и зачисление оплат: исполнение договора (KVKK ст. 5/2-c; GDPR ст. 6/1-b).</>,
-      <>Безопасность, предотвращение фиктивных регистраций и злоупотреблений, подтверждение учётной записи: законный интерес (KVKK ст. 5/2-f; GDPR ст. 6/1-f).</>,
+      <>Безопасность, предотвращение фиктивных регистраций и злоупотреблений, подтверждение учётной записи, оценка эффективности рекламных каналов: законный интерес (KVKK ст. 5/2-f; GDPR ст. 6/1-f).</>,
       <>Исполнение закона и запросы уполномоченных органов: юридическая обязанность (KVKK ст. 5/2-ç; GDPR ст. 6/1-c).</>,
       <>Аналитические cookie: согласие (KVKK ст. 5/1; GDPR ст. 6/1-a), которое можно отозвать в любой момент.</>,
     ] },

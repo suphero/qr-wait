@@ -80,6 +80,13 @@ export class Account extends DurableObject {
     await this.save();
   }
 
+  // Kullanıcı adı değişince bakiye ve siparişler yeni ada ait DO'ya taşınır (DO adı değiştirilemez)
+  export() { return this.a; }
+  async import(a) {
+    this.a = a;
+    await this.save();
+  }
+
   async destroy() {
     await this.ctx.storage.deleteAll();
     this.a = { metered: true, used: 0, bought: 0, granted: 0, orders: {} };
@@ -132,6 +139,8 @@ export async function webhook(req, env) {
     return new Response("unknown variant");
   }
   const status = a.status === "refunded" ? "refunded" : a.status === "paid" ? "paid" : null;
-  if (status) await env.ACCOUNT.getByName(String(user)).order(String(data.id), p.tickets * (Number(item.quantity) || 1), status, a.total_formatted ?? "");
+  // Sipariş adı değişmeden önce verildiyse bakiye yeni ada yüklenir
+  const name = await env.REGISTRY.getByName("main").canonical(String(user));
+  if (status) await env.ACCOUNT.getByName(name).order(String(data.id), p.tickets * (Number(item.quantity) || 1), status, a.total_formatted ?? "");
   return new Response("ok");
 }

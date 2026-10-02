@@ -31,6 +31,9 @@ assert.match((await post(`/api/admin/users/${U2}/plan`, { email: EU3 }, SU)).err
 await post(`/api/admin/users/${U2}/plan`, { email: `${U2}@example.com` }, SU);
 const emails = Object.fromEntries((await req("GET", "/api/admin/users", undefined, SU)).users.map((u) => [u.name, u.email]));
 assert.deepEqual([emails[U], emails[U2], emails[U3]], [null, `${U2}@example.com`, EU3]);
+// Adres değişince eski adrese bildirim gider (önceden adres yoksa gitmez)
+await post(`/api/admin/users/${U2}/plan`, { email: `${U2}-2@example.com` }, SU);
+if (process.env.WRANGLER_LOG) assert.match(readFileSync(process.env.WRANGLER_LOG, "utf8"), new RegExp(`mail changed → ${U2}@example\\.com: mailto:`));
 await req("DELETE", `/api/admin/users/${U3}`, undefined, SU);
 assert.match((await post("/api/login", { user: U, password: "yanlis-sifre" })).error, /hatalı/);
 const PW = await bearer(U, "deneme123"), PW2 = await bearer(U2, "deneme123");
@@ -358,11 +361,13 @@ assert.match((await signup({ terms: undefined })).error, /koşullarını/, "koş
 assert.match((await signup({ email: "yok" })).error, /Geçersiz e-posta/);
 assert.match((await signup({ user: "destek" })).error, /Geçersiz kullanıcı/, "resmi görünen adlar ayrılmış");
 assert.match((await signup({ password: "password123" })).error, /sızıntı/);
-const S1 = await signup();
+const S1 = await signup({ ref: { src: "qrwait/join<b>", page: "/beach-queue" } });
 assert.ok(S1.token && S1.user === N, "hesap açan kullanıcı girişli döner");
 const SA = { authorization: `Bearer ${S1.token}` };
 assert.match((await signup({ user: `${N}-b` })).error, /e-posta ile/, "aynı e-posta iki hesapta olamaz");
 assert.match((await signup({ email: `x${EM}` })).error, /alınmış/);
+const sref = (await req("GET", "/api/admin/users", undefined, SU)).users.find((u) => u.name === N).ref;
+assert.deepEqual(sref, { src: "qrwait/joinb", page: "/beach-queue" }, "kayıt kaynağı düz metin olarak saklanır");
 let sme = await req("GET", "/api/admin/me", undefined, SA);
 assert.deepEqual([sme.verified, sme.email, sme.balance.metered, sme.balance.left], [false, EM, true, 1000]);
 assert.match((await post("/api/admin/rooms", { name: "X", slug: `${N}-x`, radius: 300, ...spot }, SA)).error, /doğrulayın/, "doğrulanmadan sıra açılmaz");
@@ -448,6 +453,36 @@ if (et) {
   assert.equal(typeof (await post(`/api/admin/users/${U4}/plan`, { email: EM }, SU)).used, "number");
 } else console.log("WRANGLER_LOG yok: e-posta değiştirme bağlantısı testi atlandı");
 await req("DELETE", `/api/admin/users/${U4}`, undefined, SU);
+// Kullanıcı adı değiştirme: sıralar, bakiye ve e-posta yeni ada geçer; eski ad yeni ada yönlenir ve başkasına verilmez
+const N2 = `${N}-yeni`, before = await left();
+assert.match((await post("/api/admin/rename", { user: N2, password: "yanlis" }, SA)).error, /hatalı/);
+assert.match((await post("/api/admin/rename", { user: N, password: cur }, SA)).error, /zaten bu/);
+assert.match((await post("/api/admin/rename", { user: "xn--abc", password: cur }, SA)).error, /Geçersiz kullanıcı/, "punycode biçimli ad");
+const rn = await post("/api/admin/rename", { user: N2, password: cur }, SA);
+assert.equal(rn.user, N2);
+assert.match((await req("GET", "/api/admin/me", undefined, SA)).error, /Oturum geçersiz/, "eski adın oturumu düşer");
+SA.authorization = `Bearer ${rn.token}`;
+assert.equal((await req("GET", "/api/admin/me", undefined, SA)).user, N2);
+assert.equal(await left(), before, "bakiye yeni ada taşınır");
+assert.deepEqual((await req("GET", "/api/admin/rooms", undefined, SA)).map((r) => r.room), [sr.room]);
+assert.equal((await resolve(`${N}-sira`, N2)).room, sr.room);
+assert.equal((await resolve(`${N}-sira`, N)).room, sr.room, "eski adla açık kalan sayfa yeni ada çözülür");
+assert.deepEqual((await req("GET", `/api/rooms?u=${N}`)).map((r) => r.name), [N], "eski adın herkese açık listesi");
+await sadmin({ action: "add", size: 1 });
+assert.equal(await left(), before - 1, "odanın biletleri yeni adın hesabından düşer");
+assert.match((await post("/api/admin/users", { user: N, password: "deneme123" }, SU)).error, /alınmış/, "eski ad başkasına verilmez");
+assert.match((await post("/api/admin/rename", { user: `${N}-uc`, password: cur }, SA)).error, /30 günde/);
+const users = (await req("GET", "/api/admin/users", undefined, SU)).users.map((u) => u.name);
+assert.ok(users.includes(N2) && !users.includes(N));
+// Süper yönetici 30 gün sınırı olmadan değiştirebilir; kullanıcı eski adına dönebilir
+assert.deepEqual(await post(`/api/admin/users/${N2}/rename`, { user: N }, SU), { user: N });
+assert.equal((await resolve(`${N}-sira`, N2)).room, sr.room, "dönüşte de eski ad yönlenir");
+assert.deepEqual(await post(`/api/admin/users/${N}/rename`, { user: N2 }, SU), { user: N2 });
+assert.equal(await left(), before - 1, "bakiye taşınmalarda korunur");
+await hook("order_created", "paid", "9002"); // ödeme sayfası eski adla açılmıştı
+assert.equal(await left(), before - 1 + 500, "eski adla verilen siparişin biletleri yeni ada yüklenir");
+// Dil: hesap e-postalarının dili hesaba yazılır
+assert.deepEqual(await post("/api/admin/lang", { lang: "de" }, SA), { ok: true });
 // Hesabı silme: önce sıralar silinmeli
 assert.match((await post("/api/admin/account/delete", { password: "yanlis" }, SA)).error, /hatalı/);
 assert.match((await post("/api/admin/account/delete", { password: cur }, SA)).error, /sıraları var/);
