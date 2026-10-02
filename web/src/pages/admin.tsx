@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import {
   BanIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsUpDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon,
-  ChartColumnIcon, ExternalLinkIcon, InfinityIcon, KeyRoundIcon, LocateFixedIcon, LockIcon, MailCheckIcon, PencilIcon, RefreshCwIcon, SearchIcon, TicketIcon,
+  ChartColumnIcon, ExternalLinkIcon, InfinityIcon, KeyRoundIcon, LocateFixedIcon, LockIcon, MailCheckIcon, MailIcon, PencilIcon, RefreshCwIcon, SearchIcon, TicketIcon,
   Trash2Icon, UsersIcon,
 } from "lucide-react";
 import { useConfirm } from "@/components/confirm";
@@ -234,7 +234,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
             ) : (
               <Field>
                 <FieldLabel htmlFor="slug">{T.slug}</FieldLabel>
-                <Input id="slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve" value={f.slug}
+                <Input id="slug" required minLength={3} maxLength={40} pattern="(?!..--)[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve" value={f.slug}
                   onChange={(e) => { slugTouched.current = true; set("slug", e.target.value); }} />
                 <FieldDescription>{T.slugDesc(`${bare(home)}${f.slug || "…"}`)}</FieldDescription>
               </Field>
@@ -626,6 +626,42 @@ function DeleteAccount({ onDeleted, onError }: { onDeleted: () => void; onError:
   );
 }
 
+// Kendi e-postasını ekleme ya da değiştirme: yeni adrese onay bağlantısı gider, açılana kadar eski adres geçerli kalır
+function EmailForm({ me, onSent, onDone, onError }: { me: Me; onSent: (email: string) => void; onDone: () => void; onError: (m: string) => void }) {
+  const [email, setEmail] = useState(""), [pw, setPw] = useState("");
+  async function submit(ev: FormEvent) {
+    ev.preventDefault();
+    try {
+      await call("/api/admin/email", { email, password: pw });
+      onSent(email.trim().toLowerCase());
+      setEmail(""); setPw("");
+    } catch (e: any) { onError(e.message); }
+  }
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-lg font-semibold">{me.email ? T.changeEmail : T.addEmail}</CardTitle></CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="flex flex-col gap-4 text-base">
+          {me.email && <p className="text-sm text-muted-foreground">{T.currentEmail(me.email)}</p>}
+          <Field>
+            <FieldLabel htmlFor="newemail">{T.newEmail}</FieldLabel>
+            <Input id="newemail" type="email" required autoComplete="email" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} />
+            <FieldDescription>{T.newEmailDesc}</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="emailpw">{T.oldPw}</FieldLabel>
+            <Input id="emailpw" type="password" required autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          </Field>
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" className="flex-1" onClick={onDone}>{T.cancel}</Button>
+            <Button className="flex-1">{T.sendLink}</Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
 // Kendi şifresini değiştirme; yeni oturum anahtarı döner (eski oturumlar düşer)
 function PasswordForm({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
   const [old, setOld] = useState(""), [pw, setPw] = useState("");
@@ -784,9 +820,10 @@ function StatsPage({ room, onBack, onError }: { room: RoomInfo; onBack: () => vo
   );
 }
 
-function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; reloadMe: () => Promise<void>; logout: (msg?: string) => void }) {
+// notice: girişli açılan e-posta bağlantısının sonucu ("E-postanız doğrulandı")
+function RoomsPanel({ me, paid, notice, reloadMe, logout }: { me: Me; paid: boolean; notice: string; reloadMe: () => Promise<void>; logout: (msg?: string) => void }) {
   const [rooms, setRooms] = useState<RoomInfo[] | null>(null); // null: henüz yüklenmedi
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(notice);
   const [pwOpen, setPwOpen] = useState(false);
   const [err, setErr] = useState("");
   const [tickets, setTickets] = useState(location.hash === "#bilet" || paid); // bilet yükleme sayfası
@@ -873,6 +910,12 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
         <Button variant="secondary" title={T.changePw} onClick={() => setPwOpen(!pwOpen)}><KeyRoundIcon /> {T.accountBtn}</Button>
         <Button variant="secondary" onClick={() => logout()}>{T.logout}</Button>
       </div>
+      {!me.email && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm">
+          <span className="flex-1">{T.noEmailBanner}</span>
+          <Button size="sm" variant="secondary" onClick={() => setPwOpen(true)}><MailIcon /> {T.addEmail}</Button>
+        </div>
+      )}
       {me.verified === false && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm">
           <span className="flex-1">{T.verifyBanner(me.email ?? "")}</span>
@@ -886,6 +929,7 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
           <Button size="sm" onClick={() => openTickets(true)}>{T.topUp}</Button>
         </div>
       )}
+      {pwOpen && <EmailForm me={me} onSent={(e) => { setPwOpen(false); setNote(T.emailSent(e)); }} onDone={() => setPwOpen(false)} onError={setErr} />}
       {pwOpen && <PasswordForm onDone={() => setPwOpen(false)} onError={setErr} />}
       {pwOpen && <DeleteAccount onDeleted={() => logout(T.deleted)} onError={setErr} />}
       <RoomTable rooms={rooms ?? []} onChange={load} onEdit={(r) => go(`duzenle-${r.room}`)} onStats={(r) => go(`istatistik-${r.room}`)} onError={setErr} />
@@ -898,8 +942,9 @@ function RoomsPanel({ me, paid, reloadMe, logout }: { me: Me; paid: boolean; rel
 function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
   const confirm = useConfirm();
   const [data, setData] = useState<{ users: User[]; unowned: number }>({ users: [], unowned: 0 });
-  const [form, setForm] = useState<{ user: string; password: string; reset?: string }>();
+  const [form, setForm] = useState<{ user: string; password: string; email?: string; reset?: string }>();
   const [grant, setGrant] = useState<{ user: string; n: string }>();
+  const [mailFor, setMailFor] = useState<{ user: string; email: string }>();
   const [err, setErr] = useState("");
   const plan = (u: string, body: object) => run(() => call(`/api/admin/users/${u}/plan`, body));
 
@@ -921,7 +966,7 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
     ev.preventDefault();
     const f = form!;
     await run(async () => {
-      await (f.reset ? call(`/api/admin/users/${f.reset}`, { password: f.password }, "PUT") : call("/api/admin/users", f));
+      await (f.reset ? call(`/api/admin/users/${f.reset}`, { password: f.password }, "PUT") : call("/api/admin/users", { user: f.user, password: f.password, email: f.email || undefined }));
       setForm(undefined);
     });
   }
@@ -930,7 +975,7 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
     <Page className="max-w-3xl">
       <div className="flex items-center gap-2">
         <Title className="flex-1">{T.users}</Title>
-        <Button onClick={() => setForm({ user: "", password: "" })}>{T.addUser}</Button>
+        <Button onClick={() => setForm({ user: "", password: "", email: "" })}>{T.addUser}</Button>
         <Button variant="secondary" onClick={() => logout()}>{T.logout}</Button>
       </div>
       {data.unowned > 0 && (
@@ -968,6 +1013,7 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
                       <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" title={T.more}><EllipsisIcon /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onSelect={() => setForm({ user: u.name, password: "", reset: u.name })}><KeyRoundIcon /> {T.setPw}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setMailFor({ user: u.name, email: u.email ?? "" })}><MailIcon /> {T.setEmail}</DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setGrant({ user: u.name, n: "" })}><TicketIcon /> {T.grant}</DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => plan(u.name, { metered: !u.balance.metered })}><InfinityIcon /> {u.balance.metered ? T.unmeter : T.meter}</DropdownMenuItem>
                         {!u.verified && <DropdownMenuItem onSelect={() => plan(u.name, { verified: true })}><MailCheckIcon /> {T.markVerified}</DropdownMenuItem>}
@@ -998,6 +1044,27 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
           </TableBody>
         </Table>
       </Card>
+      {mailFor && (
+        <Card>
+          <CardHeader><CardTitle className="text-lg font-semibold">{T.setEmailFor(mailFor.user)}</CardTitle></CardHeader>
+          <CardContent>
+            <form className="flex flex-col gap-4 text-base" onSubmit={(ev) => {
+              ev.preventDefault();
+              plan(mailFor.user, { email: mailFor.email }).then(() => setMailFor(undefined));
+            }}>
+              <Field>
+                <FieldLabel htmlFor="umail">{T.email}</FieldLabel>
+                <Input id="umail" type="email" required maxLength={254} autoComplete="off" value={mailFor.email} onChange={(e) => setMailFor({ ...mailFor, email: e.target.value })} />
+                <FieldDescription>{T.setEmailDesc}</FieldDescription>
+              </Field>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" className="flex-1" onClick={() => setMailFor(undefined)}>{T.cancel}</Button>
+                <Button className="flex-1">{T.save}</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
       {grant && (
         <Card>
           <CardHeader><CardTitle className="text-lg font-semibold">{T.grantFor(grant.user)}</CardTitle></CardHeader>
@@ -1027,9 +1094,16 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
               {!form.reset && (
                 <Field>
                   <FieldLabel htmlFor="user">{T.username}</FieldLabel>
-                  <Input id="user" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalyabb" autoComplete="off"
+                  <Input id="user" required minLength={3} maxLength={40} pattern="(?!..--)[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalyabb" autoComplete="off"
                     value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} />
                   <FieldDescription>{T.userDesc(`${form.user || "…"}.${location.hostname.replace(/^www\./, "")}`)}</FieldDescription>
+                </Field>
+              )}
+              {!form.reset && (
+                <Field>
+                  <FieldLabel htmlFor="umail">{T.emailOptional}</FieldLabel>
+                  <Input id="umail" type="email" maxLength={254} autoComplete="off" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+                  <FieldDescription>{T.setEmailDesc}</FieldDescription>
                 </Field>
               )}
               <Field>
@@ -1052,10 +1126,10 @@ function UsersPanel({ logout }: { logout: (msg?: string) => void }) {
 
 type Mode = "login" | "signup" | "forgot" | "reset";
 
-// E-posta bağlantıları: ?verify=<belirteç>, ?reset=<belirteç>; ödemeden dönüş ?paid=1; tanıtım sitesinden #signup.
+// E-posta bağlantıları: ?verify=<belirteç>, ?reset=<belirteç>, ?email=<belirteç> (yeni adresin onayı); ödemeden dönüş ?paid=1; tanıtım sitesinden #signup.
 // Belirteç okunur okunmaz adres çubuğundan silinir (geçmişte ve paylaşılan ekranda kalmasın).
 const params = new URLSearchParams(location.search);
-const resetToken = params.get("reset") ?? "", verifyToken = params.get("verify") ?? "", paidBack = params.has("paid");
+const resetToken = params.get("reset") ?? "", verifyToken = params.get("verify") ?? "", emailToken = params.get("email") ?? "", paidBack = params.has("paid");
 if (location.search) history.replaceState(null, "", `/admin${paidBack ? "#bilet" : location.hash}`);
 
 function AdminPage() {
@@ -1091,6 +1165,8 @@ function AdminPage() {
   useEffect(() => {
     if (verifyToken) {
       api("/api/verify", { token: verifyToken }).then(() => { setNote(T.verifiedMsg); if (token) start(); }, (e) => setErr(e.message));
+    } else if (emailToken) {
+      api<{ email: string }>("/api/email", { token: emailToken }).then((r) => { setNote(T.emailChanged(r.email)); if (token) start(); }, (e) => setErr(e.message));
     } else if (token) start();
   }, []);
 
@@ -1126,7 +1202,7 @@ function AdminPage() {
     }
   }
 
-  if (me) return me.super ? <UsersPanel logout={logout} /> : <RoomsPanel me={me} paid={paidBack} reloadMe={start} logout={logout} />;
+  if (me) return me.super ? <UsersPanel logout={logout} /> : <RoomsPanel me={me} paid={paidBack} notice={note} reloadMe={start} logout={logout} />;
   const title = { login: T.loginTitle, signup: T.signupTitle, forgot: T.forgotLink, reset: T.resetTitle }[mode];
   const link = (m: Mode, text: string) => <button type="button" className="font-semibold text-primary underline-offset-2 hover:underline" onClick={() => go(m)}>{text}</button>;
   return (
@@ -1141,7 +1217,7 @@ function AdminPage() {
               <Field>
                 <FieldLabel htmlFor="user">{mode === "login" ? T.loginId : T.username}</FieldLabel>
                 <Input id="user" required autoCapitalize="none" autoComplete="username" value={f.user} onChange={(e) => set("user", mode === "signup" ? e.target.value.toLowerCase() : e.target.value)}
-                  {...(mode === "signup" && { minLength: 3, maxLength: 40, pattern: "[a-z0-9][a-z0-9\\-]*[a-z0-9]" })} />
+                  {...(mode === "signup" && { minLength: 3, maxLength: 40, pattern: "(?!..--)[a-z0-9][a-z0-9\\-]*[a-z0-9]" })} />
                 {mode === "signup" && <FieldDescription>{T.signupUserDesc(`${f.user || "…"}.${location.hostname.replace(/^www\./, "")}`)}</FieldDescription>}
               </Field>
             )}

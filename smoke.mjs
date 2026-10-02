@@ -6,6 +6,8 @@ import { createECDH, createHmac, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 const B = process.env.BASE ?? "http://localhost:8787";
+// Beklenen mesajlar Türkçe; sunucunun varsayılan dili İngilizce olduğundan x-lang'siz isteklere tr eklenir
+const fetch = (url, o = {}) => globalThis.fetch(url, { ...o, headers: { "x-lang": "tr", ...o.headers } });
 const req = async (method, p, body, h = {}) => {
   const r = await fetch(B + p, { method, headers: { "content-type": "application/json", ...h }, body: body && JSON.stringify(body) });
   return r.json();
@@ -20,6 +22,16 @@ await post("/api/admin/users", { user: U2, password: "deneme123" }, SU);
 assert.match((await post("/api/admin/users", { user: U, password: "deneme123" }, SU)).error, /alınmış/);
 assert.match((await post("/api/admin/users", { user: "Kötü Ad", password: "deneme123" }, SU)).error, /Geçersiz kullanıcı/);
 assert.match((await post("/api/admin/users", { user: `${U}-c`, password: "kisa" }, SU)).error, /en az 8/);
+// Süper yönetici e-postayı açarken ya da sonradan, onay bağlantısı olmadan belirler; aynı adres iki hesapta olamaz
+const U3 = `${U}-m`, EU3 = `${U3}@example.com`;
+assert.match((await post("/api/admin/users", { user: U3, password: "deneme123", email: "yok" }, SU)).error, /Geçersiz e-posta/);
+assert.deepEqual(await post("/api/admin/users", { user: U3, password: "deneme123", email: EU3 }, SU), { ok: true });
+assert.match((await post("/api/admin/users", { user: `${U}-n`, password: "deneme123", email: EU3 }, SU)).error, /e-posta ile/);
+assert.match((await post(`/api/admin/users/${U2}/plan`, { email: EU3 }, SU)).error, /e-posta ile/);
+await post(`/api/admin/users/${U2}/plan`, { email: `${U2}@example.com` }, SU);
+const emails = Object.fromEntries((await req("GET", "/api/admin/users", undefined, SU)).users.map((u) => [u.name, u.email]));
+assert.deepEqual([emails[U], emails[U2], emails[U3]], [null, `${U2}@example.com`, EU3]);
+await req("DELETE", `/api/admin/users/${U3}`, undefined, SU);
 assert.match((await post("/api/login", { user: U, password: "yanlis-sifre" })).error, /hatalı/);
 const PW = await bearer(U, "deneme123"), PW2 = await bearer(U2, "deneme123");
 assert.equal((await req("GET", "/api/admin/me", undefined, PW)).user, U);
@@ -66,12 +78,13 @@ assert.equal((await join("device-aaaaaaaaaaaa", 3)).no, 1, "aynı cihaz ikinci b
 assert.match((await join("device-dddddddddddd", 2, { lat: 36.9, lng: 30.7056 })).error, /bulunduğu yerde görünmüyorsunuz/, "~1.8 km uzak");
 assert.match((await join("device-dddddddddddd", 2, spot, `${Date.now() - 120000}.abc`)).error, /süresi dolmuş/);
 assert.match((await join("device-dddddddddddd", 2, spot, `${token.split(".")[0]}.${"0".repeat(20)}`)).error, /süresi dolmuş/, "sahte imza");
-// Ziyaretçinin dili: hata mesajları o dilde, desteklenmeyen dilde Türkçe
+// Ziyaretçinin dili: hata mesajları o dilde, desteklenmeyen dilde ya da dil yoksa İngilizce
 const ljoin = (lang, body = {}) => post(`/api/r/${room}/join`, { t: `${Date.now() - 120000}.x`, ...spot, size: 2, device: "device-lang-000000001", lang, ...body }, { "x-lang": lang });
 assert.match((await ljoin("en")).error, /QR code has expired/);
 assert.match((await ljoin("de")).error, /QR-Code ist abgelaufen/);
 assert.match((await ljoin("ru")).error, /QR-кода истёк/);
-assert.match((await ljoin("fr")).error, /süresi dolmuş/, "desteklenmeyen dil → Türkçe");
+assert.match((await ljoin("fr")).error, /QR code has expired/, "desteklenmeyen dil → İngilizce");
+assert.match((await globalThis.fetch(`${B}/api/r/${room}/join`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: `${Date.now() - 120000}.x`, ...spot, size: 2, device: "device-lang-000000001" }) }).then((r) => r.json())).error, /QR code has expired/, "dil yok → İngilizce");
 assert.match((await ljoin("en", { t: token, size: 99 })).error, /1–8 people/);
 
 const me = async (id) => (await fetch(`${B}/api/r/${room}/me?id=${id}`)).json();
@@ -417,6 +430,24 @@ if (rt) {
   SA.authorization = `Bearer ${(await post("/api/login", { user: N, password: P2 })).token}`;
   cur = P2;
 } else console.log("WRANGLER_LOG yok: şifre sıfırlama bağlantısı testi atlandı");
+// E-posta değiştirme: yeni adrese onay bağlantısı gider, açılana kadar eski adres geçerli kalır
+const EM2 = `${N}-yeni@example.com`, U4 = `${N}-d`, EU4 = `${U4}@example.com`;
+await post("/api/admin/users", { user: U4, password: "deneme123", email: EU4 }, SU);
+assert.match((await post("/api/admin/email", { email: EM2, password: "yanlis" }, SA)).error, /hatalı/);
+assert.match((await post("/api/admin/email", { email: EM, password: cur }, SA)).error, /zaten bu adres/);
+assert.match((await post("/api/admin/email", { email: EU4, password: cur }, SA)).error, /e-posta ile/);
+assert.deepEqual(await post("/api/admin/email", { email: EM2, password: cur }, SA), { ok: true });
+assert.equal((await req("GET", "/api/admin/me", undefined, SA)).email, EM, "onaylanmadan adres değişmez");
+const et = await mailed("email", EM2);
+if (et) {
+  assert.deepEqual(await post("/api/email", { token: et }), { user: N, email: EM2 });
+  assert.match((await post("/api/email", { token: et })).error, /Bağlantı geçersiz/, "onay bağlantısı tek kullanımlık");
+  assert.equal((await req("GET", "/api/admin/me", undefined, SA)).email, EM2);
+  assert.match(readFileSync(LOG, "utf8"), new RegExp(`mail changed → ${EM.replace(/[.+]/g, "\\$&")}: mailto:`), "eski adrese değişiklik bildirimi");
+  // Eski adres boşa çıktı: başka hesaba verilebilir
+  assert.equal(typeof (await post(`/api/admin/users/${U4}/plan`, { email: EM }, SU)).used, "number");
+} else console.log("WRANGLER_LOG yok: e-posta değiştirme bağlantısı testi atlandı");
+await req("DELETE", `/api/admin/users/${U4}`, undefined, SU);
 // Hesabı silme: önce sıralar silinmeli
 assert.match((await post("/api/admin/account/delete", { password: "yanlis" }, SA)).error, /hatalı/);
 assert.match((await post("/api/admin/account/delete", { password: cur }, SA)).error, /sıraları var/);

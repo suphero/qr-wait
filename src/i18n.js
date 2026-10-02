@@ -190,6 +190,12 @@ const M = {
     de: "Der Link ist ungültig oder abgelaufen. Fordern Sie einen neuen an.",
     ru: "Ссылка недействительна или устарела. Запросите новую.",
   },
+  sameEmail: {
+    tr: "Hesabınızın e-postası zaten bu adres",
+    en: "This is already your account's email address",
+    de: "Das ist bereits die E-Mail-Adresse Ihres Kontos",
+    ru: "Это уже адрес почты вашей учётной записи",
+  },
   alreadyVerified: { tr: "E-posta zaten doğrulanmış", en: "Email is already verified", de: "E-Mail ist bereits bestätigt", ru: "Почта уже подтверждена" },
   unverified: {
     tr: "Önce e-posta adresinizi doğrulayın",

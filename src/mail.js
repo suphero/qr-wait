@@ -1,4 +1,4 @@
-// Hesap e-postaları: doğrulama, şifre sıfırlama, bilet hakkı azaldı / bitti.
+// Hesap e-postaları: doğrulama, e-posta değiştirme (yeni adrese onay, eski adrese bildirim), şifre sıfırlama, bilet hakkı azaldı / bitti.
 // Cloudflare Email Service (wrangler.jsonc send_email → EMAIL), gönderen MAIL_FROM.
 // DEV=1 (yalnızca .dev.vars): bağlantılar günlüğe de yazılır, smoke testi doğrulama bağlantısını oradan okur.
 import { langOf } from "./i18n.js";
@@ -9,6 +9,19 @@ const M = {
     en: { subject: "Verify your email address", body: (u) => `Hi ${u},\n\nOpen the link below to activate your QRWait account. The link is valid for 3 days.`, button: "Verify my email", foot: "If you didn't create this account, ignore this email." },
     de: { subject: "Bestätigen Sie Ihre E-Mail-Adresse", body: (u) => `Hallo ${u},\n\nÖffnen Sie den folgenden Link, um Ihr QRWait-Konto zu aktivieren. Der Link ist 3 Tage gültig.`, button: "E-Mail bestätigen", foot: "Wenn Sie dieses Konto nicht erstellt haben, ignorieren Sie diese E-Mail." },
     ru: { subject: "Подтвердите адрес электронной почты", body: (u) => `Здравствуйте, ${u}!\n\nОткройте ссылку ниже, чтобы активировать учётную запись QRWait. Ссылка действует 3 дня.`, button: "Подтвердить почту", foot: "Если вы не создавали эту учётную запись, проигнорируйте письмо." },
+  },
+  email: {
+    tr: { subject: "Yeni e-posta adresinizi onaylayın", body: (u) => `Merhaba ${u},\n\nQRWait hesabınızın e-posta adresini bu adres olarak değiştirmek için aşağıdaki bağlantıyı açın. Bağlantı 1 gün geçerli.`, button: "Adresi onayla", foot: "Bu değişikliği siz istemediyseniz bu e-postayı yok sayın, hesabın adresi değişmez." },
+    en: { subject: "Confirm your new email address", body: (u) => `Hi ${u},\n\nOpen the link below to make this the email address of your QRWait account. The link is valid for 1 day.`, button: "Confirm address", foot: "If you didn't request this change, ignore this email; the account's address won't change." },
+    de: { subject: "Bestätigen Sie Ihre neue E-Mail-Adresse", body: (u) => `Hallo ${u},\n\nÖffnen Sie den folgenden Link, um diese Adresse als E-Mail-Adresse Ihres QRWait-Kontos festzulegen. Der Link ist 1 Tag gültig.`, button: "Adresse bestätigen", foot: "Wenn Sie diese Änderung nicht angefordert haben, ignorieren Sie diese E-Mail; die Adresse des Kontos bleibt unverändert." },
+    ru: { subject: "Подтвердите новый адрес почты", body: (u) => `Здравствуйте, ${u}!\n\nОткройте ссылку ниже, чтобы сделать этот адрес почтой учётной записи QRWait. Ссылка действует 1 день.`, button: "Подтвердить адрес", foot: "Если вы не запрашивали это изменение, проигнорируйте письмо — адрес учётной записи не изменится." },
+  },
+  // Eski adrese: hesabın adresi değişti; n yeni adres. Şifre sıfırlama artık yeni adrese gittiği için çare bize yazmak.
+  changed: {
+    tr: { subject: "Hesabınızın e-posta adresi değişti", body: (u, n) => `Merhaba ${u},\n\nQRWait hesabınızın e-posta adresi ${n} olarak değiştirildi. Bundan sonra hesap e-postaları o adrese gidecek.\n\nBu değişikliği siz yapmadıysanız hemen bize yazın.`, button: "Bize yazın" },
+    en: { subject: "Your account's email address changed", body: (u, n) => `Hi ${u},\n\nThe email address of your QRWait account was changed to ${n}. Account emails will go to that address from now on.\n\nIf you didn't make this change, contact us right away.`, button: "Contact us" },
+    de: { subject: "Die E-Mail-Adresse Ihres Kontos wurde geändert", body: (u, n) => `Hallo ${u},\n\nDie E-Mail-Adresse Ihres QRWait-Kontos wurde in ${n} geändert. Konto-E-Mails gehen ab jetzt an diese Adresse.\n\nWenn Sie das nicht waren, schreiben Sie uns sofort.`, button: "Kontakt aufnehmen" },
+    ru: { subject: "Адрес почты учётной записи изменён", body: (u, n) => `Здравствуйте, ${u}!\n\nАдрес почты учётной записи QRWait изменён на ${n}. Теперь письма учётной записи будут приходить туда.\n\nЕсли это сделали не вы, сразу напишите нам.`, button: "Написать нам" },
   },
   reset: {
     tr: { subject: "Şifre sıfırlama", body: (u) => `Merhaba ${u},\n\nŞifrenizi sıfırlamak için aşağıdaki bağlantıyı açın. Bağlantı 1 saat geçerli ve bir kez kullanılabilir.`, button: "Yeni şifre belirle", foot: "Şifre sıfırlamayı siz istemediyseniz bu e-postayı yok sayın, şifreniz değişmez." },
@@ -33,7 +46,7 @@ const M = {
 // Kullanıcı adı NAME_RE'ye uyar, bağlantı bizim ürettiğimiz; yine de HTML'e kaçışlı girer
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// kind: M'nin anahtarı; link: düğmenin açacağı adres; n: kalan bilet (low)
+// kind: M'nin anahtarı; link: düğmenin açacağı adres; n: kalan bilet (low), yeni adres (changed)
 export async function mail(env, { to, lang, kind, user, link, n }) {
   const t = M[kind][langOf(lang)], body = t.body(user, n);
   if (env.DEV === "1") console.log(`mail ${kind} → ${to}: ${link}`);

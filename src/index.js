@@ -516,7 +516,8 @@ export class Room extends DurableObject {
 //     self: kendisi hesap açtı (sıra sayısı sınırlı), verified: false → e-postası doğrulanmadı, sıra açamaz
 //   "email:<adres>" → kullanıcı adı, "susp:<ad>" → askıya alınan kullanıcının sıraları haritada görünmez
 //   "fail:<ad>" → { n, at } başarısız giriş sayacı
-//   "tok:<verify|reset>:<sha256(belirteç)>" → { name, exp }: e-postayla giden tek kullanımlık bağlantı; belirtecin kendisi saklanmaz
+//   "tok:<verify|reset|email>:<sha256(belirteç)>" → { name, exp, email? }: e-postayla giden tek kullanımlık bağlantı; belirtecin kendisi
+//     saklanmaz. email: onaylanınca hesaba yazılacak yeni adres
 // Sıcak yolda değil: sayfalar adresi açılışta bir kez çözer, sonra doğrudan odaya gider. Bilet hakkı kullanıcının
 // Account DO'sunda (billing.js). Şifre özeti (PBKDF2) burada değil Worker'da hesaplanır: tek DO'yu giriş denemeleri kilitlemesin.
 export class Registry extends DurableObject {
@@ -591,10 +592,37 @@ export class Registry extends DurableObject {
     if ((await this.value(`legacy:${name}`)) || (await this.value(`slug:${name}`))) throw fail("userLegacy");
   }
 
-  // Süper yöneticinin açtığı kullanıcı: e-postasız, doğrulanmış; Worker hesabını sınırsız yapar
-  async createUser(name, cred) {
+  // Süper yöneticinin açtığı kullanıcı: doğrulanmış, e-postası isteğe bağlı; Worker hesabını sınırsız yapar
+  async createUser(name, cred, email) {
     await this.nameFree(name);
-    await this.ctx.storage.put(`user:${name}`, { ...cred, at: Date.now() });
+    if (email && (await this.value(`email:${email}`))) throw fail("emailTaken");
+    await this.ctx.storage.put({ [`user:${name}`]: { ...cred, email, at: Date.now() }, ...(email && { [`email:${email}`]: name }) });
+  }
+
+  // E-postayı hemen değiştirir (süper yönetici ya da onaylanan bağlantı); eski adres boşa çıkar
+  async setEmail(name, email) {
+    const u = await this.user(name), owner = await this.value(`email:${email}`);
+    if (owner && owner !== name) throw fail("emailTaken");
+    if (u.email && u.email !== email) await this.ctx.storage.delete(`email:${u.email}`);
+    await this.ctx.storage.put({ [`user:${name}`]: { ...u, email }, [`email:${email}`]: name });
+  }
+
+  // Kullanıcının kendi e-posta değişikliği: adres onay bağlantısı açılınca değişir, o zamana kadar eskisi geçerli kalır.
+  // Yazım hatası olan adres hesabı kilitlemez; doğrulanmamış hesap da adresini böyle düzeltir.
+  async requestEmail(name, email) {
+    const u = await this.user(name), owner = await this.value(`email:${email}`);
+    if (owner === name) throw fail("sameEmail");
+    if (owner) throw fail("emailTaken");
+    if (!(await this.mailSlot(name, "email"))) throw fail("tooMany");
+    return { lang: u.lang, token: await this.token("email", name, 864e5, { email }) };
+  }
+
+  // Dönen old: değişiklik bildirimi gidecek eski adres (yoksa undefined)
+  async confirmEmail(t) {
+    const { name, email } = await this.redeem("email", t), { email: old, lang } = await this.user(name);
+    await this.setEmail(name, email);
+    await this.setUser(name, { verified: true }); // bağlantı yeni adrese gitti
+    return { name, email, old: old !== email ? old : undefined, lang };
   }
 
   // Kendi hesap açan kullanıcı; dönen değer doğrulama bağlantısının belirteci.
@@ -611,25 +639,26 @@ export class Registry extends DurableObject {
     return this.token("verify", name, 3 * 864e5);
   }
 
-  async token(kind, name, ttl) {
+  async token(kind, name, ttl, extra) {
     const t = randomHex(24);
-    await this.ctx.storage.put(`tok:${kind}:${await sha256(t)}`, { name, exp: Date.now() + ttl });
+    await this.ctx.storage.put(`tok:${kind}:${await sha256(t)}`, { ...extra, name, exp: Date.now() + ttl });
     await this.tidyLater();
     return t;
   }
 
-  // Tek kullanımlık: süresi dolmamışsa kullanıcı adını döner ve siler
+  // Tek kullanımlık: süresi dolmamışsa kaydı ({ name, email? }) döner ve siler
   async redeem(kind, t) {
     const k = `tok:${kind}:${await sha256(String(t ?? ""))}`, v = await this.value(k);
     if (!v || v.exp < Date.now() || !(await this.value(`user:${v.name}`))) throw fail("badToken");
     await this.ctx.storage.delete(k);
-    return v.name;
+    return v;
   }
 
-  // E-posta gönderimini sınırlar: aynı kullanıcıya aynı türden (verify, reset) dakikada en fazla bir e-posta. Gönderilmeyecekse null.
+  // E-posta gönderimini sınırlar: aynı kullanıcıya aynı türden (verify, reset, email) dakikada en fazla bir e-posta. Gönderilmeyecekse null.
+  // email türü yeni adrese gider: kayıtlı adresi olmayan kullanıcı da ekleyebilir.
   async mailSlot(name, kind) {
     const u = await this.value(`user:${name}`);
-    if (!u?.email || Date.now() - (u.mailed?.[kind] ?? 0) < 60e3) return null;
+    if (!u || (!u.email && kind !== "email") || Date.now() - (u.mailed?.[kind] ?? 0) < 60e3) return null;
     await this.ctx.storage.put(`user:${name}`, { ...u, mailed: { ...u.mailed, [kind]: Date.now() } });
     return u;
   }
@@ -642,7 +671,7 @@ export class Registry extends DurableObject {
   }
 
   async verify(t) {
-    const name = await this.redeem("verify", t);
+    const { name } = await this.redeem("verify", t);
     await this.setUser(name, { verified: true });
     return name;
   }
@@ -655,7 +684,7 @@ export class Registry extends DurableObject {
 
   // Bağlantı e-postaya gittiği için e-posta doğrulanmış sayılır
   async reset(t, cred) {
-    const name = await this.redeem("reset", t);
+    const { name } = await this.redeem("reset", t);
     await this.setPassword(name, { ...cred, verified: true });
     return name;
   }
@@ -736,7 +765,8 @@ export class Registry extends DurableObject {
 }
 
 const ID_RE = /^[a-f0-9]{10}$/;
-const NAME_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+// 3. ve 4. karakterde "--" olamaz: "xn--" gibi adlar tarayıcıda Unicode'a çözülür ve başka bir adresi taklit edebilir
+const NAME_RE = /^(?!..--)[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 // Alt alan adı, kullanıcı adı ya da sıra adresi olamaz: sayfa ve dosya yollarıyla çakışır (antalyabb.qrwait.app/join),
 // ya da herkes hesap açabildiği için resmi bir adres gibi görünüp kötüye kullanılabilir (destek.qrwait.app)
@@ -747,6 +777,7 @@ const RESERVED = new Set([
   "root", "system", "sistem", "official", "resmi", "qrwait", "noreply", "no-reply", "bildirim", "security",
   "gizlilik", "kosullar", "kvkk", "privacy", "terms", "legal", "hukuk", "pricing", "fiyat", "fiyatlar", "ucret",
 ]);
+const CONTACT = "hello@qrwait.app"; // web/src/components/legal.tsx EMAIL ile aynı
 const SUPER = "admin"; // süper yönetici girişi: kullanıcı adı "admin", şifre ADMIN_PASSWORD
 const SESSION_MS = 30 * 864e5;
 const ROOM_LIMIT = 20; // kendi hesap açan kullanıcının en fazla sıra sayısı (herkese açık liste her sıraya sorar)
@@ -818,9 +849,9 @@ async function auth(req, env, reg) {
 const acct = (env, name) => env.ACCOUNT.getByName(name);
 
 // E-postadaki bağlantılar isteğin geldiği sitenin yönetim sayfasına gider
+// kind: verify, reset, email; sayfa belirteci aynı adlı parametreden okur (/admin?email=<belirteç>)
 async function sendLink(env, url, { to, lang, kind, user, token }) {
-  const q = kind === "verify" ? "verify" : "reset";
-  await mail(env, { to, lang, kind, user, link: `${url.origin}/admin?${q}=${token}` }).catch((e) => console.error("mail", e.message));
+  await mail(env, { to, lang, kind, user, link: `${url.origin}/admin?${kind}=${token}` }).catch((e) => console.error("mail", e.message));
 }
 
 // Gizli sıranın adresi: 20 karakter [a-z0-9] (~103 bit), tahmin edilemez; slug kuralına uyar, ID_RE'ye uymaz
@@ -890,9 +921,9 @@ async function usersApi(req, env, reg, url, body) {
     return { users, unowned: (await reg.rooms(null)).length };
   }
   if (!name && req.method === "POST") {
-    const n = userName(body.user);
-    await reg.createUser(n, await credential(body.password));
-    await acct(env, n).set({ metered: false });
+    const n = userName(body.user), email = body.email ? emailOf(body.email) : undefined;
+    await reg.createUser(n, await credential(body.password), email);
+    await acct(env, n).set({ metered: false, email, user: n });
   }
   else if (op === "adopt" && req.method === "POST") return { moved: await reg.adopt(name) };
   else if (op === "plan" && req.method === "POST") {
@@ -905,6 +936,11 @@ async function usersApi(req, env, reg, url, body) {
       await a.set({ suspended: !!body.suspended });
     }
     if (body.verified) await reg.setUser(name, { verified: true });
+    if (body.email) {
+      const email = emailOf(body.email);
+      await reg.setEmail(name, email);
+      await a.set({ email, user: name });
+    }
     return a.balance();
   } else if (!op && req.method === "PUT") await reg.setPassword(name, await credential(body.password));
   else if (!op && req.method === "DELETE") {
@@ -914,7 +950,7 @@ async function usersApi(req, env, reg, url, body) {
   return { ok: true };
 }
 
-// Kullanıcının kendi hesabı: /me, şifre, doğrulama e-postası, bilet paketi alma, hesabı silme
+// Kullanıcının kendi hesabı: /me, şifre, e-posta değiştirme, doğrulama e-postası, bilet paketi alma, hesabı silme
 async function accountApi(req, env, reg, url, body, owner, u) {
   const p = url.pathname;
   if (p === "/api/admin/me") {
@@ -928,6 +964,12 @@ async function accountApi(req, env, reg, url, body, owner, u) {
     const cred = await credential(body.password, true);
     await reg.setPassword(owner, cred);
     return session(owner, cred.hash); // eski oturumlar düştü, bu tarayıcı girişli kalsın
+  }
+  if (p === "/api/admin/email" && req.method === "POST") {
+    await checkLogin(env, reg, owner, body.password);
+    const email = emailOf(body.email), r = await reg.requestEmail(owner, email);
+    await sendLink(env, url, { to: email, lang: r.lang, kind: "email", user: owner, token: r.token });
+    return { ok: true };
   }
   if (p === "/api/admin/verify" && req.method === "POST") {
     const r = await reg.resendVerify(owner);
@@ -1011,10 +1053,10 @@ async function adminApi(req, env, url, body) {
   return { ok: true };
 }
 
-// Hesap açma, e-posta doğrulama, şifremi unuttum. Hepsi IP başına sınırlı; hesap açma ve sıfırlama isteği Turnstile ister.
+// Hesap açma, e-posta doğrulama ve değiştirme, şifremi unuttum. Hepsi IP başına sınırlı; hesap açma ve sıfırlama isteği Turnstile ister.
 async function publicAuth(req, env, reg, url, body) {
   const p = url.pathname;
-  if (req.method !== "POST" || !["/api/login", "/api/signup", "/api/verify", "/api/forgot", "/api/reset"].includes(p)) return null;
+  if (req.method !== "POST" || !["/api/login", "/api/signup", "/api/verify", "/api/email", "/api/forgot", "/api/reset"].includes(p)) return null;
   await limit(env, "AUTH_LIMIT", `${p}:${ip(req)}`);
   switch (p) {
     case "/api/login": {
@@ -1032,6 +1074,13 @@ async function publicAuth(req, env, reg, url, body) {
       return session(name, cred.hash);
     }
     case "/api/verify": return { user: await reg.verify(body.token) };
+    case "/api/email": {
+      const { name, email, old, lang } = await reg.confirmEmail(body.token);
+      await acct(env, name).set({ email, user: name }); // bilet azaldı e-postaları yeni adrese
+      // Hesap ele geçirildiyse sahibi haberdar olsun: eski adrese bildirim
+      if (old) await mail(env, { to: old, lang, kind: "changed", user: name, link: `mailto:${CONTACT}`, n: email }).catch((e) => console.error("mail", e.message));
+      return { user: name, email };
+    }
     case "/api/forgot": {
       await human(env, req, body.captcha);
       const email = emailOf(body.email), r = await reg.forgot(email);
