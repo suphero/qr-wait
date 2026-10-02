@@ -297,7 +297,7 @@ function Row({ e, wait, skew, children }: { e: Entry; wait?: number | null; skew
   );
 }
 
-if (lang !== "tr") document.title = T.title;
+document.title = T.title;
 
 function HostPage() {
   const confirm = useConfirm();

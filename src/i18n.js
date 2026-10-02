@@ -1,8 +1,8 @@
 // Sunucu metinleri: hata mesajları ve push bildirimi. Diller web/src/lib/i18n.ts ile aynı.
 // Hatalar metin yerine anahtar + parametre taşır (fail), böylece Durable Object sınırını geçer;
-// Worker yanıtı dönerken isteğin diline çevirir (localize). Dil: x-lang başlığı, yoksa Türkçe.
+// Worker yanıtı dönerken isteğin diline çevirir (localize). Dil: x-lang başlığı, yoksa İngilizce.
 export const LANGS = ["tr", "en", "de", "ru"];
-export const langOf = (l) => (LANGS.includes(l) ? l : "tr");
+export const langOf = (l) => (LANGS.includes(l) ? l : "en");
 
 const all = (s) => ({ tr: s, en: s, de: s, ru: s });
 // "7" → "Masa 7", "Bahçe 3" olduğu gibi

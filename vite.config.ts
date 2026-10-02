@@ -38,23 +38,23 @@ const LD = `<script type="application/ld+json">${JSON.stringify({
   inLanguage: ["tr", "en", "de", "ru"],
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "First 1000 tickets free" },
 })}</script>`;
-const HOME = ["QRWait · QR kodlu sanal sıra sistemi", "Plajlar, iskeleler, hizmet noktaları ve etkinlikler için QR kodlu sıra sistemi. Uygulama indirmeden sıraya gir, sıran gelince telefonun haber versin."] as const;
-const PRICING = ["Fiyatlar · QRWait", "QRWait fiyatları: abonelik yok, ilk 1000 bilet ücretsiz. Bilet paketleri tek seferlik ödenir, süresi dolmaz."] as const;
+const HOME = ["QRWait · Virtual queue with a QR code, no app", "QR code queue system for beaches, piers, service points and events. Join the queue without an app and your phone tells you when it's your turn."] as const;
+const PRICING = ["Pricing · QRWait", "QRWait pricing: no subscription, the first 1000 tickets are free. Ticket packages are one-time payments and never expire."] as const;
 const PAGES: Record<string, { title: string; head?: string; body?: string }> = {
   home: { title: HOME[0], head: `${seo("/", ...HOME)}\n${LD}\n${FONT}`, body: "bg-paper" },
   pricing: { title: PRICING[0], head: `${seo("/pricing", ...PRICING)}\n${FONT}`, body: "bg-paper" },
   join: { title: "QRWait", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">\n${NOINDEX}` },
-  host: { title: "Görevli Paneli", head: NOINDEX },
-  status: { title: "Sıra durumu", head: NOINDEX },
-  admin: { title: "QRWait · Yönetim", head: NOINDEX },
-  privacy: { title: "Gizlilik · QRWait", head: seo("/privacy", "Gizlilik · QRWait", "QRWait gizlilik politikası: hangi verilerin neden tutulduğu ve ne kadar saklandığı.") },
-  terms: { title: "Kullanım Koşulları · QRWait", head: seo("/terms", "Kullanım Koşulları · QRWait", "QRWait kullanım koşulları: hesap, bilet paketleri ve hizmetin kullanımı.") },
+  host: { title: "Attendant panel", head: NOINDEX },
+  status: { title: "Queue status", head: NOINDEX },
+  admin: { title: "QRWait · Admin", head: NOINDEX },
+  privacy: { title: "Privacy · QRWait", head: seo("/privacy", "Privacy · QRWait", "QRWait privacy policy: what data is kept, why, and for how long.") },
+  terms: { title: "Terms of Use · QRWait", head: seo("/terms", "Terms of Use · QRWait", "QRWait terms of use: accounts, ticket packages and use of the service.") },
 };
 
 const html = (name: string) => {
   const p = PAGES[name];
   return `<!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

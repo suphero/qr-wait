@@ -233,7 +233,7 @@ const T = pick<{
     contactText: "Хотите систему очереди для вашего пляжа, бизнеса или мероприятия? Напишите нам — настроим вместе.",
   },
 });
-if (lang !== "tr") document.title = T.title;
+document.title = T.title;
 
 // Fişteki tek animasyon: sıra ilerler, sonunda yeşile döner. Hareket azaltma tercihinde son hali gösterilir.
 const STEPS = T.steps, DONE = T.done;

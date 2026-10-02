@@ -278,7 +278,7 @@ export class Room extends DurableObject {
     return { id: e.id, no: e.no };
   }
 
-  add(size, accept, src, device = null, note = "", lang = "tr") {
+  add(size, accept, src, device = null, note = "", lang = "en") {
     if (this.s.entries.length >= MAX_ENTRIES) throw fail("full");
     const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, accept, src, device, note, lang, status: "waiting", at: Date.now() };
     this.s.entries.push(e);

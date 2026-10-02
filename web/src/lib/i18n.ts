@@ -1,12 +1,12 @@
 import type { PublicRoom, Table } from "@/lib/api";
 
-// Ziyaretçi sayfalarının dili (join, status, home): telefonun dil tercihlerinden ilk desteklenen, yoksa Türkçe.
+// Ziyaretçi sayfalarının dili (join, status, home): telefonun dil tercihlerinden ilk desteklenen, yoksa İngilizce.
 // Görevli ve yönetim ekranları Türkçe kalır. Sunucu metinleri src/i18n.js'te, aynı diller.
 export const LANGS = ["tr", "en", "de", "ru"] as const;
 export type Lang = (typeof LANGS)[number];
 
 export const lang: Lang = (navigator.languages ?? [navigator.language])
-  .map((l) => l.slice(0, 2).toLowerCase()).find((l): l is Lang => (LANGS as readonly string[]).includes(l)) ?? "tr";
+  .map((l) => l.slice(0, 2).toLowerCase()).find((l): l is Lang => (LANGS as readonly string[]).includes(l)) ?? "en";
 
 // Sayfa sözlüğü: tr kaynak, diğerleri aynı biçimde olmak zorunda
 export const pick = <D,>(d: { tr: D } & Record<Exclude<Lang, "tr">, D>): D => d[lang];
