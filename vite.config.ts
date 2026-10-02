@@ -11,25 +11,44 @@ const web = resolve(import.meta.dirname, "web");
 const FONT = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">`;
+// Arama motoru ve link önizlemesi (WhatsApp, X, LinkedIn) etiketleri; yalnızca ana alan adındaki tanıtım sayfaları
+const SITE = "https://qrwait.app";
+const seo = (path: string, title: string, description: string) => `<meta name="description" content="${description}">
+<link rel="canonical" href="${SITE}${path}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="QRWait">
+<meta property="og:url" content="${SITE}${path}">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:image" content="${SITE}/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">`;
+// Panel, sıraya giriş ve sıra durumu sayfaları dizine girmesin (her sıranın sayfası ince ve geçici içerik)
+const NOINDEX = `<meta name="robots" content="noindex">`;
+// Ana sayfa için yapılandırılmış veri: Google'a ürünün ne olduğunu ve ücretsiz başlangıcı anlatır
+const LD = `<script type="application/ld+json">${JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "QRWait",
+  url: SITE,
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  description: "Virtual queue with a QR code, no app. Visitors scan, join and get notified when it's their turn.",
+  inLanguage: ["tr", "en", "de", "ru"],
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "First 1000 tickets free" },
+})}</script>`;
+const HOME = ["QRWait · QR kodlu sanal sıra sistemi", "Plajlar, iskeleler, hizmet noktaları ve etkinlikler için QR kodlu sıra sistemi. Uygulama indirmeden sıraya gir, sıran gelince telefonun haber versin."] as const;
+const PRICING = ["Fiyatlar · QRWait", "QRWait fiyatları: abonelik yok, ilk 1000 bilet ücretsiz. Bilet paketleri tek seferlik ödenir, süresi dolmaz."] as const;
 const PAGES: Record<string, { title: string; head?: string; body?: string }> = {
-  home: {
-    title: "QRWait · QR kodlu sanal sıra sistemi",
-    head: `<meta name="description" content="Plajlar, iskeleler, hizmet noktaları ve etkinlikler için QR kodlu sıra sistemi. Uygulama indirmeden sıraya gir, sıran gelince telefonun haber versin.">
-${FONT}`,
-    body: "bg-paper",
-  },
-  pricing: {
-    title: "Fiyatlar · QRWait",
-    head: `<meta name="description" content="QRWait fiyatları: abonelik yok, ilk 1000 bilet ücretsiz. Bilet paketleri tek seferlik ödenir, süresi dolmaz.">
-${FONT}`,
-    body: "bg-paper",
-  },
-  join: { title: "QRWait", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">` },
-  host: { title: "Görevli Paneli" },
-  status: { title: "Sıra durumu" },
-  admin: { title: "QRWait · Yönetim" },
-  privacy: { title: "Gizlilik · QRWait" },
-  terms: { title: "Kullanım Koşulları · QRWait" },
+  home: { title: HOME[0], head: `${seo("/", ...HOME)}\n${LD}\n${FONT}`, body: "bg-paper" },
+  pricing: { title: PRICING[0], head: `${seo("/pricing", ...PRICING)}\n${FONT}`, body: "bg-paper" },
+  join: { title: "QRWait", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">\n${NOINDEX}` },
+  host: { title: "Görevli Paneli", head: NOINDEX },
+  status: { title: "Sıra durumu", head: NOINDEX },
+  admin: { title: "QRWait · Yönetim", head: NOINDEX },
+  privacy: { title: "Gizlilik · QRWait", head: seo("/privacy", "Gizlilik · QRWait", "QRWait gizlilik politikası: hangi verilerin neden tutulduğu ve ne kadar saklandığı.") },
+  terms: { title: "Kullanım Koşulları · QRWait", head: seo("/terms", "Kullanım Koşulları · QRWait", "QRWait kullanım koşulları: hesap, bilet paketleri ve hizmetin kullanımı.") },
 };
 
 const html = (name: string) => {
