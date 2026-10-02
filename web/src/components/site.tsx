@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { LEGAL } from "@/components/legal";
 import { Button } from "@/components/ui/button";
-import { pick } from "@/lib/i18n";
+import { LangSwitch } from "@/components/lang";
+import { pick, sitePath } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 // Tanıtım sitesinin (pages/home.tsx, pages/pricing.tsx, pages/usecase.tsx) ortak kabuğu: başlık, alt bilgi, bölüm ve buton stilleri.
@@ -37,11 +38,11 @@ export function Site({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto max-w-[1080px] px-5 font-display text-[1.0625rem] leading-relaxed text-ink [font-optical-sizing:auto] [&_:focus-visible]:rounded [&_:focus-visible]:outline-3 [&_:focus-visible]:outline-offset-3 [&_:focus-visible]:outline-success">
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-5">
-        <a className="text-[1.35rem] font-extrabold tracking-[-0.02em] no-underline" href="/">
+        <a className="text-[1.35rem] font-extrabold tracking-[-0.02em] no-underline" href={sitePath("/")}>
           qrwait<span aria-hidden="true" className="ml-[.12em] inline-block size-[.5em] rounded-full bg-success" />
         </a>
         <nav className="flex items-center gap-4">
-          <a href="/pricing" className="font-semibold whitespace-nowrap no-underline hover:underline">{SITE.pricing}</a>
+          <a href={sitePath("/pricing")} className="font-semibold whitespace-nowrap no-underline hover:underline">{SITE.pricing}</a>
           <Button asChild className={cn(pill, "px-4 py-2.5 text-[.95rem]")}><a href="/admin">{SITE.admin}</a></Button>
         </nav>
       </header>
@@ -50,14 +51,15 @@ export function Site({ children }: { children: ReactNode }) {
 
       <footer className="flex flex-wrap justify-between gap-4 pt-6 pb-10 text-[.95rem] text-ink-soft">
         <nav className="flex w-full flex-wrap gap-x-4 gap-y-2">
-          {USES.map(([u, name]) => <a key={u} href={`/${u}`} className="underline">{name}</a>)}
+          {USES.map(([u, name]) => <a key={u} href={sitePath(`/${u}`)} className="underline">{name}</a>)}
         </nav>
         <span>© 2026 QRWait</span>
         <span className="flex flex-wrap gap-4">
-          <a href="/pricing" className="underline">{SITE.pricing}</a>
-          <a href="/privacy" className="underline">{LEGAL.privacyShort}</a>
-          <a href="/terms" className="underline">{LEGAL.terms}</a>
+          <a href={sitePath("/pricing")} className="underline">{SITE.pricing}</a>
+          <a href={sitePath("/privacy")} className="underline">{LEGAL.privacyShort}</a>
+          <a href={sitePath("/terms")} className="underline">{LEGAL.terms}</a>
           <a href="/admin" className="underline">{SITE.admin}</a>
+          <LangSwitch />
         </span>
       </footer>
     </div>

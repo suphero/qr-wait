@@ -4,14 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, catIcon, poll, type PublicRoom, type Status } from "@/lib/api";
 import { closedText, fmtWait, lang, pick, S, waitText, word } from "@/lib/i18n";
-import { LEGAL } from "@/components/legal";
+import { LangSwitch } from "@/components/lang";
+import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
 
 // antalyabb.qrwait.app/bambus ya da /status?r=bambus; kullanıcı alt alan adından (yoksa ?u=)
 const q = new URLSearchParams(location.search), path = location.pathname.slice(1);
 const ref = q.get("r") ?? (path === "status" ? "" : path), user = q.get("u") ?? "";
-const base = location.hostname.split(".").slice(1).join(".");
-const home = base.includes(".") ? `https://${base}/` : "/"; // alt alan adındaysak ana siteye
 
 const T = pick({
   tr: {
@@ -197,8 +196,9 @@ function StatusPage() {
       )}
 
       <ErrorText>{err}</ErrorText>
-      <p className="text-center text-sm"><a className="font-medium underline" href={`${home}?utm_source=qrwait&utm_medium=status`}>{T.ownQueue}</a></p>
-      <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={home}>QRWait</a>)} · <a className="underline" href={`${home}privacy`}>{LEGAL.privacyShort}</a></p>
+      <p className="text-center text-sm"><a className="font-medium underline" href={siteUrl("/?utm_source=qrwait&utm_medium=status")}>{T.ownQueue}</a></p>
+      <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={siteUrl("/")}>QRWait</a>)} · <a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a></p>
+      <p className="text-center text-sm text-muted-foreground"><LangSwitch /></p>
     </Page>
   );
 }

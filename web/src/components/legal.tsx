@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Page } from "@/components/page";
-import { pick } from "@/lib/i18n";
+import { pick, sitePath } from "@/lib/i18n";
 
 // Yasal metinler (pages/privacy.tsx, pages/terms.tsx): tarayıcı dilinde, tr/en/de/ru.
 // Metin değişince UPDATED ve TERMS_VERSION güncellenir; hesap açarken kabul edilen sürüm kullanıcı kaydında saklanır.
@@ -8,9 +8,9 @@ export const EMAIL = "hello@qrwait.app";
 export const TERMS_VERSION = "2026-09-30";
 const UPDATED = new Date(`${TERMS_VERSION}T12:00:00Z`);
 
-// Kullanıcı adresinde (antalyabb.qrwait.app) yasal sayfalar ana alan adındadır
+// Tanıtım sitesi sayfasının bu dildeki adresi. Kullanıcı adresinde (antalyabb.qrwait.app) site ana alan adındadır.
 const base = location.hostname.split(".").slice(1).join(".");
-export const siteUrl = (path: string) => (base.includes(".") ? `https://${base}${path}` : path);
+export const siteUrl = (path: string) => (base.includes(".") ? `https://${base}${sitePath(path)}` : sitePath(path));
 
 export const Mail = () => <a href={`mailto:${EMAIL}`}>{EMAIL}</a>;
 

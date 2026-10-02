@@ -2,7 +2,7 @@ import { CheckIcon } from "lucide-react";
 import { EMAIL } from "@/components/legal";
 import { H2, pill, Section, Site, solid, USES, type Use } from "@/components/site";
 import { Button } from "@/components/ui/button";
-import { pick } from "@/lib/i18n";
+import { basePath, pick, sitePath } from "@/lib/i18n";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 import "./home.css";
@@ -440,7 +440,7 @@ const T = pick<{
   },
 });
 
-const use = (USES.find(([u]) => `/${u}` === location.pathname.replace(/\.html$/, ""))?.[0] ?? "restaurant-waitlist") as Use;
+const use = (USES.find(([u]) => `/${u}` === basePath().replace(/\.html$/, ""))?.[0] ?? "restaurant-waitlist") as Use;
 const P = T.pages[use];
 document.title = P.title;
 
@@ -452,7 +452,7 @@ function UseCasePage() {
         <p className="mb-8 max-w-[46ch] text-xl text-ink-soft">{P.intro}</p>
         <div className="flex flex-wrap gap-3">
           <Button asChild className={cn(pill, solid)}><a href="/admin#signup">{T.signup}</a></Button>
-          <Button asChild className={pill}><a href="/pricing">{T.pricing}</a></Button>
+          <Button asChild className={pill}><a href={sitePath("/pricing")}>{T.pricing}</a></Button>
         </div>
         <p className="mt-4 max-w-[40ch] text-ink-soft">{T.freeNote}</p>
       </div>
@@ -491,7 +491,7 @@ function UseCasePage() {
       <Section>
         <H2>{T.othersTitle}</H2>
         <ul className="m-0 flex list-none flex-wrap gap-3 p-0">
-          {USES.filter(([u]) => u !== use).map(([u, name]) => <li key={u}><Button asChild className={pill}><a href={`/${u}`}>{name}</a></Button></li>)}
+          {USES.filter(([u]) => u !== use).map(([u, name]) => <li key={u}><Button asChild className={pill}><a href={sitePath(`/${u}`)}>{name}</a></Button></li>)}
         </ul>
       </Section>
 

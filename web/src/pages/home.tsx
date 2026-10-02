@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, catIcon, locate, type PublicRoom } from "@/lib/api";
-import { fmtDistL, geoErrors, lang, pick, waitText } from "@/lib/i18n";
+import { fmtDistL, geoErrors, lang, pick, sitePath, waitText } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
 import { H2, pill, Section, Site, solid, type Use } from "@/components/site";
 import { mount } from "@/lib/mount";
@@ -391,7 +391,7 @@ function HomePage() {
         <dl className="m-0 grid md:grid-cols-2 md:gap-x-12">
           {T.uses.map(([t, d], i) => (
             <div key={t} className="border-b border-line py-5">
-              <dt className="text-[1.15rem] font-semibold">{USE_LINK[i] ? <a href={`/${USE_LINK[i]}`} className="underline">{t}</a> : t}</dt>
+              <dt className="text-[1.15rem] font-semibold">{USE_LINK[i] ? <a href={sitePath(`/${USE_LINK[i]}`)} className="underline">{t}</a> : t}</dt>
               <dd className="mt-1 text-ink-soft">{d}</dd>
             </div>
           ))}

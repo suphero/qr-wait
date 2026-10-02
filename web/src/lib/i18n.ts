@@ -1,12 +1,34 @@
 import type { PublicRoom, Table } from "@/lib/api";
 
-// Ziyaretçi sayfalarının dili (join, status, home): telefonun dil tercihlerinden ilk desteklenen, yoksa İngilizce.
-// Görevli ve yönetim ekranları Türkçe kalır. Sunucu metinleri src/i18n.js'te, aynı diller.
+// Sayfaların dili. Tanıtım sitesinde (<html data-site>, vite.config.ts) adresten gelir: /tr/pricing Türkçe, /pricing İngilizce.
+// Diğer sayfalarda (sıraya giriş, durum, görevli, yönetim) ekrandan seçilen dil (localStorage "lang"), yoksa telefonun
+// dil tercihlerinden ilk desteklenen, o da yoksa İngilizce. Sunucu metinleri src/i18n.js'te, aynı diller.
 export const LANGS = ["tr", "en", "de", "ru"] as const;
 export type Lang = (typeof LANGS)[number];
+export const LANG_NAMES: Record<Lang, string> = { tr: "Türkçe", en: "English", de: "Deutsch", ru: "Русский" };
+const isLang = (l: unknown): l is Lang => (LANGS as readonly unknown[]).includes(l);
 
-export const lang: Lang = (navigator.languages ?? [navigator.language])
-  .map((l) => l.slice(0, 2).toLowerCase()).find((l): l is Lang => (LANGS as readonly string[]).includes(l)) ?? "en";
+const saved = (() => { try { const l = localStorage.getItem("lang"); return isLang(l) ? l : null; } catch { return null; } })();
+const preferred = (navigator.languages ?? [navigator.language]).map((l) => l.slice(0, 2).toLowerCase()).find(isLang) ?? "en";
+const root = document.documentElement, site = root.hasAttribute("data-site");
+export const lang: Lang = site && isLang(root.lang) ? root.lang : saved ?? preferred;
+root.lang = lang;
+
+// Tanıtım sitesinde dil öneki olmadan yol: /tr/pricing → /pricing, /tr/ → /
+export const basePath = () => location.pathname.replace(/^\/(tr|de|ru)(?=\/|$)/, "") || "/";
+// Tanıtım sitesi sayfasının bu dildeki adresi: sitePath("/pricing") → /tr/pricing (İngilizce önek almaz)
+export const sitePath = (path: string, l: Lang = lang) => (l === "en" ? path : `/${l}${path}`);
+
+// İngilizce kök adrese gelen ziyaretçi seçtiği ya da telefonunun dilindeki sayfaya gider; arama motorları (İngilizce) kökte kalır
+const want = saved ?? preferred;
+if (site && lang === "en" && want !== "en") location.replace(sitePath(basePath(), want) + location.search + location.hash);
+
+// Ekrandan dil seçimi: hatırlanır; tanıtım sitesinde aynı sayfanın o dildeki adresine, diğer sayfalarda yeniden yükleyerek
+export function setLang(l: Lang) {
+  try { localStorage.setItem("lang", l); } catch {}
+  if (site) location.href = sitePath(basePath(), l) + location.search + location.hash;
+  else location.reload();
+}
 
 // Sayfa sözlüğü: tr kaynak, diğerleri aynı biçimde olmak zorunda
 export const pick = <D,>(d: { tr: D } & Record<Exclude<Lang, "tr">, D>): D => d[lang];

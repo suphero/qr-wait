@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { langPath, pagePath, SEO, SITE_LANGS, USE_PAGES, type SitePage } from "./web/src/lib/seo";
 
 const web = resolve(import.meta.dirname, "web");
 
@@ -38,31 +39,47 @@ const LD = `<script type="application/ld+json">${JSON.stringify({
   inLanguage: ["tr", "en", "de", "ru"],
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "First 1000 tickets free" },
 })}</script>`;
-const HOME = ["QRWait · Virtual queue with a QR code, no app", "QR code queue system for beaches, piers, service points and events. Join the queue without an app and your phone tells you when it's your turn."] as const;
-const PRICING = ["Pricing · QRWait", "QRWait pricing: no subscription, the first 1000 tickets are free. Ticket packages are one-time payments and never expire."] as const;
-// Kullanım senaryosu sayfaları: hepsi pages/usecase.tsx'i yükler, içerik adresten seçilir. Başlıklar oradaki İngilizce metinle aynı.
-const USES: Record<string, [string, string]> = {
-  "restaurant-waitlist": ["Restaurant waitlist with a QR code, no app · QRWait", "Guests join your restaurant waitlist by scanning a QR code and get called when a table that fits them frees up. No app, no pagers. First 1000 tickets free."],
-  "beach-queue": ["Beach and pool sunbed queue · QRWait", "A fair virtual queue for beach and pool sunbeds. Visitors scan a QR code, wait in the shade and get called when sunbeds free up. No app needed."],
-  "event-queue": ["Event and festival entry queue with a QR code · QRWait", "Virtual entry queue for events and festivals. Visitors scan a QR code, take a number and get called to the gate when there's room. No app needed."],
-  "service-desk-queue": ["Queue system for service desks and clinics, no ticket machine · QRWait", "QR code queue system for municipal service points, clinics and offices. No ticket machine or hardware: visitors take a number on their phone."],
-};
-const PAGES: Record<string, { title: string; head?: string; body?: string; src?: string }> = {
-  home: { title: HOME[0], head: `${seo("/", ...HOME)}\n${LD}\n${FONT}`, body: "bg-paper" },
-  pricing: { title: PRICING[0], head: `${seo("/pricing", ...PRICING)}\n${FONT}`, body: "bg-paper" },
+// Dillerin birbirine bağlanması: Google her dilin kendi adresini bilir, x-default İngilizce kök
+const alternates = (path: string) => [
+  ...SITE_LANGS.map((l) => `<link rel="alternate" hreflang="${l}" href="${SITE}${langPath(l, path)}">`),
+  `<link rel="alternate" hreflang="x-default" href="${SITE}${path}">`,
+].join("\n");
+const APP: Record<string, Page> = {
   join: { title: "QRWait", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">\n${NOINDEX}` },
   host: { title: "Attendant panel", head: NOINDEX },
   status: { title: "Queue status", head: NOINDEX },
   admin: { title: "QRWait · Admin", head: NOINDEX },
-  privacy: { title: "Privacy · QRWait", head: seo("/privacy", "Privacy · QRWait", "QRWait privacy policy: what data is kept, why, and for how long.") },
-  ...Object.fromEntries(Object.entries(USES).map(([u, [title, desc]]) => [u, { title, head: `${seo(`/${u}`, title, desc)}\n${FONT}`, body: "bg-paper", src: "usecase" }])),
-  terms: { title: "Terms of Use · QRWait", head: seo("/terms", "Terms of Use · QRWait", "QRWait terms of use: accounts, ticket packages and use of the service.") },
 };
+// Tanıtım sitesi: her dil ve sayfa için ayrı HTML. İngilizce kökte (pricing.html → /pricing, ana sayfa home.html → / Worker'da),
+// diğer diller klasörde (tr/pricing.html → /tr/pricing, tr/index.html → /tr/). Senaryo sayfaları pages/usecase.tsx'i yükler.
+// data-site: sayfanın dili adresten gelir (lib/i18n.ts), telefonun dilinden değil
+type Page = { title: string; head?: string; body?: string; src?: string; lang?: string };
+const sitePage = (l: (typeof SITE_LANGS)[number], p: SitePage): Page => {
+  const [title, desc] = SEO[l][p], path = pagePath(p), legal = p === "privacy" || p === "terms";
+  return {
+    title, lang: l, src: (USE_PAGES as readonly string[]).includes(p) ? "usecase" : p, body: legal ? undefined : "bg-paper",
+    head: [seo(langPath(l, path), title, desc), alternates(path), p === "home" && LD, !legal && FONT].filter(Boolean).join("\n"),
+  };
+};
+const PAGES: Record<string, Page> = {
+  ...APP,
+  ...Object.fromEntries(SITE_LANGS.flatMap((l) => (Object.keys(SEO[l]) as SitePage[]).map((p) =>
+    [l === "en" ? p : `${l}/${p === "home" ? "index" : p}`, sitePage(l, p)]))),
+};
+
+// Site haritası: tanıtım sayfalarının her dildeki adresi, dil karşılıklarıyla (derlemede dist/sitemap.xml)
+const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${(Object.keys(SEO.en) as SitePage[]).flatMap((p) => SITE_LANGS.map((l) => `  <url><loc>${SITE}${langPath(l, pagePath(p))}</loc>
+${SITE_LANGS.map((a) => `    <xhtml:link rel="alternate" hreflang="${a}" href="${SITE}${langPath(a, pagePath(p))}"/>`).join("\n")}
+  </url>`)).join("\n")}
+</urlset>
+`;
 
 const html = (name: string) => {
   const p = PAGES[name];
   return `<!doctype html>
-<html lang="en">
+<html lang="${p.lang ?? "en"}"${p.lang ? " data-site" : ""}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -82,18 +99,19 @@ ${p.head ? `${p.head}\n` : ""}<title>${p.title}</title>
 const entry = (name: string) => resolve(web, `${name}.html`);
 const pageOf = (id: string) => Object.keys(PAGES).find((n) => entry(n) === id);
 
-// HTML'leri bellekte üretir. Geliştirmede Worker'ın yaptığını da taklit eder: "/join" → join, "/" → home
+// HTML'leri bellekte üretir. Geliştirmede Worker'ın yaptığını da taklit eder: "/join" → join, "/" → home, "/tr/" → tr/index
 // (üretimde bu yönlendirmeyi Cloudflare Assets ve src/index.js yapar)
 const pages = (): Plugin => ({
   name: "pages",
   enforce: "pre",
   resolveId: (id) => (pageOf(id) ? id : undefined),
   load: (id) => { const n = pageOf(id); return n && html(n); },
+  generateBundle() { this.emitFile({ type: "asset", fileName: "sitemap.xml", source: sitemap() }); },
   configureServer(server) {
     server.middlewares.use(async (req, res, next) => {
       const url = req.url ?? "/", path = url.split("?")[0].replace(/\.html$/, "");
-      const name = path === "/" ? "home" : path.slice(1);
-      if (!PAGES[name]) return next();
+      const name = [path === "/" ? "home" : path.slice(1), `${path.slice(1).replace(/\/$/, "")}/index`].find((n) => PAGES[n]);
+      if (!name) return next();
       res.setHeader("content-type", "text/html; charset=utf-8");
       res.end(await server.transformIndexHtml(url, html(name)));
     });
