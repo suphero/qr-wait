@@ -776,6 +776,7 @@ const RESERVED = new Set([
   "billing", "pay", "odeme", "fatura", "support", "destek", "help", "yardim", "info", "blog", "docs", "cdn", "static",
   "root", "system", "sistem", "official", "resmi", "qrwait", "noreply", "no-reply", "bildirim", "security",
   "gizlilik", "kosullar", "kvkk", "privacy", "terms", "legal", "hukuk", "pricing", "fiyat", "fiyatlar", "ucret",
+  "restaurant-waitlist", "beach-queue", "event-queue", "service-desk-queue", // tanıtım sitesinin senaryo sayfaları
 ]);
 const CONTACT = "hello@qrwait.app"; // web/src/components/legal.tsx EMAIL ile aynı
 const SUPER = "admin"; // süper yönetici girişi: kullanıcı adı "admin", şifre ADMIN_PASSWORD

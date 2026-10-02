@@ -2,6 +2,10 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://qrwait.app/</loc></url>
   <url><loc>https://qrwait.app/pricing</loc></url>
+  <url><loc>https://qrwait.app/restaurant-waitlist</loc></url>
+  <url><loc>https://qrwait.app/beach-queue</loc></url>
+  <url><loc>https://qrwait.app/event-queue</loc></url>
+  <url><loc>https://qrwait.app/service-desk-queue</loc></url>
   <url><loc>https://qrwait.app/privacy</loc></url>
   <url><loc>https://qrwait.app/terms</loc></url>
 </urlset>

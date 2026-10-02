@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { api, catIcon, locate, type PublicRoom } from "@/lib/api";
 import { fmtDistL, geoErrors, lang, pick, waitText } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
-import { H2, pill, Section, Site, solid } from "@/components/site";
+import { H2, pill, Section, Site, solid, type Use } from "@/components/site";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 import "./home.css";
@@ -234,6 +234,8 @@ const T = pick<{
   },
 });
 document.title = T.title;
+// T.uses sırasıyla: plaj, iskele, belediye, etkinlik, özel işletmeler, sıra durumu → ayrıntılı senaryo sayfası
+const USE_LINK: (Use | null)[] = ["beach-queue", null, "service-desk-queue", "event-queue", "restaurant-waitlist", null];
 
 // Fişteki tek animasyon: sıra ilerler, sonunda yeşile döner. Hareket azaltma tercihinde son hali gösterilir.
 const STEPS = T.steps, DONE = T.done;
@@ -387,9 +389,9 @@ function HomePage() {
       <Section>
         <H2>{T.useTitle}</H2>
         <dl className="m-0 grid md:grid-cols-2 md:gap-x-12">
-          {T.uses.map(([t, d]) => (
+          {T.uses.map(([t, d], i) => (
             <div key={t} className="border-b border-line py-5">
-              <dt className="text-[1.15rem] font-semibold">{t}</dt>
+              <dt className="text-[1.15rem] font-semibold">{USE_LINK[i] ? <a href={`/${USE_LINK[i]}`} className="underline">{t}</a> : t}</dt>
               <dd className="mt-1 text-ink-soft">{d}</dd>
             </div>
           ))}
@@ -420,8 +422,10 @@ function HomePage() {
       <section id="iletisim" className="mt-10 mb-20 rounded-[20px] bg-ink px-6 py-10 text-white md:rounded-[28px] md:px-12 md:py-16">
         <H2 className="mb-4">{T.contactTitle}</H2>
         <p className="mb-8 max-w-[46ch] text-[1.15rem] text-[#C9D2E3]">{T.contactText}</p>
-        <Button asChild className={cn(pill, "mb-8 border-ticket bg-ticket text-ink hover:bg-ticket/90")}><a href="/admin#signup">{T.signup}</a></Button>
-        <a className="inline-block text-[clamp(1.4rem,4vw,2.4rem)] font-extrabold tracking-[-0.02em] break-all text-ticket underline decoration-3 underline-offset-6" href="mailto:hello@qrwait.app">hello@qrwait.app</a>
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-6">
+          <Button asChild className={cn(pill, "border-ticket bg-ticket text-ink hover:bg-ticket/90")}><a href="/admin#signup">{T.signup}</a></Button>
+          <a className="inline-block text-[clamp(1.4rem,4vw,2.4rem)] font-extrabold tracking-[-0.02em] break-all text-ticket underline decoration-3 underline-offset-6" href="mailto:hello@qrwait.app">hello@qrwait.app</a>
+        </div>
       </section>
     </Site>
   );

@@ -4,13 +4,22 @@ import { Button } from "@/components/ui/button";
 import { pick } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-// Tanıtım sitesinin (pages/home.tsx, pages/pricing.tsx) ortak kabuğu: başlık, alt bilgi, bölüm ve buton stilleri.
+// Tanıtım sitesinin (pages/home.tsx, pages/pricing.tsx, pages/usecase.tsx) ortak kabuğu: başlık, alt bilgi, bölüm ve buton stilleri.
 // Bu sayfaların HTML'i vite.config.ts'te Bricolage Grotesque yazı tipini yükler ve body'ye bg-paper verir.
 export const SITE = pick({
   tr: { admin: "Yönetici girişi", pricing: "Fiyatlar" },
   en: { admin: "Admin login", pricing: "Pricing" },
   de: { admin: "Admin-Anmeldung", pricing: "Preise" },
   ru: { admin: "Вход для администратора", pricing: "Цены" },
+});
+
+// Kullanım senaryosu sayfaları (pages/usecase.tsx): adres ve bu dildeki adı. Her sayfanın alt bilgisinden bağlanır.
+export type Use = "restaurant-waitlist" | "beach-queue" | "event-queue" | "service-desk-queue";
+export const USES = pick<[Use, string][]>({
+  tr: [["restaurant-waitlist", "Restoran bekleme listesi"], ["beach-queue", "Plaj ve havuz sırası"], ["event-queue", "Etkinlik giriş sırası"], ["service-desk-queue", "Hizmet noktası sırası"]],
+  en: [["restaurant-waitlist", "Restaurant waitlist"], ["beach-queue", "Beach & pool queue"], ["event-queue", "Event entry queue"], ["service-desk-queue", "Service desk queue"]],
+  de: [["restaurant-waitlist", "Restaurant-Warteliste"], ["beach-queue", "Strand & Pool"], ["event-queue", "Einlass bei Events"], ["service-desk-queue", "Schalter & Praxen"]],
+  ru: [["restaurant-waitlist", "Лист ожидания для ресторана"], ["beach-queue", "Пляж и бассейн"], ["event-queue", "Вход на мероприятие"], ["service-desk-queue", "Пункт обслуживания"]],
 });
 
 // Hap biçimli lacivert kenarlı butonlar
@@ -40,6 +49,9 @@ export function Site({ children }: { children: ReactNode }) {
       <main>{children}</main>
 
       <footer className="flex flex-wrap justify-between gap-4 pt-6 pb-10 text-[.95rem] text-ink-soft">
+        <nav className="flex w-full flex-wrap gap-x-4 gap-y-2">
+          {USES.map(([u, name]) => <a key={u} href={`/${u}`} className="underline">{name}</a>)}
+        </nav>
         <span>© 2026 QRWait</span>
         <span className="flex flex-wrap gap-4">
           <a href="/pricing" className="underline">{SITE.pricing}</a>
