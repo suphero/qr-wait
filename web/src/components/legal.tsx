@@ -26,10 +26,10 @@ export const LEGAL = pick({
 export type Section = { h: string; p?: ReactNode[]; ul?: ReactNode[] };
 
 export function LegalPage({ title, sections }: { title: string; sections: Section[] }) {
-  document.title = `${title} · QRWait`;
+  document.title = `${title} · QR Wait`;
   return (
     <Page className="max-w-3xl leading-relaxed [&_a]:underline [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold [&_li]:mt-1 [&_ul]:list-disc [&_ul]:pl-6">
-      <p className="mt-3 text-sm"><a href={siteUrl("/")}>← QRWait</a></p>
+      <p className="mt-3 text-sm"><a href={siteUrl("/")}>← QR Wait</a></p>
       <h1 className="text-3xl font-bold text-primary">{title}</h1>
       <p className="text-sm text-muted-foreground">{LEGAL.updated}: {UPDATED.toLocaleDateString(LEGAL.lang, { dateStyle: "long" })}</p>
       {sections.map((s, i) => (

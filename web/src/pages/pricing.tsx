@@ -23,7 +23,7 @@ const T = pick<{
   moreTitle: string; moreText: string;
 }>({
   tr: {
-    title: "Fiyatlar · QRWait",
+    title: "Fiyatlar · QR Wait",
     heroTitle: "Abonelik yok. Sıraya giren kadar ödeyin.",
     heroText: "Her yeni sıra kaydı 1 bilet. Biletleri paketle alırsınız, son kullanma tarihi yoktur. Sezon bitince ödemeye devam etmezsiniz.",
     free: "Ücretsiz",
@@ -67,7 +67,7 @@ const T = pick<{
     moreText: "Belediye, zincir işletme ya da çok noktalı kurulumlar için yıllık fiyat ve fatura seçeneklerini konuşalım.",
   },
   en: {
-    title: "Pricing · QRWait",
+    title: "Pricing · QR Wait",
     heroTitle: "No subscription. Pay for the people who join.",
     heroText: "Every new queue entry uses 1 ticket. You buy tickets in packs and they never expire. When the season ends, you stop paying.",
     free: "Free",
@@ -111,7 +111,7 @@ const T = pick<{
     moreText: "For municipalities, chains or multi-site setups, let's talk about annual pricing and invoicing options.",
   },
   de: {
-    title: "Preise · QRWait",
+    title: "Preise · QR Wait",
     heroTitle: "Kein Abo. Sie zahlen für die, die sich anstellen.",
     heroText: "Jeder neue Eintrag in einer Warteschlange verbraucht 1 Ticket. Tickets kaufen Sie in Paketen, sie verfallen nie. Endet die Saison, zahlen Sie nichts weiter.",
     free: "Kostenlos",
@@ -155,7 +155,7 @@ const T = pick<{
     moreText: "Für Kommunen, Ketten oder Installationen an vielen Standorten sprechen wir gern über Jahrespreise und Rechnungsoptionen.",
   },
   ru: {
-    title: "Цены · QRWait",
+    title: "Цены · QR Wait",
     heroTitle: "Без подписки. Платите за тех, кто встал в очередь.",
     heroText: "Каждая новая запись в очереди — 1 билет. Билеты покупаются пакетами и не сгорают. Закончился сезон — вы больше не платите.",
     free: "Бесплатно",

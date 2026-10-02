@@ -21,7 +21,7 @@ const T = pick<{
   adminTitle: string; adminList: string[]; contactTitle: string; contactText: string;
 }>({
   tr: {
-    title: "QRWait · QR kodlu sanal sıra sistemi",
+    title: "QR Wait · QR kodlu sanal sıra sistemi",
     signup: "Ücretsiz hesap aç",
     freeNote: "Kendi sıranızı birkaç dakikada kurun. İlk 1000 bilet ücretsiz, kredi kartı gerekmez.",
     heroTitle: "Sıranı al, gerisini telefonun beklesin.",
@@ -74,7 +74,7 @@ const T = pick<{
     contactText: "Plajınız, işletmeniz ya da etkinliğiniz için sıra sistemi kurmak isterseniz yazın. Kurulumu birlikte yapalım.",
   },
   en: {
-    title: "QRWait · Virtual queue with a QR code, no app",
+    title: "QR Wait · Virtual queue with a QR code, no app",
     signup: "Sign up for free",
     freeNote: "Set up your own queue in minutes. The first 1000 tickets are free, no credit card needed.",
     heroTitle: "Take your number, let your phone do the waiting.",
@@ -127,7 +127,7 @@ const T = pick<{
     contactText: "Want a queue system for your beach, business or event? Write to us and we'll set it up together.",
   },
   de: {
-    title: "QRWait · Virtuelle Warteschlange per QR-Code",
+    title: "QR Wait · Virtuelle Warteschlange per QR-Code",
     signup: "Kostenlos registrieren",
     freeNote: "Richten Sie Ihre eigene Warteschlange in wenigen Minuten ein. Die ersten 1000 Tickets sind kostenlos, keine Kreditkarte nötig.",
     heroTitle: "Nummer ziehen, das Warten übernimmt Ihr Handy.",
@@ -180,7 +180,7 @@ const T = pick<{
     contactText: "Sie möchten ein Warteschlangensystem für Ihren Strand, Ihren Betrieb oder Ihr Event? Schreiben Sie uns – wir richten es gemeinsam ein.",
   },
   ru: {
-    title: "QRWait · Электронная очередь по QR-коду",
+    title: "QR Wait · Электронная очередь по QR-коду",
     signup: "Зарегистрироваться бесплатно",
     freeNote: "Создайте свою очередь за несколько минут. Первые 1000 билетов бесплатно, карта не нужна.",
     heroTitle: "Возьмите номер — ждать будет ваш телефон.",

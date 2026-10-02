@@ -54,7 +54,7 @@ export function Site({ children }: { children: ReactNode }) {
         <nav className="flex w-full flex-wrap gap-x-4 gap-y-2">
           {USES.map(([u, name]) => <a key={u} href={sitePath(`/${u}`)} className="underline">{name}</a>)}
         </nav>
-        <span>© 2026 QRWait</span>
+        <span>© 2026 QR Wait</span>
         <span className="flex flex-wrap gap-4">
           <a href={sitePath("/pricing")} className="underline">{SITE.pricing}</a>
           <a href={sitePath("/privacy")} className="underline">{LEGAL.privacyShort}</a>

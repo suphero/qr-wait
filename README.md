@@ -1,8 +1,8 @@
-# QRWait
+# QR Wait
 
 **Virtual queue with a QR code, no app.** Take your number, let your phone do the waiting.
 
-QRWait is a location-aware queue system for places where people wait: beaches and pools, piers and bus lines, municipal service points, event entrances, restaurants and clinics. Visitors scan the QR code on the attendant's screen, join from the page that opens and follow their place live; their phone buzzes when it's their turn.
+QR Wait is a location-aware queue system for places where people wait: beaches and pools, piers and bus lines, municipal service points, event entrances, restaurants and clinics. Visitors scan the QR code on the attendant's screen, join from the page that opens and follow their place live; their phone buzzes when it's their turn.
 
 🌐 **[qrwait.app](https://qrwait.app)** · Turkish, English, German, Russian
 

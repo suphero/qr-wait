@@ -30,7 +30,7 @@ const T = pick({
     how: "Oraya vardığınızda görevlinin ekranındaki QR kodu telefonunuzun kamerasıyla okutun. Sıraya girmek için orada olmanız gerekir, uzaktan sıraya girilemez.",
     directions: "Yol tarifi al",
     powered: (a: ReactNode) => <>{a} ile çalışır</>,
-    ownQueue: "Siz de sıra mı yönetiyorsunuz? QRWait'i ücretsiz kurun →",
+    ownQueue: "Siz de sıra mı yönetiyorsunuz? QR Wait'i ücretsiz kurun →",
   },
   en: {
     title: "Queue status",
@@ -50,7 +50,7 @@ const T = pick({
     how: "When you arrive, scan the QR code on the attendant's screen with your phone camera. You need to be there to join; you can't join remotely.",
     directions: "Get directions",
     powered: (a: ReactNode) => <>Powered by {a}</>,
-    ownQueue: "Running a queue? Set up QRWait for free →",
+    ownQueue: "Running a queue? Set up QR Wait for free →",
   },
   de: {
     title: "Warteschlangenstatus",
@@ -70,7 +70,7 @@ const T = pick({
     how: "Scannen Sie vor Ort den QR-Code auf dem Bildschirm des Personals mit der Handykamera. Sie müssen vor Ort sein, aus der Ferne ist kein Anstellen möglich.",
     directions: "Route planen",
     powered: (a: ReactNode) => <>Betrieben mit {a}</>,
-    ownQueue: "Sie verwalten eine Warteschlange? QRWait kostenlos einrichten →",
+    ownQueue: "Sie verwalten eine Warteschlange? QR Wait kostenlos einrichten →",
   },
   ru: {
     title: "Состояние очереди",
@@ -90,7 +90,7 @@ const T = pick({
     how: "На месте отсканируйте камерой телефона QR-код на экране сотрудника. Встать в очередь можно только находясь на месте, удалённо нельзя.",
     directions: "Проложить маршрут",
     powered: (a: ReactNode) => <>Работает на {a}</>,
-    ownQueue: "Управляете очередью? Подключите QRWait бесплатно →",
+    ownQueue: "Управляете очередью? Подключите QR Wait бесплатно →",
   },
 });
 
@@ -196,7 +196,7 @@ function StatusPage() {
 
       <ErrorText>{err}</ErrorText>
       <p className="text-center text-sm"><a className="font-medium underline" href={siteUrl("/?utm_source=qrwait&utm_medium=status")}>{T.ownQueue}</a></p>
-      <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={siteUrl("/")}>QRWait</a>)} · <a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a></p>
+      <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={siteUrl("/")}>QR Wait</a>)} · <a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a></p>
     </Page>
   );
 }

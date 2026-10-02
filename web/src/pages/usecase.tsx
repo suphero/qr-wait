@@ -30,7 +30,7 @@ const T = pick<{
     contactText: "Yazın, ilk sıranızı birlikte kuralım.",
     pages: {
       "restaurant-waitlist": {
-        title: "QR kodlu restoran bekleme listesi · QRWait",
+        title: "QR kodlu restoran bekleme listesi · QR Wait",
         h1: "Misafirlerinizin QR kodla girdiği bekleme listesi.",
         intro: "Misafir kapıdaki kodu okutur, kaç kişi olduğunu seçer ve gezmeye çıkar. Ona uygun masa boşalınca telefonu haber verir. Uygulama yok, çağrı cihazı yok, salona isim bağırmak yok.",
         steps: [
@@ -53,7 +53,7 @@ const T = pick<{
         ],
       },
       "beach-queue": {
-        title: "Plaj ve havuz için şezlong sırası · QRWait",
+        title: "Plaj ve havuz için şezlong sırası · QR Wait",
         h1: "Sabah koşturması olmadan adil şezlong sırası.",
         intro: "Plaj ya da havuz dolduğunda ziyaretçi QR kodu okutur ve girişte dikilmek yerine gölgede bekler. Şezlong boşaldıkça sıradaki gruplar telefonlarından çağrılır.",
         steps: [
@@ -76,7 +76,7 @@ const T = pick<{
         ],
       },
       "event-queue": {
-        title: "QR kodlu etkinlik ve festival giriş sırası · QRWait",
+        title: "QR kodlu etkinlik ve festival giriş sırası · QR Wait",
         h1: "Telefondan takip edilen giriş sırası.",
         intro: "Kapıda yığılan kalabalık yerine ziyaretçi QR kodu okutur, numarasını alır ve sırası gelene kadar alanın tadını çıkarır. Siz de kapasite el verdikçe içeri alırsınız.",
         steps: [
@@ -99,7 +99,7 @@ const T = pick<{
         ],
       },
       "service-desk-queue": {
-        title: "Hizmet noktası ve klinikler için sıramatik alternatifi · QRWait",
+        title: "Hizmet noktası ve klinikler için sıramatik alternatifi · QR Wait",
         h1: "Sıramatik cihazı olmadan hizmet noktası sırası.",
         intro: "Belediye hizmet noktaları, klinikler ve ofisler için: ziyaretçi QR kodu okutur, numara alır ve istediği yerde bekler. Satın alınacak cihaz yok; görevli paneli herhangi bir tablette ya da telefonda açılır.",
         steps: [
@@ -135,7 +135,7 @@ const T = pick<{
     contactText: "Write to us and we'll set up your first queue together.",
     pages: {
       "restaurant-waitlist": {
-        title: "Restaurant waitlist with a QR code, no app · QRWait",
+        title: "Restaurant waitlist with a QR code, no app · QR Wait",
         h1: "A restaurant waitlist your guests join with a QR code.",
         intro: "Guests scan the code at the door, say how many they are and wander off. When a table that fits them frees up, their phone tells them. No app, no pagers, no names shouted across the room.",
         steps: [
@@ -158,7 +158,7 @@ const T = pick<{
         ],
       },
       "beach-queue": {
-        title: "Beach and pool sunbed queue · QRWait",
+        title: "Beach and pool sunbed queue · QR Wait",
         h1: "A fair queue for sunbeds, without the morning rush.",
         intro: "When the beach or pool is full, visitors scan the QR code and wait in the shade instead of standing at the entrance. As sunbeds free up, the next groups are called on their phones.",
         steps: [
@@ -181,7 +181,7 @@ const T = pick<{
         ],
       },
       "event-queue": {
-        title: "Event and festival entry queue with a QR code · QRWait",
+        title: "Event and festival entry queue with a QR code · QR Wait",
         h1: "An entry queue people follow from their phone.",
         intro: "Instead of a crowd at the gate, visitors scan a QR code, take a number and enjoy the venue until it's their turn to go in. You let people in as capacity allows.",
         steps: [
@@ -204,7 +204,7 @@ const T = pick<{
         ],
       },
       "service-desk-queue": {
-        title: "Queue system for service desks and clinics, no ticket machine · QRWait",
+        title: "Queue system for service desks and clinics, no ticket machine · QR Wait",
         h1: "A queue system for service desks, without a ticket machine.",
         intro: "For municipal service points, clinics and offices: visitors scan a QR code, take a number and wait where they like. There's no hardware to buy; the attendant panel runs on any tablet or phone.",
         steps: [
@@ -240,7 +240,7 @@ const T = pick<{
     contactText: "Schreiben Sie uns, dann richten wir Ihre erste Warteschlange gemeinsam ein.",
     pages: {
       "restaurant-waitlist": {
-        title: "Restaurant-Warteliste per QR-Code, ohne App · QRWait",
+        title: "Restaurant-Warteliste per QR-Code, ohne App · QR Wait",
         h1: "Eine Restaurant-Warteliste, auf die sich Gäste per QR-Code setzen.",
         intro: "Gäste scannen den Code an der Tür, geben an, wie viele sie sind, und gehen spazieren. Wird ein passender Tisch frei, meldet sich ihr Handy. Keine App, keine Pager, kein Namenrufen durch den Raum.",
         steps: [
@@ -263,7 +263,7 @@ const T = pick<{
         ],
       },
       "beach-queue": {
-        title: "Warteschlange für Liegen an Strand und Pool · QRWait",
+        title: "Warteschlange für Liegen an Strand und Pool · QR Wait",
         h1: "Eine faire Warteschlange für Liegen, ohne Ansturm am Morgen.",
         intro: "Ist Strand oder Pool voll, scannen Gäste den QR-Code und warten im Schatten statt am Eingang. Werden Liegen frei, werden die nächsten Gruppen auf dem Handy aufgerufen.",
         steps: [
@@ -286,7 +286,7 @@ const T = pick<{
         ],
       },
       "event-queue": {
-        title: "Einlass-Warteschlange für Events und Festivals per QR-Code · QRWait",
+        title: "Einlass-Warteschlange für Events und Festivals per QR-Code · QR Wait",
         h1: "Eine Einlass-Warteschlange, die man auf dem Handy verfolgt.",
         intro: "Statt einer Menge am Tor scannen Besucher einen QR-Code, ziehen eine Nummer und genießen das Gelände, bis sie hineindürfen. Sie lassen Leute ein, wie es die Kapazität erlaubt.",
         steps: [
@@ -309,7 +309,7 @@ const T = pick<{
         ],
       },
       "service-desk-queue": {
-        title: "Warteschlangensystem für Schalter und Praxen, ohne Ticketautomat · QRWait",
+        title: "Warteschlangensystem für Schalter und Praxen, ohne Ticketautomat · QR Wait",
         h1: "Ein Aufrufsystem für Schalter, ganz ohne Ticketautomat.",
         intro: "Für Bürgerbüros, Praxen und Ämter: Besucher scannen einen QR-Code, ziehen eine Nummer und warten, wo sie möchten. Keine Hardware zu kaufen; das Panel läuft auf jedem Tablet oder Handy.",
         steps: [
@@ -345,7 +345,7 @@ const T = pick<{
     contactText: "Напишите нам, и мы вместе настроим вашу первую очередь.",
     pages: {
       "restaurant-waitlist": {
-        title: "Лист ожидания для ресторана по QR-коду, без приложения · QRWait",
+        title: "Лист ожидания для ресторана по QR-коду, без приложения · QR Wait",
         h1: "Лист ожидания, в который гости встают по QR-коду.",
         intro: "Гость сканирует код у входа, указывает, сколько их, и идёт гулять. Когда освобождается подходящий стол, телефон сообщает об этом. Без приложения, без пейджеров, без выкрикивания имён на весь зал.",
         steps: [
@@ -368,7 +368,7 @@ const T = pick<{
         ],
       },
       "beach-queue": {
-        title: "Очередь на шезлонги на пляже и у бассейна · QRWait",
+        title: "Очередь на шезлонги на пляже и у бассейна · QR Wait",
         h1: "Честная очередь на шезлонги без утренней гонки.",
         intro: "Когда пляж или бассейн заполнен, гости сканируют QR-код и ждут в тени, а не стоят у входа. Когда освобождаются шезлонги, следующие группы получают вызов на телефон.",
         steps: [
@@ -391,7 +391,7 @@ const T = pick<{
         ],
       },
       "event-queue": {
-        title: "Очередь на вход на мероприятие и фестиваль по QR-коду · QRWait",
+        title: "Очередь на вход на мероприятие и фестиваль по QR-коду · QR Wait",
         h1: "Очередь на вход, за которой следят с телефона.",
         intro: "Вместо толпы у ворот посетители сканируют QR-код, берут номер и проводят время на площадке, пока не подойдёт их очередь. Вы пускаете людей по мере освобождения мест.",
         steps: [
@@ -414,7 +414,7 @@ const T = pick<{
         ],
       },
       "service-desk-queue": {
-        title: "Электронная очередь для пунктов обслуживания и клиник без терминала · QRWait",
+        title: "Электронная очередь для пунктов обслуживания и клиник без терминала · QR Wait",
         h1: "Электронная очередь для пунктов обслуживания без терминала.",
         intro: "Для муниципальных пунктов обслуживания, клиник и офисов: посетитель сканирует QR-код, берёт номер и ждёт где удобно. Покупать оборудование не нужно; панель сотрудника работает на любом планшете или телефоне.",
         steps: [

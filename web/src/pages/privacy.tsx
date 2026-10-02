@@ -14,10 +14,10 @@ const Terms = ({ children }: { children: ReactNode }) => <a href={siteUrl("/term
 
 const S: Section[] = pick<Section[]>({
   tr: [
-    { h: "Kapsam", p: [<>Bu metin, 6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") ve AB Genel Veri Koruma Tüzüğü ("GDPR") kapsamında, QRWait (qrwait.app) hizmetinde kişisel verilerin nasıl işlendiğini açıklar.</>] },
+    { h: "Kapsam", p: [<>Bu metin, 6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") ve AB Genel Veri Koruma Tüzüğü ("GDPR") kapsamında, QR Wait (qrwait.app) hizmetinde kişisel verilerin nasıl işlendiğini açıklar.</>] },
     { h: "Veri sorumlusu", p: [
-      <>Hesap sahiplerinin verileri bakımından veri sorumlusu QRWait'tir. İletişim: <Mail /></>,
-      <>QRWait ile sıra kuran işletmeler (hesap sahipleri), kendi sıralarına giren ziyaretçilerin verileri bakımından veri sorumlusudur; QRWait bu verileri işletme adına, yalnızca hizmetin çalışması için işleyen <b>veri işleyen</b> konumundadır.</>,
+      <>Hesap sahiplerinin verileri bakımından veri sorumlusu QR Wait'tir. İletişim: <Mail /></>,
+      <>QR Wait ile sıra kuran işletmeler (hesap sahipleri), kendi sıralarına giren ziyaretçilerin verileri bakımından veri sorumlusudur; QR Wait bu verileri işletme adına, yalnızca hizmetin çalışması için işleyen <b>veri işleyen</b> konumundadır.</>,
     ] },
     { h: "Sıraya giren ziyaretçilerin verileri", ul: [
       <><b>Sıra kaydı:</b> grup büyüklüğü, kabul edilen yer sayıları, sıra numarası, giriş ve çağrılma zamanı, arayüz dili.</>,
@@ -70,10 +70,10 @@ const S: Section[] = pick<Section[]>({
     { h: "Değişiklikler", p: [<>Bu metin güncellenebilir; önemli değişiklikler hesap sahiplerine e-postayla bildirilir. Hizmet kuralları için <Terms>Kullanım Koşulları</Terms>'na bakın.</>] },
   ],
   en: [
-    { h: "Scope", p: [<>This notice explains how personal data is processed in the QRWait service (qrwait.app) under Turkish Law No. 6698 on the Protection of Personal Data ("KVKK") and the EU General Data Protection Regulation ("GDPR").</>] },
+    { h: "Scope", p: [<>This notice explains how personal data is processed in the QR Wait service (qrwait.app) under Turkish Law No. 6698 on the Protection of Personal Data ("KVKK") and the EU General Data Protection Regulation ("GDPR").</>] },
     { h: "Data controller", p: [
-      <>QRWait is the controller of account holders' data. Contact: <Mail /></>,
-      <>Businesses that set up queues with QRWait (account holders) are the controllers of the data of visitors joining their queues; QRWait acts as a <b>processor</b>, handling that data on the business's behalf solely to run the service.</>,
+      <>QR Wait is the controller of account holders' data. Contact: <Mail /></>,
+      <>Businesses that set up queues with QR Wait (account holders) are the controllers of the data of visitors joining their queues; QR Wait acts as a <b>processor</b>, handling that data on the business's behalf solely to run the service.</>,
     ] },
     { h: "Data of visitors joining a queue", ul: [
       <><b>Queue entry:</b> group size, accepted numbers of places, queue number, time of joining and being called, interface language.</>,
@@ -126,10 +126,10 @@ const S: Section[] = pick<Section[]>({
     { h: "Changes", p: [<>We may update this notice; account holders are informed of significant changes by email. See the <Terms>Terms of Use</Terms> for the rules of the service.</>] },
   ],
   de: [
-    { h: "Geltungsbereich", p: [<>Diese Erklärung beschreibt, wie im Dienst QRWait (qrwait.app) personenbezogene Daten gemäß dem türkischen Datenschutzgesetz Nr. 6698 („KVKK“) und der EU-Datenschutz-Grundverordnung („DSGVO“) verarbeitet werden.</>] },
+    { h: "Geltungsbereich", p: [<>Diese Erklärung beschreibt, wie im Dienst QR Wait (qrwait.app) personenbezogene Daten gemäß dem türkischen Datenschutzgesetz Nr. 6698 („KVKK“) und der EU-Datenschutz-Grundverordnung („DSGVO“) verarbeitet werden.</>] },
     { h: "Verantwortlicher", p: [
-      <>Für die Daten der Kontoinhaber ist QRWait verantwortlich. Kontakt: <Mail /></>,
-      <>Betriebe, die mit QRWait Warteschlangen einrichten (Kontoinhaber), sind für die Daten der Besucher ihrer Warteschlangen verantwortlich; QRWait verarbeitet diese Daten als <b>Auftragsverarbeiter</b> im Auftrag des Betriebs und nur zum Betrieb des Dienstes.</>,
+      <>Für die Daten der Kontoinhaber ist QR Wait verantwortlich. Kontakt: <Mail /></>,
+      <>Betriebe, die mit QR Wait Warteschlangen einrichten (Kontoinhaber), sind für die Daten der Besucher ihrer Warteschlangen verantwortlich; QR Wait verarbeitet diese Daten als <b>Auftragsverarbeiter</b> im Auftrag des Betriebs und nur zum Betrieb des Dienstes.</>,
     ] },
     { h: "Daten von Besuchern einer Warteschlange", ul: [
       <><b>Eintrag:</b> Gruppengröße, akzeptierte Platzanzahlen, Nummer, Zeitpunkt des Eintritts und des Aufrufs, Sprache.</>,
@@ -182,10 +182,10 @@ const S: Section[] = pick<Section[]>({
     { h: "Änderungen", p: [<>Wir können diese Erklärung aktualisieren; über wesentliche Änderungen informieren wir Kontoinhaber per E-Mail. Die Regeln des Dienstes finden Sie in den <Terms>Nutzungsbedingungen</Terms>.</>] },
   ],
   ru: [
-    { h: "Сфера действия", p: [<>Этот документ описывает, как сервис QRWait (qrwait.app) обрабатывает персональные данные в соответствии с турецким Законом № 6698 о защите персональных данных («KVKK») и Общим регламентом ЕС по защите данных («GDPR»).</>] },
+    { h: "Сфера действия", p: [<>Этот документ описывает, как сервис QR Wait (qrwait.app) обрабатывает персональные данные в соответствии с турецким Законом № 6698 о защите персональных данных («KVKK») и Общим регламентом ЕС по защите данных («GDPR»).</>] },
     { h: "Оператор данных", p: [
-      <>Оператором данных владельцев учётных записей является QRWait. Контакт: <Mail /></>,
-      <>Предприятия, создающие очереди в QRWait (владельцы учётных записей), являются операторами данных посетителей своих очередей; QRWait выступает <b>обработчиком</b> и обрабатывает эти данные от имени предприятия только для работы сервиса.</>,
+      <>Оператором данных владельцев учётных записей является QR Wait. Контакт: <Mail /></>,
+      <>Предприятия, создающие очереди в QR Wait (владельцы учётных записей), являются операторами данных посетителей своих очередей; QR Wait выступает <b>обработчиком</b> и обрабатывает эти данные от имени предприятия только для работы сервиса.</>,
     ] },
     { h: "Данные посетителей очереди", ul: [
       <><b>Запись в очереди:</b> размер группы, подходящее количество мест, номер, время записи и вызова, язык интерфейса.</>,

@@ -17,7 +17,7 @@ const SITE = "https://qrwait.app";
 const seo = (path: string, title: string, description: string) => `<meta name="description" content="${description}">
 <link rel="canonical" href="${SITE}${path}">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="QRWait">
+<meta property="og:site_name" content="QR Wait">
 <meta property="og:url" content="${SITE}${path}">
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
@@ -31,7 +31,7 @@ const NOINDEX = `<meta name="robots" content="noindex">`;
 const LD = `<script type="application/ld+json">${JSON.stringify({
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "QRWait",
+  name: "QR Wait",
   url: SITE,
   applicationCategory: "BusinessApplication",
   operatingSystem: "Web",
@@ -45,10 +45,10 @@ const alternates = (path: string) => [
   `<link rel="alternate" hreflang="x-default" href="${SITE}${path}">`,
 ].join("\n");
 const APP: Record<string, Page> = {
-  join: { title: "QRWait", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">\n${NOINDEX}` },
+  join: { title: "QR Wait", head: `<link rel="manifest" href="/manifest.json">\n<meta name="theme-color" content="#1B2A4A">\n${NOINDEX}` },
   host: { title: "Attendant panel", head: NOINDEX },
   status: { title: "Queue status", head: NOINDEX },
-  admin: { title: "QRWait · Admin", head: NOINDEX },
+  admin: { title: "QR Wait · Admin", head: NOINDEX },
 };
 // Tanıtım sitesi: her dil ve sayfa için ayrı HTML. İngilizce kökte (pricing.html → /pricing, ana sayfa home.html → / Worker'da),
 // diğer diller klasörde (tr/pricing.html → /tr/pricing, tr/index.html → /tr/). Senaryo sayfaları pages/usecase.tsx'i yükler.

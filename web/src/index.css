@@ -44,7 +44,7 @@
 }
 
 :root {
-    /* QRWait renkleri: deniz mavisi birincil, yeşil "sıra geldi", kırmızı tehlikeli işlem */
+    /* QR Wait renkleri: deniz mavisi birincil, yeşil "sıra geldi", kırmızı tehlikeli işlem */
     --background: oklch(0.977 0.013 236.62); /* #f0f9ff */
     --foreground: oklch(0.208 0.042 265.755); /* #0f172a */
     --card: oklch(1 0 0);

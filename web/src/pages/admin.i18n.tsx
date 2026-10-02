@@ -4,7 +4,7 @@ import { pick, pl } from "@/lib/i18n";
 // Yönetim ekranı metinleri (admin.tsx)
 export const T = pick({
   tr: {
-    docTitle: "QRWait · Yönetim",
+    docTitle: "QR Wait · Yönetim",
     // giriş
     loginTitle: "Yönetim girişi",
     username: "Kullanıcı adı",
@@ -268,7 +268,7 @@ export const T = pick({
     refTitle: "Hesap açanın ilk geldiği kaynak ve sayfa",
   },
   en: {
-    docTitle: "QRWait · Admin",
+    docTitle: "QR Wait · Admin",
     loginTitle: "Admin login",
     username: "Username",
     password: "Password",
@@ -523,7 +523,7 @@ export const T = pick({
     refTitle: "Where the user first came from, and the landing page",
   },
   de: {
-    docTitle: "QRWait · Verwaltung",
+    docTitle: "QR Wait · Verwaltung",
     loginTitle: "Anmeldung zur Verwaltung",
     username: "Benutzername",
     password: "Passwort",
@@ -778,7 +778,7 @@ export const T = pick({
     refTitle: "Woher der Benutzer zuerst kam, und die Einstiegsseite",
   },
   ru: {
-    docTitle: "QRWait · Управление",
+    docTitle: "QR Wait · Управление",
     loginTitle: "Вход в управление",
     username: "Имя пользователя",
     password: "Пароль",
