@@ -6,7 +6,7 @@ import {
   Trash2Icon, UserIcon, UsersIcon,
 } from "lucide-react";
 import { useConfirm } from "@/components/confirm";
-import { LangSwitch } from "@/components/lang";
+import { onLangChange } from "@/components/lang";
 import { siteUrl, TERMS_VERSION } from "@/components/legal";
 import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
@@ -747,9 +747,6 @@ function AccountPage({ me, onBack, onDeleted, reloadMe, onError }: { me: Me; onB
           <span className="text-muted-foreground">{T.username}</span>
           <span className="font-semibold">{me.user}</span>
           {me.home && <><span className="text-muted-foreground">{T.address}</span><a className="break-all underline-offset-2 hover:underline" href={me.home} target="_blank">{bare(me.home)}</a></>}
-          <span className="text-muted-foreground">{T.language}</span>
-          {/* Hesap e-postaları da bu dilde gelir */}
-          <LangSwitch before={(l) => call("/api/admin/lang", { lang: l })} />
           <span className="text-muted-foreground">{T.email}</span>
           <span>{me.email ? <>{me.email}{me.verified === false && <span className="text-muted-foreground"> · ⚠ {T.unverifiedTag}</span>}</> : <span className="text-muted-foreground">—</span>}</span>
         </CardContent>
@@ -1239,7 +1236,10 @@ function AdminPage() {
 
   async function start() {
     try {
-      setMe(await call<Me>("/api/admin/me"));
+      const m = await call<Me>("/api/admin/me");
+      setMe(m);
+      // Üst çubuktan dil değişince hesaba da yazılır: hesap e-postaları o dilde gelir
+      onLangChange(m.super ? undefined : (l) => call("/api/admin/lang", { lang: l }));
       setErr("");
     } catch (e: any) { logout(e.message); }
   }
@@ -1247,6 +1247,7 @@ function AdminPage() {
   function logout(msg = "") {
     localStorage.removeItem("session");
     token = null;
+    onLangChange();
     setMe(null);
     setErr(msg);
   }
@@ -1344,7 +1345,6 @@ function AdminPage() {
             {mode === "login" && <p>{link("forgot", T.forgotLink)}</p>}
             {mode === "signup" && <p>{T.haveAccount} {link("login", T.loginLink)}</p>}
             {(mode === "forgot" || mode === "reset") && <p>{link("login", T.back)}</p>}
-            <LangSwitch className="mt-2" />
           </div>
         </CardContent>
       </Card>

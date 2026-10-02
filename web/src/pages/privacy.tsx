@@ -59,7 +59,7 @@ const S: Section[] = pick<Section[]>({
       <><b>Başarısız giriş sayaçları:</b> en fazla 1 gün. <b>Teknik kayıtlar:</b> hizmet sağlayıcının kayıt süresince, genellikle birkaç gün.</>,
     ] },
     { h: "Çerezler ve tarayıcıda saklanan bilgiler", ul: [
-      <><b>Zorunlu:</b> oturum anahtarı, cihaz kimliği ve sıra numaranız tarayıcının yerel deposunda (localStorage) tutulur; bunlar olmadan hizmet çalışmaz.</>,
+      <><b>Zorunlu:</b> oturum anahtarı, cihaz kimliği ve sıra numaranız tarayıcının yerel deposunda (localStorage) tutulur; bunlar olmadan hizmet çalışmaz. Dil seçerseniz tercihiniz bir "lang" çerezinde saklanır, böylece işletmelerin adreslerinde de aynı dil açılır.</>,
       <><b>Analitik (isteğe bağlı):</b> Google Analytics çerezleri yalnızca çerez bildiriminde izin verirseniz kullanılır. Kararınızı <Reset>buradan değiştirebilirsiniz</Reset>.</>,
     ] },
     { h: "Haklarınız", p: [
@@ -115,7 +115,7 @@ const S: Section[] = pick<Section[]>({
       <><b>Failed login counters:</b> at most 1 day. <b>Technical logs:</b> for the provider's log period, usually a few days.</>,
     ] },
     { h: "Cookies and browser storage", ul: [
-      <><b>Essential:</b> your session key, device ID and queue number are kept in your browser's local storage; the service can't work without them.</>,
+      <><b>Essential:</b> your session key, device ID and queue number are kept in your browser's local storage; the service can't work without them. If you choose a language, it's kept in a "lang" cookie so businesses' addresses open in the same language.</>,
       <><b>Analytics (optional):</b> Google Analytics cookies are used only if you accept them in the cookie notice. You can <Reset>change your choice here</Reset>.</>,
     ] },
     { h: "Your rights", p: [
@@ -171,7 +171,7 @@ const S: Section[] = pick<Section[]>({
       <><b>Zähler fehlgeschlagener Anmeldungen:</b> höchstens 1 Tag. <b>Technische Protokolle:</b> für die Protokolldauer des Anbieters, meist einige Tage.</>,
     ] },
     { h: "Cookies und Browserspeicher", ul: [
-      <><b>Notwendig:</b> Sitzungsschlüssel, Geräte-ID und Ihre Nummer werden im lokalen Speicher des Browsers gehalten; ohne sie funktioniert der Dienst nicht.</>,
+      <><b>Notwendig:</b> Sitzungsschlüssel, Geräte-ID und Ihre Nummer werden im lokalen Speicher des Browsers gehalten; ohne sie funktioniert der Dienst nicht. Wählen Sie eine Sprache, wird sie in einem „lang“-Cookie gespeichert, damit auch die Adressen der Betriebe in dieser Sprache öffnen.</>,
       <><b>Analyse (optional):</b> Google-Analytics-Cookies werden nur verwendet, wenn Sie im Cookie-Hinweis zustimmen. Sie können Ihre <Reset>Entscheidung hier ändern</Reset>.</>,
     ] },
     { h: "Ihre Rechte", p: [
@@ -227,7 +227,7 @@ const S: Section[] = pick<Section[]>({
       <><b>Счётчики неудачных входов:</b> не более 1 дня. <b>Технические журналы:</b> в течение срока хранения у поставщика, обычно несколько дней.</>,
     ] },
     { h: "Cookie и хранилище браузера", ul: [
-      <><b>Необходимые:</b> ключ сеанса, идентификатор устройства и ваш номер хранятся в локальном хранилище браузера; без них сервис не работает.</>,
+      <><b>Необходимые:</b> ключ сеанса, идентификатор устройства и ваш номер хранятся в локальном хранилище браузера; без них сервис не работает. Если вы выберете язык, он сохраняется в файле cookie «lang», чтобы адреса заведений открывались на том же языке.</>,
       <><b>Аналитика (по желанию):</b> cookie Google Analytics используются, только если вы согласились в уведомлении о cookie. <Reset>Изменить выбор</Reset>.</>,
     ] },
     { h: "Ваши права", p: [

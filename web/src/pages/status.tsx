@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, catIcon, poll, type PublicRoom, type Status } from "@/lib/api";
 import { closedText, fmtWait, lang, pick, S, waitText, word } from "@/lib/i18n";
-import { LangSwitch } from "@/components/lang";
 import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
 
@@ -198,7 +197,6 @@ function StatusPage() {
       <ErrorText>{err}</ErrorText>
       <p className="text-center text-sm"><a className="font-medium underline" href={siteUrl("/?utm_source=qrwait&utm_medium=status")}>{T.ownQueue}</a></p>
       <p className="text-center text-sm text-muted-foreground">{T.powered(<a className="underline" href={siteUrl("/")}>QRWait</a>)} · <a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a></p>
-      <p className="text-center text-sm text-muted-foreground"><LangSwitch /></p>
     </Page>
   );
 }

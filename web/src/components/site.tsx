@@ -42,6 +42,7 @@ export function Site({ children }: { children: ReactNode }) {
           qrwait<span aria-hidden="true" className="ml-[.12em] inline-block size-[.5em] rounded-full bg-success" />
         </a>
         <nav className="flex items-center gap-4">
+          <LangSwitch className="text-[.95rem]" />
           <a href={sitePath("/pricing")} className="font-semibold whitespace-nowrap no-underline hover:underline">{SITE.pricing}</a>
           <Button asChild className={cn(pill, "px-4 py-2.5 text-[.95rem]")}><a href="/admin">{SITE.admin}</a></Button>
         </nav>
@@ -59,7 +60,6 @@ export function Site({ children }: { children: ReactNode }) {
           <a href={sitePath("/privacy")} className="underline">{LEGAL.privacyShort}</a>
           <a href={sitePath("/terms")} className="underline">{LEGAL.terms}</a>
           <a href="/admin" className="underline">{SITE.admin}</a>
-          <LangSwitch />
         </span>
       </footer>
     </div>

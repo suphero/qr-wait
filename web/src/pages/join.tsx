@@ -7,7 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { api, catIcon, locate, poll, type Me, type Status } from "@/lib/api";
 import { closedText, fmtWait, geoErrors, lang, orList, pick, pl, S, tableLabel } from "@/lib/i18n";
-import { LangSwitch } from "@/components/lang";
 import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
@@ -393,7 +392,7 @@ function JoinPage() {
       <ErrorText>{err}</ErrorText>
       {/* Sırada bekleyen her ziyaretçi olası bir işletme; utm ile Analytics'te hangi sayfadan geldiği görünür */}
       <p className="mt-6 text-center text-sm"><a className="font-medium underline" href={siteUrl("/?utm_source=qrwait&utm_medium=join")}>{T.ownQueue}</a></p>
-      <p className="mt-2 flex justify-center gap-4 text-xs text-muted-foreground"><a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a><LangSwitch /></p>
+      <p className="mt-2 text-center text-xs text-muted-foreground"><a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a></p>
     </Page>
   );
 }

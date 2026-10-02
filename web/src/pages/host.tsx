@@ -3,7 +3,6 @@ import { QRCodeCanvas } from "qrcode.react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConfirm } from "@/components/confirm";
 import { AcceptPicker, SizeSelect } from "@/components/group";
-import { LangSwitch } from "@/components/lang";
 import { ErrorText, Page, Title } from "@/components/page";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -513,8 +512,6 @@ function HostPage() {
       <Button variant="destructive" className="print:hidden" onClick={async () => {
         if (await confirm({ title: T.resetTitle, description: T.resetAsk, action: T.reset, destructive: true })) act({ action: "reset" });
       }}>{T.resetBtn}</Button>
-      {/* Seçim bu cihazda hatırlanır; ziyaretçi ekranı kendi telefonunun dilindedir */}
-      <LangSwitch className="self-center text-sm text-muted-foreground print:hidden" />
     </Page>
   );
 }

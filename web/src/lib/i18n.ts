@@ -1,14 +1,21 @@
 import type { PublicRoom, Table } from "@/lib/api";
 
 // Sayfaların dili. Tanıtım sitesinde (<html data-site>, vite.config.ts) adresten gelir: /tr/pricing Türkçe, /pricing İngilizce.
-// Diğer sayfalarda (sıraya giriş, durum, görevli, yönetim) ekrandan seçilen dil (localStorage "lang"), yoksa telefonun
-// dil tercihlerinden ilk desteklenen, o da yoksa İngilizce. Sunucu metinleri src/i18n.js'te, aynı diller.
+// Diğer sayfalarda (sıraya giriş, durum, görevli, yönetim) üst çubuktan seçilen dil, yoksa cihazın dil tercihlerinden ilk
+// desteklenen, o da yoksa İngilizce. Seçim ana alan adına "lang" çereziyle yazılır: qrwait.app'te seçilen dil
+// antalyabb.qrwait.app'te de geçerlidir (localStorage alt alan adları arasında paylaşılmaz; yedek olarak orada da durur). Sunucu metinleri src/i18n.js'te, aynı diller.
 export const LANGS = ["tr", "en", "de", "ru"] as const;
 export type Lang = (typeof LANGS)[number];
 export const LANG_NAMES: Record<Lang, string> = { tr: "Türkçe", en: "English", de: "Deutsch", ru: "Русский" };
 const isLang = (l: unknown): l is Lang => (LANGS as readonly unknown[]).includes(l);
 
-const saved = (() => { try { const l = localStorage.getItem("lang"); return isLang(l) ? l : null; } catch { return null; } })();
+// Çerezin alanı: antalyabb.qrwait.app ve qrwait.app → qrwait.app; localhost'ta alan yazılmaz
+const host = location.hostname, cookieDomain = host === "localhost" || host.endsWith(".localhost") ? "" : `; domain=${host.split(".").slice(-2).join(".")}`;
+const saved = (() => {
+  const c = document.cookie.match(/(?:^|; )lang=(\w+)/)?.[1];
+  if (isLang(c)) return c;
+  try { const l = localStorage.getItem("lang"); return isLang(l) ? l : null; } catch { return null; }
+})();
 const preferred = (navigator.languages ?? [navigator.language]).map((l) => l.slice(0, 2).toLowerCase()).find(isLang) ?? "en";
 const root = document.documentElement, site = root.hasAttribute("data-site");
 export const lang: Lang = site && isLang(root.lang) ? root.lang : saved ?? preferred;
@@ -25,6 +32,7 @@ if (site && lang === "en" && want !== "en") location.replace(sitePath(basePath()
 
 // Ekrandan dil seçimi: hatırlanır; tanıtım sitesinde aynı sayfanın o dildeki adresine, diğer sayfalarda yeniden yükleyerek
 export function setLang(l: Lang) {
+  document.cookie = `lang=${l}${cookieDomain}; path=/; max-age=31536000; samesite=lax`;
   try { localStorage.setItem("lang", l); } catch {}
   if (site) location.href = sitePath(basePath(), l) + location.search + location.hash;
   else location.reload();
