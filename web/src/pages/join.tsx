@@ -23,6 +23,7 @@ const standalone = (navigator as any).standalone || matchMedia("(display-mode: s
 const T = pick({
   tr: {
     queue: "Sıra",
+    ownQueue: "Siz de sıra mı yönetiyorsunuz? QRWait'i ücretsiz kurun →",
     keepOpen: "Bu sayfayı açık tutun. Sıra size geldiğinde ekran yeşile döner ve telefon titrer.",
     iosHint: <><b>Ekran kilitliyken de haber almak için:</b> Safari'de Paylaş <b>⎋</b> → <b>Ana Ekrana Ekle</b>'ye dokunun, sonra ana ekrandaki <b>QRWait</b>'i açıp bildirimlere izin verin.</>,
     pushOn: "🔔 Bildirimler açık. Sayfayı kapatsanız veya ekranı kilitleseniz de sıranız gelince haber vereceğiz.",
@@ -56,6 +57,7 @@ const T = pick({
   },
   en: {
     queue: "Queue",
+    ownQueue: "Running a queue? Set up QRWait for free →",
     keepOpen: "Keep this page open. When it's your turn, the screen turns green and your phone vibrates.",
     iosHint: <><b>To get notified even when the screen is locked:</b> in Safari tap Share <b>⎋</b> → <b>Add to Home Screen</b>, then open <b>QRWait</b> from your home screen and allow notifications.</>,
     pushOn: "🔔 Notifications are on. We'll let you know when it's your turn, even if you close this page or lock the screen.",
@@ -89,6 +91,7 @@ const T = pick({
   },
   de: {
     queue: "Warteschlange",
+    ownQueue: "Sie verwalten eine Warteschlange? QRWait kostenlos einrichten →",
     keepOpen: "Lassen Sie diese Seite geöffnet. Wenn Sie an der Reihe sind, wird der Bildschirm grün und Ihr Telefon vibriert.",
     iosHint: <><b>Um auch bei gesperrtem Bildschirm benachrichtigt zu werden:</b> Tippen Sie in Safari auf Teilen <b>⎋</b> → <b>Zum Home-Bildschirm</b>, öffnen Sie dann <b>QRWait</b> vom Home-Bildschirm und erlauben Sie Mitteilungen.</>,
     pushOn: "🔔 Benachrichtigungen sind aktiv. Wir melden uns, wenn Sie an der Reihe sind – auch wenn Sie die Seite schließen oder den Bildschirm sperren.",
@@ -122,6 +125,7 @@ const T = pick({
   },
   ru: {
     queue: "Очередь",
+    ownQueue: "Управляете очередью? Подключите QRWait бесплатно →",
     keepOpen: "Не закрывайте эту страницу. Когда подойдёт ваша очередь, экран станет зелёным, а телефон завибрирует.",
     iosHint: <><b>Чтобы получать уведомления и при заблокированном экране:</b> в Safari нажмите «Поделиться» <b>⎋</b> → <b>«На экран „Домой“»</b>, затем откройте <b>QRWait</b> с экрана «Домой» и разрешите уведомления.</>,
     pushOn: "🔔 Уведомления включены. Мы сообщим, когда подойдёт ваша очередь, даже если вы закроете страницу или заблокируете экран.",
@@ -386,7 +390,9 @@ function JoinPage() {
       )}
 
       <ErrorText>{err}</ErrorText>
-      <p className="mt-4 text-center text-xs text-muted-foreground"><a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a></p>
+      {/* Sırada bekleyen her ziyaretçi olası bir işletme; utm ile Analytics'te hangi sayfadan geldiği görünür */}
+      <p className="mt-6 text-center text-sm"><a className="font-medium underline" href={siteUrl("/?utm_source=qrwait&utm_medium=join")}>{T.ownQueue}</a></p>
+      <p className="mt-2 text-center text-xs text-muted-foreground"><a className="underline" href={siteUrl("/privacy")}>{LEGAL.privacyShort}</a></p>
     </Page>
   );
 }
