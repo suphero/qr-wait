@@ -13,6 +13,7 @@ const MAX_GROUP = 8; // varsayılan en büyük grup
 const GROUP_LIMIT = 20;
 const TABLE_LIMIT = 50;
 const DESK_LIMIT = 30;
+const ZONE_LIMIT = 10;
 const CATEGORIES = new Set(["plaj", "iskele", "gise", "restoran", "saglik", "resmi", "etkinlik", "diger"]); // ikonları public/app.js'te
 const MAX_ENTRIES = 1000;
 const GEOS = new Set(["off", "fixed", "dynamic"]);
@@ -69,6 +70,8 @@ const conf = (s) => {
   return {
     category: s.category ?? "diger", mode, tables, flex: !!s.flex && seats, skip: !!s.skip && seats, maxEmpty: tables ? s.maxEmpty ?? null : null,
     desks: mode === "desks" ? s.desks ?? [] : [], // gişe adları ("3", "Vezne A")
+    // Bölgeler (ör. İçeri, Dışarı): ziyaretçi kabul ettiklerini seçer; boş yer / masa bölge bölge girilir. Gişe modunda yok.
+    zones: mode === "desks" ? [] : s.zones ?? [],
     maxGroup: s.maxGroup ?? MAX_GROUP, qr: s.qr ?? "dynamic", ttl: s.ttl ?? 90,
     // Konum kontrolü: "fixed" sıranın haritadaki noktası, "dynamic" QR'ı gösteren görevlinin konumu, "off" yok
     geo: GEOS.has(s.geo) ? s.geo : "fixed",
@@ -86,6 +89,21 @@ const seats = (size, cap, maxEmpty) => size <= cap && (maxEmpty === null || cap 
 function fit(e, available) {
   const ok = acceptOf(e).filter((a) => a <= available);
   return ok.length ? Math.max(...ok) : null;
+}
+
+// Grubun kabul ettiği bölgeler; bölgesiz sırada [""] (tek havuz), kaldırılan bölgeler atılır, hiçbiri kalmadıysa hepsi
+function zonesOf(e, c) {
+  if (!c.zones.length) return [""];
+  const ok = (e.zones ?? []).filter((z) => c.zones.includes(z));
+  return ok.length ? ok : c.zones;
+}
+
+// Ziyaretçinin seçtiği bölgeler, sıranın bölge sırasıyla; bölgesiz sırada undefined
+function zoneList(v, all) {
+  if (!all.length) return undefined;
+  const list = all.filter((z) => [].concat(v ?? []).includes(z));
+  if (!list.length) throw fail("zonePick");
+  return list;
 }
 
 function acceptList(accept, size, flex) {
@@ -185,6 +203,11 @@ export class Room extends DurableObject {
       deskOf: Object.fromEntries(s.entries.filter((e) => e.status === "called" && e.desk).map((e) => [e.no, e.desk])), // numara → gişe
       ...this.gate(w.length), hours: conf(s).hours,
       eta: this.eta(w.length), // şimdi girene tahmini bekleme (dk); veri azsa null
+      // Bölge başına bekleyen grup ve o bölgeyi seçene tahmini bekleme
+      zones: conf(s).zones.map((z) => {
+        const n = w.filter((e) => zonesOf(e, conf(s)).includes(z)).length;
+        return { name: z, waiting: n, eta: this.eta(n, [z]) };
+      }),
     };
   }
 
@@ -196,8 +219,10 @@ export class Room extends DurableObject {
 
   // Önünde ahead grup olana tahmini bekleme (dk): son 1 saatteki çağrı hızı. En az 3 çağrı yoksa ya da sıra durdurulduysa null.
   // Boş geçen süre de hesaba girer (now - ilk çağrı): görevli ara verince tahmin uzar.
-  eta(ahead) {
-    const now = Date.now(), calls = (this.s.calls ?? []).filter((t) => now - t < ETA_WINDOW);
+  // zones: yalnızca bu bölgelere yapılan çağrılar sayılır
+  eta(ahead, zones) {
+    const now = Date.now(), all = zones?.[0] ? (this.s.zcalls ?? []).filter(([, z]) => zones.includes(z)).map(([t]) => t) : this.s.calls ?? [];
+    const calls = all.filter((t) => now - t < ETA_WINDOW);
     if (calls.length < 3 || this.s.paused) return null;
     const perMin = calls.length / (Math.max(now - calls[0], 5 * 60000) / 60000);
     return Math.max(1, Math.ceil((ahead + 1) / perMin));
@@ -247,7 +272,7 @@ export class Room extends DurableObject {
   }
 
   // lang: ziyaretçinin dili; "sıra size geldi" push bildirimi bu dilde gider
-  async join({ t, lat, lng, size, accept, device, lang }) {
+  async join({ t, lat, lng, size, accept, zones, device, lang }) {
     lang = langOf(lang);
     const s = this.need(), c = conf(s);
     const [ts, sig] = String(t).split(".");
@@ -267,6 +292,7 @@ export class Room extends DurableObject {
     if (typeof device !== "string" || device.length < 16) throw fail("device");
     size = int(size, 1, c.maxGroup, "group", c.maxGroup);
     accept = acceptList(accept, size, c.flex);
+    zones = zoneList(zones, c.zones);
     // Aynı cihaz ikinci bilet alamaz, mevcut bileti geri döner (sıra kapansa da). Sahibin bilet hakkı bittiyse ziyaretçi yalnızca sıranın kapalı olduğunu görür.
     let e = s.entries.find((x) => x.device === device);
     if (!e) {
@@ -274,7 +300,7 @@ export class Room extends DurableObject {
       if (g.paused) throw fail("paused");
       if (!g.open) throw fail("hoursClosed", c.hours.from, c.hours.to);
       if (g.full) throw fail("capFull");
-      e = await this.ticket(size, accept, "qr", device, "", lang).catch((err) => {
+      e = await this.ticket(size, accept, "qr", device, "", lang, zones).catch((err) => {
         throw failed(err, "quota") || failed(err, "suspended") ? fail("closed") : err;
       });
     }
@@ -284,9 +310,10 @@ export class Room extends DurableObject {
     return { id: e.id, no: e.no };
   }
 
-  add(size, accept, src, device = null, note = "", lang = "en") {
+  // zones: kabul edilen bölgeler (bölgeli sırada)
+  add(size, accept, src, device = null, note = "", lang = "en", zones) {
     if (this.s.entries.length >= MAX_ENTRIES) throw fail("full");
-    const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, accept, src, device, note, lang, status: "waiting", at: Date.now() };
+    const e = { id: crypto.randomUUID(), no: ++this.s.seq, size, accept, src, device, note, lang, status: "waiting", at: Date.now(), ...(zones && { zones }) };
     this.s.entries.push(e);
     return e;
   }
@@ -318,13 +345,13 @@ export class Room extends DurableObject {
     if (i < 0) return { name: s.name, status: s.expired?.includes(id) ? "expired" : "gone" };
     const e = s.entries[i], due = this.due(e);
     if (LANGS.includes(lang) && e.lang !== lang) { e.lang = lang; await this.save(); }
-    const ahead = s.entries.slice(0, i).filter((x) => x.status === "waiting");
+    const ahead = this.ahead(e);
     return {
-      name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, table: e.table, desk: e.desk, status: e.status, calledAt: e.calledAt,
+      name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, table: e.table, desk: e.desk, zones: e.zones, zone: e.zone, status: e.status, calledAt: e.calledAt,
       aheadGroups: ahead.length, aheadPeople: ahead.reduce((n, x) => n + x.size, 0),
       // Süreli sırada kalan süre (ms); istemci saati farklı olabileceği için bitiş anı değil kalan gönderilir
       wait: conf(s).wait, remaining: due === null ? null : Math.max(0, due - Date.now()),
-      eta: e.status === "waiting" ? this.eta(ahead.length) : null,
+      eta: e.status === "waiting" ? this.eta(ahead.length, zonesOf(e, conf(s))) : null,
     };
   }
 
@@ -357,15 +384,14 @@ export class Room extends DurableObject {
     if (!(list.length || lost.length || soon.length) || !this.env.VAPID_PRIVATE_KEY) return;
     const s = this.s, url = s.slug ? `/join?r=${s.slug}` : "/";
     let dead = false;
-    const waiting = s.entries.filter((x) => x.status === "waiting");
     await Promise.all([...list.map((e) => [e, false]), ...lost.map((e) => [e, true]), ...soon.map((e) => [e, "soon"])].map(async ([e, gone]) => {
       const note = gone === "soon"
-        ? { title: msg(e.lang, "soonTitle"), body: msg(e.lang, "soonBody", s.name, e.no, waiting.indexOf(e)), tag: `called-${e.id}`, url }
+        ? { title: msg(e.lang, "soonTitle"), body: msg(e.lang, "soonBody", s.name, e.no, this.ahead(e).length), tag: `called-${e.id}`, url }
         : gone
         ? { title: msg(e.lang, "timeUp"), body: msg(e.lang, "expiredBody", s.name, e.no), tag: `called-${e.id}`, url }
         : {
           title: msg(e.lang, e.table ? "tableReady" : "yourTurn"),
-          body: msg(e.lang, "pushBody", s.name, e.no, (e.table?.name && tableLabel(e.table, e.lang)) || (e.desk && deskLabel(e.desk, e.lang))),
+          body: msg(e.lang, "pushBody", s.name, e.no, [e.table?.name && tableLabel(e.table, e.lang), e.desk && deskLabel(e.desk, e.lang), e.zone].filter(Boolean).join(" · ")),
           tag: `called-${e.id}`,
           url,
         };
@@ -379,25 +405,31 @@ export class Room extends DurableObject {
 
   // Yer modunda sığan en büyük seçenek ayrılır; görevli sığmayan birini elle çağırırsa en küçük seçenek.
   // Masa modunda masanın tamamı gruba verilir (table yoksa görevli masasız çağırmıştır). Gişe modunda grup gişeye yönlenir.
-  call(e, table, desk) {
+  // zone: yer modunda yerin ayrılacağı bölge (fill seçer); yoksa grubun bölgelerinden en çok yer sığanı.
+  call(e, table, desk, zone) {
+    const c = conf(this.s);
     e.status = "called";
     e.calledAt = Date.now();
-    this.s.calls = [...(this.s.calls ?? []), e.calledAt].slice(-20); // tahmini bekleme için
     this.stat("called");
     this.stat("waitMs", e.calledAt - e.at);
     this.s.lastNo = e.no;
-    if (conf(this.s).tables) {
+    if (c.tables) {
       if (table) {
         this.s.tables = this.s.tables.filter((t) => t !== table);
         e.table = table;
+        if (c.zones.includes(table.zone)) e.zone = table.zone;
       }
-    } else if (conf(this.s).mode === "desks") {
+    } else if (c.mode === "desks") {
       e.desk = desk;
       this.s.idle = (this.s.idle ?? []).filter((d) => d !== desk);
     } else {
-      e.alloc = fit(e, this.s.available) ?? Math.min(...acceptOf(e));
-      this.s.available = Math.max(0, this.s.available - e.alloc);
+      const z = zone ?? this.pick(e, zonesOf(e, c))?.zone ?? zonesOf(e, c)[0];
+      e.alloc = fit(e, this.avail(z)) ?? Math.min(...acceptOf(e));
+      this.setAvail(z, Math.max(0, this.avail(z) - e.alloc));
+      if (z) e.zone = z;
     }
+    this.s.calls = [...(this.s.calls ?? []), e.calledAt].slice(-20); // tahmini bekleme için
+    if (e.zone) this.s.zcalls = [...(this.s.zcalls ?? []), [e.calledAt, e.zone]].slice(-60);
     if (e.push) (this.outbox ??= []).push(e);
   }
 
@@ -409,7 +441,41 @@ export class Room extends DurableObject {
     if (e.status !== "called") return;
     if (e.table) this.s.tables.push(e.table);
     else if (e.desk) this.freeDesk(e.desk); // gelmeyenin gişesine sıradaki çağrılır
-    else if (conf(this.s).mode === "seats") this.s.available += e.alloc ?? e.size;
+    else if (conf(this.s).mode === "seats") this.setAvail(e.zone ?? "", this.avail(e.zone ?? "") + (e.alloc ?? e.size));
+  }
+
+  // Boş yer havuzu: bölgesiz sırada s.available, bölgeli sırada s.spots[bölge]. Kaldırılan bölgenin yeri genel havuza.
+  avail(z) {
+    return conf(this.s).zones.includes(z) ? this.s.spots?.[z] ?? 0 : this.s.available;
+  }
+
+  setAvail(z, n) {
+    if (conf(this.s).zones.includes(z)) (this.s.spots ??= {})[z] = n;
+    else this.s.available = n;
+  }
+
+  // Görevlinin seçtiği bölge; bölgesiz sırada ""
+  zone(name) {
+    const all = conf(this.s).zones;
+    if (!all.length) return "";
+    if (!all.includes(name)) throw fail("badZone");
+    return name;
+  }
+
+  // Grubun bölgeleri içinde boş yere en çok yer sığanı; hiçbirine sığmıyorsa null
+  pick(e, zones) {
+    let best = null;
+    for (const zone of zones) {
+      const a = fit(e, this.avail(zone));
+      if (a !== null && (!best || a > best.a)) best = { zone, a };
+    }
+    return best;
+  }
+
+  // Önündeki bekleyenler: bölgeli sırada yalnızca kabul ettiği bölgelerden en az birini isteyenler
+  ahead(e) {
+    const c = conf(this.s), mine = zonesOf(e, c), i = this.s.entries.indexOf(e);
+    return this.s.entries.slice(0, i).filter((x) => x.status === "waiting" && zonesOf(x, c).some((z) => mine.includes(z)));
   }
 
   // Boşta gişe: bekleyen yoksa sıraya ilk giren hemen bu gişeye çağrılır (fill)
@@ -431,13 +497,17 @@ export class Room extends DurableObject {
     this.s.entries = this.s.entries.filter((x) => !prev.includes(x));
   }
 
-  // Bekleyen masalar içinde gruba sığan en küçüğü; eşitse en uzun bekleyen
-  bestTable(size, maxEmpty) {
-    return this.s.tables.filter((t) => seats(size, t.cap, maxEmpty)).sort((a, b) => a.cap - b.cap)[0];
+  // Bekleyen masalar içinde gruba sığan en küçüğü; eşitse en uzun bekleyen. Bölgeli sırada yalnızca grubun bölgelerindeki
+  // masalar (bölgesi kaldırılmış masa herkese).
+  bestTable(e, maxEmpty) {
+    const c = conf(this.s), mine = zonesOf(e, c);
+    return this.s.tables.filter((t) => seats(e.size, t.cap, maxEmpty) && (!c.zones.includes(t.zone) || mine.includes(t.zone)))
+      .sort((a, b) => a.cap - b.cap)[0];
   }
 
   // Boş yer (this.s.available) varken bekleyenleri çağırır.
-  // Varsayılan katı FIFO: sıradaki grup sığmıyorsa arkadakiler de bekler. skip açıksa sığan küçük gruplar öne alınır
+  // Varsayılan katı FIFO: sıradaki grup sığmıyorsa arkadakiler de bekler. Bölgeli sırada bu her bölgede ayrı işler:
+  // sığmayan grup yalnızca kabul ettiği bölgeleri tıkar, başka bölgeyi bekleyenler ilerler. skip açıksa sığan küçük gruplar öne alınır
   // (daha az boş yer kalır ama kalabalık gruplar sürekli geri düşebilir).
   // Masa modunda: bekleyen gruplar sırayla, her birine sığan en küçük boş masa. Sığmayan grup atlanır;
   // böylece büyük masa boşalınca arkadaki büyük grup çağrılabilir.
@@ -454,14 +524,17 @@ export class Room extends DurableObject {
       s.tables ??= [];
       for (const e of s.entries) {
         if (!s.tables.length) break;
-        const t = e.status === "waiting" && this.bestTable(e.size, conf(s).maxEmpty);
+        const t = e.status === "waiting" && this.bestTable(e, conf(s).maxEmpty);
         if (t) this.call(e, t);
       }
     } else {
+      const c = conf(s), all = c.zones.length ? c.zones : [""], blocked = new Set();
       for (const e of s.entries) {
+        if (blocked.size === all.length) break;
         if (e.status !== "waiting") continue;
-        if (fit(e, this.s.available) !== null) this.call(e);
-        else if (!conf(s).skip) break;
+        const open = zonesOf(e, c).filter((z) => !blocked.has(z)), p = this.pick(e, open);
+        if (p) this.call(e, undefined, undefined, p.zone);
+        else if (!c.skip) open.forEach((z) => blocked.add(z));
       }
     }
     this.nearing();
@@ -469,12 +542,19 @@ export class Room extends DurableObject {
 
   // Önünde SOON grup ya da daha azı kalan bekleyen bir kez işaretlenir; bildirim aboneliği varsa notify() "yaklaşıyor" gönderir.
   // Zaten öndeyken giren (ya da aboneliği sonradan gelen) işaretlenir ama bildirim almaz: sayfası açık.
+  // Bölgeli sırada önündekiler yalnızca aynı bölgeyi isteyenler (ahead); her bölgede SOON'dan fazla bekleyen geçince
+  // arkadakilerin önünde zaten daha fazlası vardır.
   nearing() {
-    this.s.entries.filter((e) => e.status === "waiting").slice(0, SOON + 1).forEach((e) => {
-      if (e.soon) return;
-      e.soon = true;
-      if (e.push) (this.soon ??= []).push(e);
-    });
+    const c = conf(this.s), all = c.zones.length ? c.zones : [""], seen = {};
+    for (const e of this.s.entries) {
+      if (all.every((z) => (seen[z] ?? 0) > SOON)) break;
+      if (e.status !== "waiting") continue;
+      if (!e.soon && this.ahead(e).length <= SOON) {
+        e.soon = true;
+        if (e.push) (this.soon ??= []).push(e);
+      }
+      for (const z of zonesOf(e, c)) seen[z] = (seen[z] ?? 0) + 1;
+    }
   }
 
   // Dinamik konumda görevli panelinin her yoklamada gönderdiği konum. Bellekte hep güncellenir; depoya yalnızca
@@ -489,7 +569,7 @@ export class Room extends DurableObject {
     return true;
   }
 
-  async admin(key, { action, id, n, size, accept, note, name, here, desk }) {
+  async admin(key, { action, id, n, size, accept, note, name, here, desk, zone, zones }) {
     const s = this.need(), c = conf(s);
     if (!same(key, s.key)) throw fail("unauthorized");
     const moved = this.here(here);
@@ -498,13 +578,13 @@ export class Room extends DurableObject {
     const e = s.entries.find((x) => x.id === id);
     let added, table;
     switch (action) {
-      case "free": s.available += int(n, 1, 500, "badNumber"); break;
-      case "setAvailable": s.available = int(n, 0, 500, "badNumber"); break;
+      case "free": { const z = this.zone(zone); this.setAvail(z, this.avail(z) + int(n, 1, 500, "badNumber")); break; }
+      case "setAvailable": this.setAvail(this.zone(zone), int(n, 0, 500, "badNumber")); break;
       case "table": {
         if (!c.tables) throw fail("noTables");
         const nm = String(name ?? "").trim().slice(0, 20);
         if (nm && s.tables.some((t) => t.name === nm)) throw fail("tableTaken", nm);
-        table = { id: crypto.randomUUID().slice(0, 8), cap: int(n, 1, TABLE_LIMIT, "tableCap", TABLE_LIMIT), name: nm, at: Date.now() };
+        table = { id: crypto.randomUUID().slice(0, 8), cap: int(n, 1, TABLE_LIMIT, "tableCap", TABLE_LIMIT), name: nm, at: Date.now(), ...(c.zones.length && { zone: this.zone(zone) }) };
         s.tables.push(table);
         break;
       }
@@ -517,7 +597,7 @@ export class Room extends DurableObject {
           const d = this.desk(desk);
           this.done(d);
           this.call(e, undefined, d);
-        } else this.call(e, c.tables ? this.bestTable(e.size, null) : undefined);
+        } else this.call(e, c.tables ? this.bestTable(e, null) : undefined);
         break;
       // Gişede "Sıradakini çağır": bekleyen yoksa gişe boşta bekler, ilk giren oraya çağrılır
       case "next": {
@@ -540,17 +620,20 @@ export class Room extends DurableObject {
       case "resume": s.paused = false; break;
       case "add": {
         const sz = int(size, 1, conf(s).maxGroup, "badGroup");
-        added = await this.ticket(sz, acceptList(accept, sz, c.flex), "manual", null, String(note ?? "").slice(0, 60));
+        added = await this.ticket(sz, acceptList(accept, sz, c.flex), "manual", null, String(note ?? "").slice(0, 60), undefined, zoneList(zones, c.zones));
         break;
       }
-      case "reset": Object.assign(s, { seq: 0, available: 0, tables: [], idle: [], entries: [], expired: [], calls: [] }); break;
+      case "reset": Object.assign(s, { seq: 0, available: 0, spots: {}, tables: [], idle: [], entries: [], expired: [], calls: [], zcalls: [] }); break;
     }
     this.fill();
     if (action || moved || expired) await this.save();
     await this.notify();
     const { qr, ttl, maxGroup, flex, tables, maxEmpty, geo, wait, hours, cap, mode, desks } = c;
     return {
-      name: s.name, flex, tables, maxEmpty, mode, desks, idle: s.idle ?? [], available: s.available, added: added?.no, qr, ttl, maxGroup, geo, wait, hours, cap,
+      name: s.name, flex, tables, maxEmpty, mode, desks, idle: s.idle ?? [],
+      // spots: bölge başına ayrılmayı bekleyen boş yer
+      zones: c.zones, spots: Object.fromEntries(c.zones.map((z) => [z, this.avail(z)])),
+      available: s.available, added: added?.no, qr, ttl, maxGroup, geo, wait, hours, cap,
       ...this.gate(s.entries.filter((x) => x.status === "waiting").length),
       now: Date.now(), // panel kalan süreyi sunucu saatine göre hesaplar
       // Boşalan masa: çağrılan grubun numarası, uygun grup yoksa null (masa bekleyenlere düştü)
@@ -978,10 +1061,10 @@ function secretSlug() {
   return [...crypto.getRandomValues(new Uint8Array(20))].map((b) => abc[b % 36]).join("");
 }
 
-// Gişe adları: dizi ya da virgüllü metin ("1, 2, Vezne A"); tekrarlar atılır. Gişe modunda en az bir gişe.
-function deskList(v, need) {
+// Gişe / bölge adları: dizi ya da virgüllü metin ("1, 2, Vezne A"); tekrarlar atılır. Gişe modunda en az bir gişe gerekir.
+function nameList(v, max, key, need = false) {
   const list = [...new Set((Array.isArray(v) ? v : String(v ?? "").split(",")).map((x) => String(x).trim().slice(0, 20)).filter(Boolean))];
-  if (list.length > DESK_LIMIT || (need && !list.length)) throw fail("desks", DESK_LIMIT);
+  if (list.length > max || (need && !list.length)) throw fail(key, max);
   return list;
 }
 
@@ -1007,7 +1090,8 @@ function roomFields(b, prev) {
     skip: b.skip === true || b.skip === "on", // sığmayan grubun arkasındaki küçük gruplar öne geçebilir
     category: CATEGORIES.has(b.category) ? b.category : "diger",
     mode: MODES.has(b.mode) ? b.mode : "seats",
-    desks: deskList(b.desks, b.mode === "desks"),
+    desks: nameList(b.desks, DESK_LIMIT, "desks", b.mode === "desks"),
+    zones: b.mode === "desks" ? [] : nameList(b.zones, ZONE_LIMIT, "zones"),
     // Masa modunda masada boş kalabilecek en fazla sandalye; boş: sınır yok
     maxEmpty: b.maxEmpty === "" || b.maxEmpty == null ? null : int(b.maxEmpty, 0, TABLE_LIMIT, "maxEmpty", TABLE_LIMIT),
     maxGroup: int(b.maxGroup ?? MAX_GROUP, 1, GROUP_LIMIT, "maxGroup", GROUP_LIMIT),

@@ -80,6 +80,12 @@ const M = {
     de: "Wählen Sie mindestens eine Platzanzahl, die Sie akzeptieren",
     ru: "Выберите хотя бы одно подходящее количество мест",
   },
+  zonePick: {
+    tr: "Kabul ettiğiniz en az bir bölge seçin",
+    en: "Choose at least one area you would accept",
+    de: "Wählen Sie mindestens einen Bereich, den Sie akzeptieren",
+    ru: "Выберите хотя бы одну подходящую зону",
+  },
   full: { tr: "Sıra dolu", en: "The queue is full", de: "Die Warteschlange ist voll", ru: "Очередь заполнена" },
   entryNotFound: { tr: "Sıra kaydı bulunamadı", en: "Queue entry not found", de: "Eintrag in der Warteschlange nicht gefunden", ru: "Запись в очереди не найдена" },
   badPush: { tr: "Geçersiz bildirim aboneliği", en: "Invalid notification subscription", de: "Ungültiges Benachrichtigungsabonnement", ru: "Недействительная подписка на уведомления" },
@@ -117,6 +123,13 @@ const M = {
     ru: `Для режима окон укажите от 1 до ${n} названий окон`,
   }),
   badDesk: { tr: "Gişe bulunamadı", en: "Counter not found", de: "Schalter nicht gefunden", ru: "Окно не найдено" },
+  zones: (n) => ({
+    tr: `En fazla ${n} bölge girilebilir`,
+    en: `You can enter at most ${n} areas`,
+    de: `Es sind höchstens ${n} Bereiche möglich`,
+    ru: `Можно указать не более ${n} зон`,
+  }),
+  badZone: { tr: "Bölge bulunamadı", en: "Area not found", de: "Bereich nicht gefunden", ru: "Зона не найдена" },
   tableCap: (n) => ({
     tr: `Masa 1-${n} kişilik olmalı`,
     en: `A table must seat 1–${n} people`,

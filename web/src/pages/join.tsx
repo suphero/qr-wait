@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConfirm } from "@/components/confirm";
-import { AcceptPicker, SizeSelect } from "@/components/group";
+import { AcceptPicker, SizeSelect, ZonePicker } from "@/components/group";
 import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,6 +33,10 @@ const T = pick({
     howMany: "Kaç kişisiniz?",
     accept: <><b>Kaç yer olursa kabul edersiniz?</b> Birden fazla seçebilirsiniz.</>,
     acceptHint: "Daha az yeri de kabul ederseniz sıranız daha hızlı gelebilir.",
+    zonesQ: <><b>Hangi bölgeler olur?</b> Birden fazla seçebilirsiniz.</>,
+    zonesHint: "Birden fazla bölge seçerseniz sıranız daha hızlı gelebilir.",
+    zoneWaiting: (n: number) => (n ? `${n} grup bekliyor` : "bekleyen yok"),
+    zonesMine: (list: string) => `Bölge: ${list}`,
     join: "Sıraya gir",
     geoNote: "Sıraya girebilmek için sıranın bulunduğu yerde olmanız ve konum izni vermeniz gerekir. Konumunuz yalnızca bu kontrol için kullanılır, saklanmaz.",
     geoNoteHost: "Sıraya girebilmek için QR kodunu gösteren görevlinin yakınında olmanız ve konum izni vermeniz gerekir. Konumunuz yalnızca bu kontrol için kullanılır, saklanmaz.",
@@ -67,6 +71,10 @@ const T = pick({
     howMany: "How many people are you?",
     accept: <><b>How many places would you accept?</b> You can pick more than one.</>,
     acceptHint: "If you also accept fewer places, your turn may come sooner.",
+    zonesQ: <><b>Which areas are fine for you?</b> You can choose more than one.</>,
+    zonesHint: "If you choose more than one area, your turn may come sooner.",
+    zoneWaiting: (n: number) => (n ? `${pl(n, { one: "group", other: "groups" })} waiting` : "nobody waiting"),
+    zonesMine: (list: string) => `Area: ${list}`,
     join: "Join the queue",
     geoNote: "To join, you need to be at the queue's location and allow location access. Your location is only used for this check and is not stored.",
     geoNoteHost: "To join, you need to be near the attendant showing the QR code and allow location access. Your location is only used for this check and is not stored.",
@@ -101,6 +109,10 @@ const T = pick({
     howMany: "Wie viele Personen sind Sie?",
     accept: <><b>Wie viele Plätze würden Sie akzeptieren?</b> Mehrfachauswahl möglich.</>,
     acceptHint: "Wenn Sie auch weniger Plätze akzeptieren, sind Sie eventuell schneller dran.",
+    zonesQ: <><b>Welche Bereiche passen für Sie?</b> Mehrfachauswahl möglich.</>,
+    zonesHint: "Wenn Sie mehrere Bereiche wählen, sind Sie eventuell schneller dran.",
+    zoneWaiting: (n: number) => (n ? `${pl(n, { one: "Gruppe", other: "Gruppen" })} warten` : "niemand wartet"),
+    zonesMine: (list: string) => `Bereich: ${list}`,
     join: "Anstellen",
     geoNote: "Zum Anstellen müssen Sie am Ort der Warteschlange sein und die Standortfreigabe erlauben. Ihr Standort wird nur für diese Prüfung verwendet und nicht gespeichert.",
     geoNoteHost: "Zum Anstellen müssen Sie in der Nähe der Person sein, die den QR-Code zeigt, und die Standortfreigabe erlauben. Ihr Standort wird nur für diese Prüfung verwendet und nicht gespeichert.",
@@ -135,6 +147,10 @@ const T = pick({
     howMany: "Сколько вас человек?",
     accept: <><b>Какое количество мест вам подойдёт?</b> Можно выбрать несколько.</>,
     acceptHint: "Если согласиться и на меньшее число мест, очередь может подойти быстрее.",
+    zonesQ: <><b>Какие зоны вам подходят?</b> Можно выбрать несколько.</>,
+    zonesHint: "Если выбрать несколько зон, очередь может подойти быстрее.",
+    zoneWaiting: (n: number) => (n ? `ждут: ${pl(n, { one: "группа", few: "группы", many: "групп", other: "группы" })}` : "никто не ждёт"),
+    zonesMine: (list: string) => `Зона: ${list}`,
     join: "Встать в очередь",
     geoNote: "Чтобы встать в очередь, нужно находиться на месте и разрешить доступ к геолокации. Местоположение используется только для этой проверки и не сохраняется.",
     geoNoteHost: "Чтобы встать в очередь, нужно находиться рядом с сотрудником, который показывает QR-код, и разрешить доступ к геолокации. Местоположение используется только для этой проверки и не сохраняется.",
@@ -198,6 +214,7 @@ function JoinPage() {
   const [st, setSt] = useState<Status>();
   const [size, setSize] = useState(2);
   const [accept, setAccept] = useState([2]);
+  const [zones, setZones] = useState<string[]>([]); // bölgeli sırada ziyaretçi kendisi seçer, varsayılan yok
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [hint, setHint] = useState<ReactNode>(T.keepOpen);
@@ -246,7 +263,7 @@ function JoinPage() {
       setMe(s);
       setView("wait");
       if (s.status === "called") {
-        if (!notified.current) { notified.current = true; alertUser(id, s.table ? tableLabel(s.table) : s.desk && deskLabel(s.desk), !!s.table); }
+        if (!notified.current) { notified.current = true; alertUser(id, [s.table && tableLabel(s.table), s.desk && deskLabel(s.desk), s.zone].filter(Boolean).join(" · "), !!s.table); }
       } else pushUI(id);
     } catch (e: any) { setErr(e.message); }
   }
@@ -295,7 +312,7 @@ function JoinPage() {
       const perm = window.PushManager && Notification.requestPermission();
       // Durum henüz gelmediyse konum yine istenir; gerekmiyorsa sunucu yok sayar
       const c = st?.geo === "off" ? null : await locate(geoErrors);
-      const r = await api<{ id: string }>(`/api/r/${room}/join`, { t: token, lat: c?.latitude, lng: c?.longitude, size, accept, device, lang });
+      const r = await api<{ id: string }>(`/api/r/${room}/join`, { t: token, lat: c?.latitude, lng: c?.longitude, size, accept, zones, device, lang });
       localStorage.setItem(slot, r.id);
       await perm;
       history.replaceState(null, "", ref ? `?r=${ref}` : location.pathname); // süresi dolacak token'ı adres çubuğundan kaldır
@@ -334,9 +351,17 @@ function JoinPage() {
                 <p className="text-sm text-muted-foreground">{T.acceptHint}</p>
               </div>
             )}
-            {st?.eta && !closed && <p className="font-semibold">{S.eta(fmtWait(st.eta))}</p>}
+            {!!st?.zones.length && (
+              <div>
+                <p>{T.zonesQ}</p>
+                <ZonePicker zones={st.zones.map((z) => z.name)} value={zones} onChange={setZones}
+                  note={(n) => { const z = st.zones.find((x) => x.name === n)!; return z.eta ? S.eta(fmtWait(z.eta)) : T.zoneWaiting(z.waiting); }} />
+                <p className="text-sm text-muted-foreground">{T.zonesHint}</p>
+              </div>
+            )}
+            {st?.eta && !st.zones.length && !closed && <p className="font-semibold">{S.eta(fmtWait(st.eta))}</p>}
             {closed && <p className="font-semibold text-destructive">{closed}</p>}
-            <Button size="lg" onClick={join} disabled={busy || !!closed}>{T.join}</Button>
+            <Button size="lg" onClick={join} disabled={busy || !!closed || (!!st?.zones.length && !zones.length)}>{T.join}</Button>
             {st?.wait && <p className="text-sm text-muted-foreground">{T.waitNote(st.wait)}</p>}
             {st?.geo !== "off" && <p className="text-sm text-muted-foreground">{st?.geo === "dynamic" ? T.geoNoteHost : T.geoNote}</p>}
           </CardContent>
@@ -351,7 +376,8 @@ function JoinPage() {
             {called ? (
               <p>
                 <b>{me.table ? T.tableReady : T.yourTurn}</b><br />
-                {(me.table || me.desk) && <span className="my-2 block text-4xl font-extrabold">{me.table ? tableLabel(me.table) : deskLabel(me.desk!)}</span>}
+                {(me.table || me.desk || me.zone) && <span className="my-2 block text-4xl font-extrabold">{me.table ? tableLabel(me.table) : me.desk ? deskLabel(me.desk) : me.zone}</span>}
+                {me.table && me.zone && <span className="mb-2 block text-2xl font-bold">{me.zone}</span>}
                 {me.alloc && me.alloc !== me.size ? T.alloc(me.alloc) : null}
                 {T.show}<br />
                 {!timed && T.now}
@@ -370,6 +396,7 @@ function JoinPage() {
                     ? <b>{T.next}</b>
                     : T.ahead(me.aheadGroups, me.aheadPeople)}
                   {me.eta && <><br /><b>{S.eta(fmtWait(me.eta))}</b></>}
+                  {me.zones && <><br /><span className="text-sm text-muted-foreground">{T.zonesMine(me.zones.join(", "))}</span></>}
                   {(me.accept.length > 1 || me.accept[0] !== me.size) && (
                     <><br /><span className="text-sm text-muted-foreground">{T.accepting(me.size, orList(me.accept))}</span></>
                   )}

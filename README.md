@@ -21,7 +21,8 @@ QR Wait is a location-aware queue system for places where people wait: beaches a
 
 ### For operators
 
-- Two queue modes: **seats** (a pool of free places, e.g. sunbeds or bus seats) and **tables** (restaurants).
+- Three queue modes: **seats** (a pool of free places, e.g. sunbeds or bus seats), **tables** (restaurants) and **counters** (one queue served by several counters; each attendant taps "Call next" and the visitor learns their counter when called).
+- Optional **areas** (e.g. inside / outside) for seats and tables: visitors pick every area they would accept, freed places and tables are entered per area, and each area's queue moves on its own.
 - Enter how many places opened up and the next groups are called automatically; flexible groups can accept fewer places (4 people may settle for 2 sunbeds), and optionally smaller groups that fit are moved ahead.
 - Drop a no-show with one tap; their place goes to the next group.
 - Optional time to arrive (3–30 min): a called group that doesn't show up is dropped automatically, with a countdown on the visitor's screen.

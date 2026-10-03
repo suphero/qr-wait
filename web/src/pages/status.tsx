@@ -159,6 +159,7 @@ function StatusPage() {
             <CardContent className="text-center">
               <div className="text-7xl leading-tight font-extrabold text-primary tabular-nums">{s.waiting}</div>
               <p>{s.waiting ? T.waiting(s.waiting, s.people) : T.nobody}</p>
+              {!!s.zones?.length && !!s.waiting && <p className="text-sm text-muted-foreground">{s.zones.map((z) => `${z.name} ${z.waiting}`).join(" · ")}</p>}
               {closedText(s) ? <p className="mt-2 font-semibold text-destructive">{closedText(s)}</p>
                 : s.eta && <p className="mt-2 font-semibold">{S.eta(fmtWait(s.eta))}</p>}
             </CardContent>

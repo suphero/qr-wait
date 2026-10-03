@@ -37,7 +37,7 @@ const slugify = (t: string) => t.toLocaleLowerCase("tr").replace(/[çğıöşü]
 type Pt = { lat: number; lng: number };
 type Form = {
   name: string; category: string; private: boolean; slug: string; radius: string; flex: boolean; skip: boolean;
-  mode: QueueMode; desks: string; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string; geo: Geo;
+  mode: QueueMode; desks: string; zones: string; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string; geo: Geo;
   timed: "off" | "on"; wait: string;
   limited: "off" | "on"; from: string; to: string; cap: string;
 };
@@ -167,7 +167,7 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
   const [f, setF] = useState<Form>({
     name: room?.name ?? "", category: room?.category ?? "diger", private: !!room?.private,
     slug: room?.private ? "" : room?.slug ?? "", // gizli odanın rastgele adresi açık adrese taşınmasın
-    radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", desks: room?.desks?.join(", ") || "1, 2", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
+    radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", desks: room?.desks?.join(", ") || "1, 2", zones: room?.zones?.join(", ") ?? "", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
     geo: room?.geo ?? "fixed",
     timed: room?.wait ? "on" : "off", wait: String(room?.wait ?? 10),
     limited: room?.hours ? "on" : "off", from: room?.hours?.from ?? "09:00", to: room?.hours?.to ?? "18:00", cap: String(room?.cap ?? ""),
@@ -299,6 +299,13 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
                 </Field>
               ) },
             ]} />
+            {f.mode !== "desks" && (
+              <Field>
+                <FieldLabel htmlFor="zones">{T.zonesQ}</FieldLabel>
+                <Input id="zones" maxLength={250} placeholder={T.zonesPh} value={f.zones} onChange={(e) => set("zones", e.target.value)} />
+                <FieldDescription>{T.zonesDesc}</FieldDescription>
+              </Field>
+            )}
             <Inline id="maxGroup" label={T.maxGroupQ} desc={T.maxGroupDesc}>
               <Input id="maxGroup" type="number" min={1} max={20} required inputMode="numeric" value={f.maxGroup} onChange={(e) => set("maxGroup", e.target.value)} />
             </Inline>
@@ -367,7 +374,7 @@ function RoomRow({ r, dist, onChange, onEdit, onStats, onError }: { r: RoomInfo;
           {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? T.hiddenTag : bare(r.page)}</a> : T.noSlug}
         </div>
         <div className="text-xs text-muted-foreground">
-          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.mode === "desks" ? T.deskTag(r.desks.length) : r.flex && T.flexTag, r.skip && T.skipTag, r.wait && T.waitTag(r.wait), r.hours && `${r.hours.from}–${r.hours.to}`, r.cap && T.capTag(r.cap), r.paused && T.pausedTag,
+          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.mode === "desks" ? T.deskTag(r.desks.length) : r.flex && T.flexTag, !!r.zones?.length && T.zoneTag(r.zones.join("/")), r.skip && T.skipTag, r.wait && T.waitTag(r.wait), r.hours && `${r.hours.from}–${r.hours.to}`, r.cap && T.capTag(r.cap), r.paused && T.pausedTag,
             r.qr === "static" ? T.staticTag : T.ttlTag(r.ttl)].filter(Boolean).join(" · ")}
         </div>
       </TableCell>

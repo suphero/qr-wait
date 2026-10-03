@@ -2,7 +2,7 @@ import { ChevronDownIcon, PauseIcon, PlayIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConfirm } from "@/components/confirm";
-import { AcceptPicker, SizeSelect } from "@/components/group";
+import { AcceptPicker, SizeSelect, ZonePicker } from "@/components/group";
 import { ErrorText, Page, Title } from "@/components/page";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,8 @@ const T = pick({
     idle: "Boşta: sıraya ilk giren buraya çağrılacak",
     deskHint: "Sıradakini çağırınca bu gişede önceki çağrılan grup gelmiş sayılır.",
     freedSeats: "Boşalan yer sayısı",
+    zoneQ: "Hangi bölgede?",
+    addZonesQ: "Hangi bölgeler olur?",
     callNext: "Yer boşaldı, sıradakileri çağır",
     available: (n: number) => <>Ayrılmayı bekleyen boş yer: <b>{n}</b> (sıradaki grup sığmıyor)</>,
     reset: "Sıfırla",
@@ -141,6 +143,8 @@ const T = pick({
     idle: "Free: the next person to join is sent here",
     deskHint: "Calling the next group marks the group previously called to this counter as served.",
     freedSeats: "Places freed",
+    zoneQ: "In which area?",
+    addZonesQ: "Which areas are fine for them?",
     callNext: "Places freed, call the next ones",
     available: (n: number) => <>Free places not yet assigned: <b>{n}</b> (the next group doesn't fit)</>,
     reset: "Reset",
@@ -206,6 +210,8 @@ const T = pick({
     idle: "Frei: Wer sich als Nächstes anstellt, wird hierher gerufen",
     deskHint: "Beim Aufrufen der nächsten Gruppe gilt die zuvor an diesen Schalter gerufene Gruppe als bedient.",
     freedSeats: "Frei gewordene Plätze",
+    zoneQ: "In welchem Bereich?",
+    addZonesQ: "Welche Bereiche passen für sie?",
     callNext: "Plätze frei, Nächste aufrufen",
     available: (n: number) => <>Noch nicht vergebene freie Plätze: <b>{n}</b> (die nächste Gruppe passt nicht)</>,
     reset: "Zurücksetzen",
@@ -271,6 +277,8 @@ const T = pick({
     idle: "Свободно: следующий вставший в очередь будет вызван сюда",
     deskHint: "При вызове следующей группы ранее вызванная к этому окну группа считается обслуженной.",
     freedSeats: "Освободилось мест",
+    zoneQ: "В какой зоне?",
+    addZonesQ: "Какие зоны им подходят?",
     callNext: "Места освободились, вызвать следующих",
     available: (n: number) => <>Свободные нераспределённые места: <b>{n}</b> (следующая группа не помещается)</>,
     reset: "Сбросить",
@@ -315,11 +323,24 @@ function Row({ e, wait, skew, children }: { e: Entry; wait?: number | null; skew
           : e.table ? <> · <b>{tableLabel(e.table)}</b>{e.table.name && ` (${T.seats(e.table.cap)})`}</>
           : e.status === "called" ? e.alloc != null && <> · <b>{T.places(e.alloc)}</b></>
           : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${T.acceptOk(e.accept.join("/"))}` : ""}
+        {e.zone ? <> · <b>{e.zone}</b></> : e.zones && ` · ${e.zones.join("/")}`}
         {e.src === "manual" && ` · ${T.manual}`}
         {e.note && ` · ${e.note}`}
         {e.calledAt && <> · <span className={cn(late && "font-bold text-destructive")}>{left !== null ? T.remain(left) : T.ago(mins(e.calledAt))}</span></>}
       </span>
       {children}
+    </div>
+  );
+}
+
+// Görevlinin boşalan yeri / masayı girdiği bölge
+function ZoneTabs({ zones, value, onChange }: { zones: string[]; value: string; onChange: (z: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm text-muted-foreground">{T.zoneQ}</span>
+      {zones.map((z) => (
+        <Button key={z} size="sm" variant={z === value ? "default" : "secondary"} aria-pressed={z === value} onClick={() => onChange(z)}>{z}</Button>
+      ))}
     </div>
   );
 }
@@ -339,6 +360,8 @@ function HostPage() {
   const [addSize, setAddSize] = useState(2);
   const [addAccept, setAddAccept] = useState([2]);
   const [addNote, setAddNote] = useState("");
+  const [addZones, setAddZones] = useState<string[]>([]);
+  const [zone, setZone] = useState(""); // bölgeli sırada boşalan yerin / masanın bölgesi
   // Gişe modunda bu cihazın gişesi (hatırlanır); boş: tüm gişeler bu panelden yönetilir
   const [myDesk, setMyDesk] = useState(() => localStorage.getItem(`desk:${ref}`) ?? "");
   const qr = useRef({ at: 0, text: "" });
@@ -393,7 +416,7 @@ function HostPage() {
   }, [s?.maxGroup]);
 
   async function add() {
-    const st = await act({ action: "add", size: addSize, accept: addAccept, note: addNote });
+    const st = await act({ action: "add", size: addSize, accept: addAccept, note: addNote, zones: addZones });
     if (st?.added) {
       setAddNote("");
       await confirm({ title: T.added(st.added), description: T.tellThem, cancel: false });
@@ -402,8 +425,8 @@ function HostPage() {
 
   async function freeTable(n: number) {
     if (!(n >= 1)) return;
-    const label = tableLabel({ cap: n, name: tName.trim() });
-    const st = await act({ action: "table", n, name: tName });
+    const label = [tableLabel({ cap: n, name: tName.trim() }), curZone].filter(Boolean).join(" · ");
+    const st = await act({ action: "table", n, name: tName, zone: curZone });
     if (!st) return;
     setTName(""); setTCap("");
     setTMsg(st.seated ? T.seated(label, st.seated) : T.noFit(label));
@@ -413,6 +436,7 @@ function HostPage() {
   const called = s?.entries.filter((e) => e.status === "called") ?? [];
   const fixed = s?.qr === "static";
   const desks = s?.mode === "desks";
+  const zones = s?.zones ?? [], curZone = zones.includes(zone) ? zone : zones[0];
   const shownDesks = s && desks ? (s.desks.includes(myDesk) ? [myDesk] : s.desks) : [];
   const pickDesk = (d: string) => { setMyDesk(d); localStorage.setItem(`desk:${ref}`, d); };
 
@@ -463,6 +487,7 @@ function HostPage() {
       {s?.tables && (
         <Section title={T.tableFreed}>
           <div className="flex flex-col gap-3">
+            {!!zones.length && <ZoneTabs zones={zones} value={curZone} onChange={setZone} />}
             <Input placeholder={T.tableName} maxLength={20} value={tName} onChange={(e) => setTName(e.target.value)} />
             <div className="flex flex-wrap gap-2 *:flex-auto">
               {[2, 4, 6].map((n) => <Button key={n} onClick={() => freeTable(n)}>{T.seats(n)}</Button>)}
@@ -483,7 +508,7 @@ function HostPage() {
               <p className="text-sm text-muted-foreground">{T.freeTables}</p>
               {s.freeTables.map((t) => (
                 <div key={t.id} className="flex items-center gap-2 border-b py-2 last:border-0">
-                  <span className="flex-1"><b>{tableLabel(t)}</b>{t.name && ` · ${T.seats(t.cap)}`} · {T.min(mins(t.at))}</span>
+                  <span className="flex-1"><b>{tableLabel(t)}</b>{t.name && ` · ${T.seats(t.cap)}`}{t.zone && ` · ${t.zone}`} · {T.min(mins(t.at))}</span>
                   <Button variant="secondary" size="sm" onClick={() => act({ action: "untable", id: t.id })}>{T.remove}</Button>
                 </div>
               ))}
@@ -524,11 +549,18 @@ function HostPage() {
       )}
 
       {s?.mode === "seats" && <Section title={T.freedSeats}>
+        {!!zones.length && <div className="mb-3"><ZoneTabs zones={zones} value={curZone} onChange={setZone} /></div>}
         <div className="flex gap-2">
           <Input className="w-24" type="number" min={1} max={500} inputMode="numeric" value={freeN} onChange={(e) => setFreeN(e.target.value)} />
-          <Button className="flex-1 whitespace-normal" onClick={() => act({ action: "free", n: +freeN })}>{T.callNext}</Button>
+          <Button className="flex-1 whitespace-normal" onClick={() => act({ action: "free", n: +freeN, zone: curZone })}>{T.callNext}</Button>
         </div>
-        {!!s?.available && (
+        {zones.filter((z) => s.spots[z]).map((z) => (
+          <p key={z} className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex-1"><b>{z}</b> · {T.available(s.spots[z])}</span>
+            <Button variant="secondary" size="sm" onClick={() => act({ action: "setAvailable", n: 0, zone: z })}>{T.reset}</Button>
+          </p>
+        ))}
+        {!zones.length && !!s?.available && (
           <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
             <span className="flex-1">{T.available(s.available)}</span>
             <Button variant="secondary" size="sm" onClick={() => act({ action: "setAvailable", n: 0 })}>{T.reset}</Button>
@@ -575,7 +607,13 @@ function HostPage() {
               <AcceptPicker size={addSize} value={addAccept} onChange={setAddAccept} />
             </div>
           )}
-          <Button onClick={add}>{T.add}</Button>
+          {!!zones.length && (
+            <div>
+              <p className="text-sm text-muted-foreground">{T.addZonesQ}</p>
+              <ZonePicker zones={zones} value={addZones} onChange={setAddZones} />
+            </div>
+          )}
+          <Button onClick={add} disabled={!!zones.length && !addZones.length}>{T.add}</Button>
         </div>
       </Section>
 

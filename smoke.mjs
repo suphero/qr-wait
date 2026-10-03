@@ -362,6 +362,46 @@ await dadmin({ action: "call", id: d5.id, desk: "2" });
 assert.equal((await dme(d5.id)).desk, "2", "elle çağırma seçilen gişeye");
 assert.equal((await req("GET", `/api/admin/rooms/${dr.room}/stats`, undefined, PW)).days.at(-1).served, 1);
 await req("DELETE", `/api/admin/rooms/${dr.room}`, undefined, PW);
+// Bölgeler: ziyaretçi kabul ettiği bölgeleri seçer, boş yer bölge bölge; katı sıra her bölgede ayrı işler
+assert.match((await post("/api/admin/rooms", { name: "Kafe", slug: `${slug}-bolge`, radius: 300, zones: "a,b,c,d,e,f,g,h,i,j,k", ...spot }, PW)).error, /En fazla 10 bölge/);
+const zr = await post("/api/admin/rooms", { name: "Kafe", slug: `${slug}-bolge`, radius: 300, zones: "İçeri, Dışarı", ...spot }, PW);
+const zadmin = (body = {}) => post(`/api/r/${zr.room}/admin`, body, { "x-key": zr.key });
+let zs = await zadmin();
+assert.deepEqual([zs.zones, zs.spots], [["İçeri", "Dışarı"], { İçeri: 0, Dışarı: 0 }]);
+const zjoin = (device, size, zones) => post(`/api/r/${zr.room}/join`, { t: zs.token, ...spot, size, zones, device });
+const zme = async (id) => (await fetch(`${B}/api/r/${zr.room}/me?id=${id}`)).json();
+assert.match((await zjoin("zone-device-00000000", 2)).error, /en az bir bölge/);
+const z1 = await zjoin("zone-device-00000001", 2, ["İçeri"]), z2 = await zjoin("zone-device-00000002", 2, ["Dışarı", "Yok"]);
+const z3 = await zjoin("zone-device-00000003", 3, ["Dışarı", "İçeri"]), z4 = await zjoin("zone-device-00000004", 1, ["İçeri"]);
+assert.deepEqual((await zme(z3.id)).zones, ["İçeri", "Dışarı"], "bölgeler sıranın sırasıyla, bilinmeyen atılır");
+assert.deepEqual([(await zme(z2.id)).aheadGroups, (await zme(z4.id)).aheadGroups], [0, 2], "önündekiler yalnızca aynı bölgeyi isteyenler");
+assert.deepEqual((await req("GET", `/api/r/${zr.room}/status`)).zones.map((z) => [z.name, z.waiting]), [["İçeri", 3], ["Dışarı", 2]]);
+await zadmin({ action: "free", n: 2, zone: "Dışarı" });
+assert.deepEqual(((m) => [m.status, m.zone, m.alloc])(await zme(z2.id)), ["called", "Dışarı", 2]);
+zs = await zadmin({ action: "free", n: 3, zone: "İçeri" }); // #1 içeri; #3 (3 kişi) sığmaz, iki bölgeyi de tıkar → #4 bekler
+assert.equal((await zme(z1.id)).zone, "İçeri");
+assert.equal((await zme(z4.id)).status, "waiting", "katı sırada sığmayan grup bölgelerini tıkar");
+assert.deepEqual(zs.spots, { İçeri: 1, Dışarı: 0 });
+zs = await zadmin({ action: "free", n: 3, zone: "Dışarı" }); // #3 dışarı, ardından #4 içerideki 1 yere
+assert.equal((await zme(z3.id)).zone, "Dışarı");
+assert.deepEqual(((m) => [m.status, m.zone])(await zme(z4.id)), ["called", "İçeri"]);
+assert.deepEqual(zs.spots, { İçeri: 0, Dışarı: 0 });
+zs = await zadmin({ action: "drop", id: z2.id }); // dışarıdaki gelmedi: 2 yer dışarıya döner
+assert.deepEqual(zs.spots, { İçeri: 0, Dışarı: 2 });
+assert.equal((await zadmin({ action: "free", n: 1, zone: "Bahçe" })).error, "Bölge bulunamadı");
+assert.match((await zadmin({ action: "add", size: 1 })).error, /en az bir bölge/);
+zs = await zadmin({ action: "add", size: 2, zones: ["Dışarı"] });
+assert.deepEqual(((e) => [e.status, e.zone])(zs.entries.find((e) => e.no === zs.added)), ["called", "Dışarı"], "elle eklenen bölgesindeki boş yere");
+await req("DELETE", `/api/admin/rooms/${zr.room}`, undefined, PW);
+// Masa + bölge: masa yalnızca o bölgeyi kabul eden gruba
+const zt = await post("/api/admin/rooms", { name: "Lokanta", slug: `${slug}-bolge-masa`, radius: 300, mode: "tables", zones: "Bahçe, Salon", ...spot }, PW);
+const ztadmin = (body = {}) => post(`/api/r/${zt.room}/admin`, body, { "x-key": zt.key });
+const ztj = await post(`/api/r/${zt.room}/join`, { t: (await ztadmin()).token, ...spot, size: 2, zones: ["Salon"], device: "zone-table-device-001" });
+assert.match((await ztadmin({ action: "table", n: 2 })).error, /Bölge bulunamadı/);
+assert.equal((await ztadmin({ action: "table", n: 2, zone: "Bahçe" })).seated, null, "bahçedeki masa salonu bekleyene verilmez");
+assert.equal((await ztadmin({ action: "table", n: 2, zone: "Salon" })).seated, ztj.no);
+assert.equal((await (await fetch(`${B}/api/r/${zt.room}/me?id=${ztj.id}`)).json()).zone, "Salon");
+await req("DELETE", `/api/admin/rooms/${zt.room}`, undefined, PW);
 // Şifre değişince eski oturum düşer; kullanıcının seçtiği şifre sızıntı listelerinde olmamalı
 const strong = () => `smoke-${randomBytes(12).toString("hex")}`;
 assert.match((await post("/api/admin/password", { old: "yanlis-sifre", password: strong() }, PW)).error, /hatalı/);
