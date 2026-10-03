@@ -129,6 +129,20 @@ s = await admin({ action: "free", n: 3 });
 assert.equal((await hs.next()).t, "tick", "değişiklik görevliye bildirilir");
 assert.equal((await vs.next()).aheadGroups, 1, "#3 öndeki grubun çağrıldığını canlı görür");
 assert.ok(s.entries.find((e) => e.id === c.id).seen >= Date.now() - 60000, "açık bağlantının ping'i son görülmedir");
+// Sayfa ekrandan kalkınca (ekran kilidi) bağlantı açık kalsa da son görülme o an olarak kalır
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const seenOf = async () => (await admin({})).entries.find((e) => e.id === c.id).seen;
+vs.w.send(JSON.stringify({ vis: false }));
+await pause(300);
+const hidAt = await seenOf();
+assert.equal((await admin({})).entries.find((e) => e.id === c.id).hidden, true, "ekran kapalı hemen görünür");
+await pause(1100);
+vs.w.send("ping");
+while ((await vs.next()) !== "pong"); // önceki değişikliklerden kalan durum mesajları atlanır
+assert.equal(await seenOf(), hidAt, "ekran kapalıyken ping son görülmeyi ilerletmez");
+vs.w.send(JSON.stringify({ vis: true }));
+await pause(300);
+assert.ok((await seenOf()) > hidAt, "ekrana dönünce yeniden görülür");
 vs.w.close(); hs.w.close();
 assert.equal(s.error, undefined, "push gönderimi çağırmayı bozmaz");
 assert.equal((await me(a.id)).status, "called");

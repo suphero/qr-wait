@@ -325,7 +325,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-// Ziyaretçi sayfası canlı bağlantıda 25 sn'de bir ping atar (yoksa 10 sn'de bir yoklar); son sinyal bundan yeniyse sayfası açık sayılır
+// Ziyaretçi sayfası canlı bağlantıda 25 sn'de bir ping atar (yoksa 10 sn'de bir yoklar); son sinyal bundan yeniyse sayfası açık sayılır.
+// Sayfa ekrandan kalkınca (ekran kilidi, başka uygulama) sunucu o anı son görülme olarak gönderir.
 const ACTIVE = 60000;
 
 // Yer bilgisi: çağrılanda ayrılan yer, bekleyende (kişi sayısından farklıysa) kabul edilen yerler
@@ -333,7 +334,7 @@ const ACTIVE = 60000;
 // QR ile girenlerde ulaşılabilirlik: sayfa son yoklamadan beri açık mı, bildirim açık mı (kararı görevli verir)
 function Row({ e, wait, skew, children }: { e: Entry; wait?: number | null; skew?: number; children: ReactNode }) {
   const left = wait && e.calledAt ? Math.floor((e.calledAt + wait * 60000 - Date.now() - (skew ?? 0)) / 60000) : null;
-  const away = e.seen ? Date.now() + (skew ?? 0) - e.seen : null;
+  const away = e.seen ? Date.now() + (skew ?? 0) - e.seen : null, online = away !== null && !e.hidden && away < ACTIVE;
   const late = left !== null ? left < 1 : e.calledAt && mins(e.calledAt) >= 10;
   return (
     <div className="flex items-center gap-2 border-b py-2 last:border-0">
@@ -346,7 +347,7 @@ function Row({ e, wait, skew, children }: { e: Entry; wait?: number | null; skew
           : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${T.acceptOk(e.accept.join("/"))}` : ""}
         {e.zone ? <> · <b>{e.zone}</b></> : e.zones && ` · ${e.zones.join("/")}`}
         {e.src === "manual" && ` · ${T.manual}`}
-        {away !== null && <> · <span className={cn(away >= ACTIVE && "text-muted-foreground")}>{away < ACTIVE ? `🟢 ${T.online}` : T.seen(Math.floor(away / 60000))}</span></>}
+        {away !== null && <> · <span className={cn(!online && "text-muted-foreground")}>{online ? `🟢 ${T.online}` : T.seen(Math.floor(away / 60000))}</span></>}
         {e.notify !== undefined && <> · <span title={e.notify ? T.pushOn : T.pushOff} aria-label={e.notify ? T.pushOn : T.pushOff}>{e.notify ? "🔔" : "🔕"}</span></>}
         {e.note && ` · ${e.note}`}
         {e.calledAt && <> · <span className={cn(late && "font-bold text-destructive")}>{left !== null ? T.remain(left) : T.ago(mins(e.calledAt))}</span></>}

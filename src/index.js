@@ -163,9 +163,16 @@ export class Room extends DurableObject {
   }
 
   async webSocketMessage(ws, m) {
-    let key;
-    try { key = JSON.parse(m).key; } catch {}
-    if (this.s && !(ws.deserializeAttachment() ?? {}).id && typeof key === "string" && same(key, this.s.key)) {
+    let msg = {};
+    try { msg = JSON.parse(m) ?? {}; } catch {}
+    const { id } = ws.deserializeAttachment() ?? {};
+    // Ziyaretçi: sayfa ekranda mı ({ vis }); ekran kilitlenince / uygulama değişince bağlantı bir süre açık kalabilir
+    if (id) {
+      if (typeof msg.vis === "boolean") await this.visible(id, msg.vis);
+      return;
+    }
+    const key = msg.key;
+    if (this.s && typeof key === "string" && same(key, this.s.key)) {
       ws.serializeAttachment({ host: true });
       ws.send(TICK);
     } else ws.close(4001, "unauthorized");
@@ -181,6 +188,18 @@ export class Room extends DurableObject {
   }
 
   async webSocketError(ws) { await this.webSocketClose(ws); }
+
+  // hid: sayfanın ekrandan kalktığı an; panel son görülmeyi bu an olarak gösterir
+  async visible(id, vis) {
+    const e = this.s?.entries.find((x) => x.id === id);
+    if (!e || vis === !e.hid) return;
+    e.seen = Date.now();
+    if (vis) delete e.hid;
+    else e.hid = e.seen;
+    await this.save(true);
+    // Ziyaretçilere değişen bir şey yok; panel ise beklemeden yenilensin
+    for (const ws of this.ctx.getWebSockets()) if ((ws.deserializeAttachment() ?? {}).host) try { ws.send(TICK); } catch {}
+  }
 
   // Bilet yoksa (düştü / sıradan çıktı) durum gönderilir ve bağlantı kapanır
   sendView(ws, id) {
@@ -433,9 +452,11 @@ export class Room extends DurableObject {
   }
 
   // lang: ziyaretçi sayfanın dilini değiştirdiyse bildirim de o dilde gitsin (x-lang başlığı; yoksa dokunulmaz)
-  async me(id, lang) {
+  // hidden: yoklama sayfa ekranda değilken yapıldı (Android'de arka plandaki sekme)
+  async me(id, lang, hidden) {
     const e = this.need().entries.find((x) => x.id === id);
     if (e) {
+      await this.visible(id, !hidden);
       // Son görülme görevli panelinde gösterilir; bellekte her yoklamada güncellenir, diske dakikada bir yazılır
       const now = Date.now(), lng = LANGS.includes(lang) && e.lang !== lang;
       e.seen = now;
@@ -746,7 +767,7 @@ export class Room extends DurableObject {
       freeTables: s.tables,
       token: await this.token(),
       // seen: ziyaretçi sayfasının son yoklaması; notify: kapalı sayfaya push ile ulaşılabilir
-      entries: s.entries.map(({ device, push, soon, ...x }) => ({ ...x, ...(x.src === "qr" && { notify: !!push, seen: Math.max(x.seen ?? 0, pings[x.id] ?? 0) || undefined }) })),
+      entries: s.entries.map(({ device, push, soon, hid, ...x }) => ({ ...x, ...(x.src === "qr" && { notify: !!push, hidden: !!hid, seen: hid ?? (Math.max(x.seen ?? 0, pings[x.id] ?? 0) || undefined) }) })),
     };
   }
 }
@@ -1512,7 +1533,7 @@ async function handle(req, env) {
         // Her bilet sıra sahibinin hakkından düştüğü için rastgele cihaz kimliğiyle toplu girişi IP başına sınırlar
         await limit(env, "JOIN_LIMIT", `${m[1]}:${ip(req)}`);
         return Response.json(await room.join(body));
-      case "me": return Response.json(await room.me(url.searchParams.get("id"), req.headers.get("x-lang")));
+      case "me": return Response.json(await room.me(url.searchParams.get("id"), req.headers.get("x-lang"), url.searchParams.get("hidden") === "1"));
       case "leave": return Response.json(await room.leave(body.id));
       case "push": return Response.json(await room.subscribe(body.id, body.sub));
       case "admin": return Response.json(await room.admin(req.headers.get("x-key"), body));

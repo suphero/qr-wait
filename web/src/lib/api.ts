@@ -50,7 +50,8 @@ export function poll(fn: () => void, ms: number, whenHidden = false) {
 // Bağlantı yokken refresh ms'de bir yoklanır (WebSocket engelliyse eski davranış), varken yalnızca slow ms'de bir
 // (kaçan mesaj, görevlide dinamik QR). Kopunca artan aralıklarla yeniden bağlanır; sayfa yeniden görünür olunca hemen.
 // hello: bağlanınca gönderilen ilk mesaj (görevli anahtarı). "ping"e sunucu oda uyanmadan "pong" döner.
-export function live(path: string, onMsg: (m: any) => void, refresh: () => void, { ms, slow, hidden = false, hello }: { ms: number; slow: number; hidden?: boolean; hello?: object }) {
+// vis: sayfanın ekranda olup olmadığı bağlanınca ve her değişimde bildirilir (ziyaretçi; ekran kilitlenince bağlantı bir süre açık kalabilir)
+export function live(path: string, onMsg: (m: any) => void, refresh: () => void, { ms, slow, hidden = false, hello, vis = false }: { ms: number; slow: number; hidden?: boolean; hello?: object; vis?: boolean }) {
   let ws: WebSocket | null = null, up = false, stopped = false, backoff = 1000, retry = 0, heard = 0, pinged = 0, fresh = Date.now();
   const connect = () => {
     if (stopped || ws || !window.WebSocket) return;
@@ -60,6 +61,7 @@ export function live(path: string, onMsg: (m: any) => void, refresh: () => void,
       up = true; backoff = 1000; heard = pinged = Date.now();
       s.send("ping");
       if (hello) s.send(JSON.stringify(hello));
+      if (vis) s.send(JSON.stringify({ vis: !document.hidden }));
     };
     s.onmessage = (e) => {
       heard = Date.now();
@@ -81,6 +83,7 @@ export function live(path: string, onMsg: (m: any) => void, refresh: () => void,
     if ((hidden || !document.hidden) && (!up || now - fresh >= slow)) { fresh = now; refresh(); }
   };
   const onVis = () => {
+    if (vis && ws && up) ws.send(JSON.stringify({ vis: !document.hidden }));
     if (document.hidden) return;
     if (!ws) connect();
     refresh();
@@ -125,7 +128,8 @@ export type Me = {
 export type Entry = {
   id: string; no: number; size: number; accept?: number[]; alloc?: number; table?: Table; desk?: string; zones?: string[]; zone?: string; src: "qr" | "manual"; note: string;
   status: "waiting" | "called"; at: number; calledAt?: number;
-  seen?: number; notify?: boolean; // ziyaretçi sayfasının son yoklaması (sunucu saati); push ile ulaşılabilir mi (yalnızca QR ile girenlerde)
+  // Yalnızca QR ile girenlerde: sayfanın son görülmesi (sunucu saati), sayfa şu an ekranda değil mi, push ile ulaşılabilir mi
+  seen?: number; hidden?: boolean; notify?: boolean;
 };
 export type AdminState = {
   name: string; flex: boolean; tables: boolean; mode: Mode; desks: string[]; idle: string[]; zones: string[]; spots: Record<string, number>; maxEmpty: number | null; available: number; added?: number;

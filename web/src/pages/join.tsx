@@ -263,7 +263,7 @@ function JoinPage() {
     const id = localStorage.getItem(slot);
     if (!id) return setView(token ? "join" : null);
     try {
-      show(await api<Me>(`/api/r/${room}/me?id=${encodeURIComponent(id)}`));
+      show(await api<Me>(`/api/r/${room}/me?id=${encodeURIComponent(id)}${document.hidden ? "&hidden=1" : ""}`));
     } catch (e: any) { setErr(e.message); }
   }
 
@@ -308,7 +308,7 @@ function JoinPage() {
   useEffect(() => {
     const id = waiting && localStorage.getItem(slot);
     if (!id) return;
-    return live(`/api/r/${room}/live?id=${encodeURIComponent(id)}`, show, refresh, { ms: 10000, slow: 60000, hidden: true });
+    return live(`/api/r/${room}/live?id=${encodeURIComponent(id)}`, show, refresh, { ms: 10000, slow: 60000, hidden: true, vis: true });
   }, [waiting]);
 
   const called = me?.status === "called";
