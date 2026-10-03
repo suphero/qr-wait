@@ -46,6 +46,56 @@ export function poll(fn: () => void, ms: number, whenHidden = false) {
   return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
 }
 
+// Odanın canlı bağlantısı (WebSocket, /api/r/<oda>/live). Gelen mesajlar onMsg'a gider.
+// Bağlantı yokken refresh ms'de bir yoklanır (WebSocket engelliyse eski davranış), varken yalnızca slow ms'de bir
+// (kaçan mesaj, görevlide dinamik QR). Kopunca artan aralıklarla yeniden bağlanır; sayfa yeniden görünür olunca hemen.
+// hello: bağlanınca gönderilen ilk mesaj (görevli anahtarı). "ping"e sunucu oda uyanmadan "pong" döner.
+export function live(path: string, onMsg: (m: any) => void, refresh: () => void, { ms, slow, hidden = false, hello }: { ms: number; slow: number; hidden?: boolean; hello?: object }) {
+  let ws: WebSocket | null = null, up = false, stopped = false, backoff = 1000, retry = 0, heard = 0, pinged = 0, fresh = Date.now();
+  const connect = () => {
+    if (stopped || ws || !window.WebSocket) return;
+    clearTimeout(retry);
+    const s = (ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`));
+    s.onopen = () => {
+      up = true; backoff = 1000; heard = pinged = Date.now();
+      s.send("ping");
+      if (hello) s.send(JSON.stringify(hello));
+    };
+    s.onmessage = (e) => {
+      heard = Date.now();
+      if (e.data === "pong") return;
+      fresh = heard;
+      try { onMsg(JSON.parse(e.data)); } catch {}
+    };
+    s.onclose = () => {
+      if (ws === s) { ws = null; up = false; }
+      if (!stopped && !document.hidden) retry = window.setTimeout(connect, (backoff = Math.min(backoff * 2, 30000)));
+    };
+  };
+  const tick = () => {
+    const now = Date.now();
+    if (ws && up) {
+      if (now - heard > 60000) ws.close(); // uyku / ağ değişimi sonrası yanıt vermeyen bağlantı
+      else if (now - pinged >= 25000) { pinged = now; ws.send("ping"); }
+    }
+    if ((hidden || !document.hidden) && (!up || now - fresh >= slow)) { fresh = now; refresh(); }
+  };
+  const onVis = () => {
+    if (document.hidden) return;
+    if (!ws) connect();
+    refresh();
+  };
+  const t = setInterval(tick, ms);
+  document.addEventListener("visibilitychange", onVis);
+  connect();
+  return () => {
+    stopped = true;
+    clearInterval(t); clearTimeout(retry);
+    document.removeEventListener("visibilitychange", onVis);
+    ws?.close();
+  };
+}
+
 // --- API yanıt tipleri (src/index.js) ---
 // Katılım saatleri "HH:MM"; from > to gece yarısını geçer. days: pazartesi … pazar, null: o gün kapalı
 export type Span = { from: string; to: string };

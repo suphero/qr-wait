@@ -5,7 +5,7 @@ import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { api, catIcon, locate, poll, type Me, type Status } from "@/lib/api";
+import { api, catIcon, live, locate, type Me, type Status } from "@/lib/api";
 import { closedText, deskLabel, fmtWait, geoErrors, lang, orList, pick, pl, S, tableLabel } from "@/lib/i18n";
 import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
@@ -25,9 +25,11 @@ const T = pick({
     queue: "Sıra",
     ownQueue: "Siz de sıra mı yönetiyorsunuz? QR Wait'i ücretsiz kurun →",
     keepOpen: "Bu sayfayı açık tutun. Sıra size geldiğinde ekran yeşile döner ve telefon titrer.",
-    iosHint: <><b>Ekran kilitliyken de haber almak için:</b> Safari'de Paylaş <b>⎋</b> → <b>Ana Ekrana Ekle</b>'ye dokunun, sonra ana ekrandaki <b>QR Wait</b>'i açıp bildirimlere izin verin.</>,
+    iosHint: <><b>Ekran kilitliyken de haber almak için:</b> Safari'de Paylaş <b>⎋</b> → <b>Ana Ekrana Ekle</b>'ye dokunun, sonra ana ekrandaki <b>QR Wait</b>'i açıp bildirimlere izin verin. Eklerken <b>Web Uygulaması Olarak Aç</b> seçeneği açık olmalı.</>,
     pushOn: "🔔 Bildirimler açık. Sayfayı kapatsanız veya ekranı kilitleseniz de sıranız gelince haber vereceğiz.",
     pushDenied: "Bildirimler kapalı. Bu sayfayı açık tutun ya da tarayıcı ayarlarından bu siteye bildirim izni verin.",
+    pushNo: "Bu cihazda bildirim desteklenmiyor (iPhone'da iOS 16.4 veya üstü gerekir). Sıra size gelince haber alabilmek için bu sayfayı açık tutun.",
+    pushFail: (m: string) => `Bildirimler açılamadı (${m}). Sıra size gelince haber alabilmek için bu sayfayı açık tutun.`,
     gone: "Sıranız kapandı. Yeniden sıraya girmek için görevlinin QR kodunu okutun.",
     notFound: "Sıra bulunamadı. Görevlinin QR kodunu yeniden okutun.",
     howMany: "Kaç kişisiniz?",
@@ -63,9 +65,11 @@ const T = pick({
     queue: "Queue",
     ownQueue: "Running a queue? Set up QR Wait for free →",
     keepOpen: "Keep this page open. When it's your turn, the screen turns green and your phone vibrates.",
-    iosHint: <><b>To get notified even when the screen is locked:</b> in Safari tap Share <b>⎋</b> → <b>Add to Home Screen</b>, then open <b>QR Wait</b> from your home screen and allow notifications.</>,
+    iosHint: <><b>To get notified even when the screen is locked:</b> in Safari tap Share <b>⎋</b> → <b>Add to Home Screen</b>, then open <b>QR Wait</b> from your home screen and allow notifications. <b>Open as Web App</b> must be on when adding.</>,
     pushOn: "🔔 Notifications are on. We'll let you know when it's your turn, even if you close this page or lock the screen.",
     pushDenied: "Notifications are off. Keep this page open, or allow notifications for this site in your browser settings.",
+    pushNo: "Notifications aren't supported on this device (iPhone needs iOS 16.4 or later). Keep this page open so you know when it's your turn.",
+    pushFail: (m: string) => `Notifications couldn't be turned on (${m}). Keep this page open so you know when it's your turn.`,
     gone: "Your place in the queue has ended. Scan the attendant's QR code to join again.",
     notFound: "Queue not found. Scan the attendant's QR code again.",
     howMany: "How many people are you?",
@@ -101,9 +105,11 @@ const T = pick({
     queue: "Warteschlange",
     ownQueue: "Sie verwalten eine Warteschlange? QR Wait kostenlos einrichten →",
     keepOpen: "Lassen Sie diese Seite geöffnet. Wenn Sie an der Reihe sind, wird der Bildschirm grün und Ihr Telefon vibriert.",
-    iosHint: <><b>Um auch bei gesperrtem Bildschirm benachrichtigt zu werden:</b> Tippen Sie in Safari auf Teilen <b>⎋</b> → <b>Zum Home-Bildschirm</b>, öffnen Sie dann <b>QR Wait</b> vom Home-Bildschirm und erlauben Sie Mitteilungen.</>,
+    iosHint: <><b>Um auch bei gesperrtem Bildschirm benachrichtigt zu werden:</b> Tippen Sie in Safari auf Teilen <b>⎋</b> → <b>Zum Home-Bildschirm</b>, öffnen Sie dann <b>QR Wait</b> vom Home-Bildschirm und erlauben Sie Mitteilungen. Beim Hinzufügen muss <b>Als Web-App öffnen</b> aktiviert sein.</>,
     pushOn: "🔔 Benachrichtigungen sind aktiv. Wir melden uns, wenn Sie an der Reihe sind – auch wenn Sie die Seite schließen oder den Bildschirm sperren.",
     pushDenied: "Benachrichtigungen sind deaktiviert. Lassen Sie diese Seite geöffnet oder erlauben Sie Benachrichtigungen für diese Seite in den Browsereinstellungen.",
+    pushNo: "Benachrichtigungen werden auf diesem Gerät nicht unterstützt (iPhone benötigt iOS 16.4 oder neuer). Lassen Sie diese Seite geöffnet, damit Sie erfahren, wann Sie an der Reihe sind.",
+    pushFail: (m: string) => `Benachrichtigungen konnten nicht aktiviert werden (${m}). Lassen Sie diese Seite geöffnet, damit Sie erfahren, wann Sie an der Reihe sind.`,
     gone: "Ihr Platz in der Warteschlange ist beendet. Scannen Sie den QR-Code des Personals, um sich erneut anzustellen.",
     notFound: "Warteschlange nicht gefunden. Scannen Sie den QR-Code des Personals erneut.",
     howMany: "Wie viele Personen sind Sie?",
@@ -139,9 +145,11 @@ const T = pick({
     queue: "Очередь",
     ownQueue: "Управляете очередью? Подключите QR Wait бесплатно →",
     keepOpen: "Не закрывайте эту страницу. Когда подойдёт ваша очередь, экран станет зелёным, а телефон завибрирует.",
-    iosHint: <><b>Чтобы получать уведомления и при заблокированном экране:</b> в Safari нажмите «Поделиться» <b>⎋</b> → <b>«На экран „Домой“»</b>, затем откройте <b>QR Wait</b> с экрана «Домой» и разрешите уведомления.</>,
+    iosHint: <><b>Чтобы получать уведомления и при заблокированном экране:</b> в Safari нажмите «Поделиться» <b>⎋</b> → <b>«На экран „Домой“»</b>, затем откройте <b>QR Wait</b> с экрана «Домой» и разрешите уведомления. При добавлении должен быть включён параметр <b>«Открыть как веб-приложение»</b>.</>,
     pushOn: "🔔 Уведомления включены. Мы сообщим, когда подойдёт ваша очередь, даже если вы закроете страницу или заблокируете экран.",
     pushDenied: "Уведомления отключены. Не закрывайте эту страницу или разрешите уведомления для этого сайта в настройках браузера.",
+    pushNo: "Уведомления не поддерживаются на этом устройстве (на iPhone нужна iOS 16.4 или новее). Не закрывайте эту страницу, чтобы узнать, когда подойдёт ваша очередь.",
+    pushFail: (m: string) => `Не удалось включить уведомления (${m}). Не закрывайте эту страницу, чтобы узнать, когда подойдёт ваша очередь.`,
     gone: "Ваше место в очереди больше не действует. Чтобы встать снова, отсканируйте QR-код сотрудника.",
     notFound: "Очередь не найдена. Отсканируйте QR-код сотрудника ещё раз.",
     howMany: "Сколько вас человек?",
@@ -177,20 +185,24 @@ const T = pick({
 
 // Push aboneliği: sayfa kapalıyken / ekran kilitliyken de haber verebilmek için.
 // iOS'ta PushManager yalnızca ana ekrana eklenmiş uygulamada vardır.
-async function enablePush(id: string) {
-  if (!window.PushManager || Notification.permission !== "granted") return false;
+// Sonuç: null abone olundu, yoksa ekranda gösterilen neden (hata sessizce yutulursa iPhone'da sorunu bulmak imkânsız)
+async function enablePush(id: string): Promise<string | null> {
   try {
-    const reg = await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker) return "service worker";
+    const reg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<never>((_, no) => setTimeout(() => no(new Error("service worker timeout")), 10000)),
+    ]);
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       const { key } = await api<{ key: string | null }>("/api/vapid");
-      if (!key) return false;
+      if (!key) return "vapid";
       const raw = Uint8Array.from(atob(key.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
       sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
     }
     await api(`/api/r/${room}/push`, { id, sub: sub.toJSON() });
-    return true;
-  } catch { return false; }
+    return null;
+  } catch (e: any) { return [e?.name, e?.message].filter(Boolean).join(": ") || String(e); }
 }
 
 // place: masa ya da gişe adı; table: masa modunda başlık "Masanız hazır"
@@ -227,15 +239,17 @@ function JoinPage() {
   async function pushUI(id: string) {
     if (pushShown.current) return;
     pushShown.current = true;
-    if (!window.PushManager) {
-      if (!isIOS || standalone) return;
+    if (!window.PushManager || !window.Notification) {
+      if (standalone) return setHint(T.pushNo); // ana ekran uygulamasında da yoksa iOS sürümü eski
+      if (!isIOS) return;
       // Ana ekrandaki uygulama Safari'den ayrı depolama kullanır: bilet adres üzerinden taşınır (ana ekrana eklerken o anki adres kaydedilir)
       history.replaceState(null, "", `?${ref ? `r=${ref}&` : ""}k=${id}`);
       setHint(T.iosHint);
       return;
     }
     if (Notification.permission === "granted") {
-      if (await enablePush(id)) setHint(T.pushOn);
+      const fail = await enablePush(id);
+      setHint(fail ? T.pushFail(fail) : T.pushOn);
       return;
     }
     if (Notification.permission === "denied") {
@@ -249,27 +263,32 @@ function JoinPage() {
     const id = localStorage.getItem(slot);
     if (!id) return setView(token ? "join" : null);
     try {
-      const s = await api<Me>(`/api/r/${room}/me?id=${encodeURIComponent(id)}`);
-      setErr("");
-      if (s.status === "gone" || s.status === "expired") {
-        localStorage.removeItem(slot);
-        setMe(undefined);
-        setView(null);
-        setErr(s.status === "expired" ? T.expired : T.gone);
-        return;
-      }
-      // Bitiş anı bu cihazın saatine göre: sunucu kalan süreyi gönderir
-      due.current = s.remaining === null ? null : Date.now() + s.remaining;
-      setMe(s);
-      setView("wait");
-      if (s.status === "called") {
-        if (!notified.current) { notified.current = true; alertUser(id, [s.table && tableLabel(s.table), s.desk && deskLabel(s.desk), s.zone].filter(Boolean).join(" · "), !!s.table); }
-      } else pushUI(id);
+      show(await api<Me>(`/api/r/${room}/me?id=${encodeURIComponent(id)}`));
     } catch (e: any) { setErr(e.message); }
   }
 
+  // Bilet durumu: yoklamadan ya da canlı bağlantıdan
+  function show(s: Me) {
+    const id = localStorage.getItem(slot);
+    if (!id) return;
+    setErr("");
+    if (s.status === "gone" || s.status === "expired") {
+      localStorage.removeItem(slot);
+      setMe(undefined);
+      setView(null);
+      setErr(s.status === "expired" ? T.expired : T.gone);
+      return;
+    }
+    // Bitiş anı bu cihazın saatine göre: sunucu kalan süreyi gönderir
+    due.current = s.remaining === null ? null : Date.now() + s.remaining;
+    setMe(s);
+    setView("wait");
+    if (s.status === "called") {
+      if (!notified.current) { notified.current = true; alertUser(id, [s.table && tableLabel(s.table), s.desk && deskLabel(s.desk), s.zone].filter(Boolean).join(" · "), !!s.table); }
+    } else pushUI(id);
+  }
+
   useEffect(() => {
-    let stop = () => {};
     api<{ room: string }>(`/api/resolve?r=${encodeURIComponent(ref)}`).then((r) => {
       room = r.room;
       slot = "ticket:" + room;
@@ -281,10 +300,16 @@ function JoinPage() {
         setAccept((a) => [Math.min(a[0], s.maxGroup)]);
       }).catch(() => {});
       refresh();
-      stop = poll(refresh, 10000, true);
     }).catch(() => setErr(T.notFound));
-    return () => stop();
   }, []);
+
+  // Bilet varken canlı bağlantı: çağrı anında gelir. Bağlantı yoksa 10 sn'de bir yoklanır (arka planda da)
+  const waiting = view === "wait";
+  useEffect(() => {
+    const id = waiting && localStorage.getItem(slot);
+    if (!id) return;
+    return live(`/api/r/${room}/live?id=${encodeURIComponent(id)}`, show, refresh, { ms: 10000, slow: 60000, hidden: true });
+  }, [waiting]);
 
   const called = me?.status === "called";
   const closed = st ? closedText(st) : null; // yeni katılım kapalıysa nedeni

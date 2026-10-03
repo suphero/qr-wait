@@ -106,8 +106,30 @@ assert.ok(Math.abs(s.now - ea.seen) < 60000, "son görülme");
 assert.deepEqual([ea.notify, ec2.notify], [true, false]);
 assert.ok(!("push" in ea) && !("device" in ea));
 
+// Canlı bağlantı: ziyaretçi bileti ile, görevli ilk mesajda anahtarla; "ping"e oda uyanmadan "pong"
+const sock = (room, q, hello) => new Promise((ok, no) => {
+  const w = new WebSocket(`${B.replace(/^http/, "ws")}/api/r/${room}/live${q}`), got = [], waits = [];
+  const closed = new Promise((r) => w.addEventListener("close", (e) => r(e.code)));
+  w.onmessage = (e) => { const m = e.data === "pong" ? "pong" : JSON.parse(e.data), f = waits.shift(); f ? f(m) : got.push(m); };
+  w.onerror = no;
+  w.onopen = () => { if (hello) w.send(JSON.stringify(hello)); ok({ w, closed, next: () => got.length ? Promise.resolve(got.shift()) : new Promise((r) => waits.push(r)) }); };
+});
+const vs = await sock(room, `?id=${c.id}`), hs = await sock(room, "", { key });
+assert.equal((await vs.next()).no, c.no, "bağlanınca bilet durumu gelir");
+assert.equal((await hs.next()).t, "tick", "görevli anahtarla kabul edilir");
+vs.w.send("ping");
+assert.equal(await vs.next(), "pong");
+assert.equal(await (await sock(room, "", { key: "yanlis" })).closed, 4001, "yanlış anahtar kapatılır");
+const gs = await sock(room, "?id=yok");
+assert.equal((await gs.next()).status, "gone");
+assert.equal(await gs.closed, 1000, "bilet yoksa bağlantı kapanır");
+
 // 3 kişi kalktı: #1 (2 kişi) çağrılır, 1 yer artar
 s = await admin({ action: "free", n: 3 });
+assert.equal((await hs.next()).t, "tick", "değişiklik görevliye bildirilir");
+assert.equal((await vs.next()).aheadGroups, 1, "#3 öndeki grubun çağrıldığını canlı görür");
+assert.ok(s.entries.find((e) => e.id === c.id).seen >= Date.now() - 60000, "açık bağlantının ping'i son görülmedir");
+vs.w.close(); hs.w.close();
 assert.equal(s.error, undefined, "push gönderimi çağırmayı bozmaz");
 assert.equal((await me(a.id)).status, "called");
 assert.equal((await me(b.id)).status, "waiting");

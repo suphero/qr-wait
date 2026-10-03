@@ -20,6 +20,7 @@ const GEOS = new Set(["off", "fixed", "dynamic"]);
 const WAITS = [3, 5, 10, 15, 20, 30]; // çağrılanın gelme süresi seçenekleri (dk); süre dolunca sıradan düşer
 const HERE_TTL = 5 * 60 * 1000; // dinamik konum: görevli konumu bundan eskiyse ziyaretçi giremez (panel kapalı / konum alınamıyor)
 const SEEN_SAVE = 60 * 1000; // ziyaretçi sayfasının son görülme zamanı en fazla bu aralıkla diske yazılır (her yoklamada değil)
+const TICK = '{"t":"tick"}'; // görevli paneline canlı bağlantıdan "yenile" sinyali
 const SOON = 2; // önünde en fazla bu kadar grup kalınca "sıranız yaklaşıyor" bildirimi
 const ETA_WINDOW = 60 * 60 * 1000; // tahmini bekleme: son 1 saatteki çağrı hızından
 const STAT_DAYS = 90; // günlük istatistiklerin saklandığı gün sayısı
@@ -141,6 +142,72 @@ export class Room extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => { this.s = await ctx.storage.get("s"); });
+    // Canlı bağlantının "ping"ine oda uyanmadan "pong" döner; son ping zamanı ziyaretçinin son görülmesidir
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
+  // Canlı bağlantı (WebSocket, hibernation): ziyaretçi ?id=<bilet> ile bağlanır ve her değişiklikte kendi durumunu alır.
+  // Görevli ?id'siz bağlanıp ilk mesajda anahtarını gönderir, değişikliklerde "yenile" sinyali alır.
+  async fetch(req) {
+    if (!this.s) return new Response("Not found", { status: 404 });
+    const id = new URL(req.url).searchParams.get("id");
+    const [client, server] = Object.values(new WebSocketPair());
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment(id ? { id } : {});
+    if (id) {
+      const e = this.s.entries.find((x) => x.id === id);
+      if (e) e.seen = Date.now();
+      this.sendView(server, id);
+    }
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(ws, m) {
+    let key;
+    try { key = JSON.parse(m).key; } catch {}
+    if (this.s && !(ws.deserializeAttachment() ?? {}).id && typeof key === "string" && same(key, this.s.key)) {
+      ws.serializeAttachment({ host: true });
+      ws.send(TICK);
+    } else ws.close(4001, "unauthorized");
+  }
+
+  // Ziyaretçinin bağlantısı koptu: son görülme o an (dakikalık yazma sınırına takılmadan kaydedilir)
+  async webSocketClose(ws) {
+    const { id } = ws.deserializeAttachment() ?? {};
+    const e = id && this.s?.entries.find((x) => x.id === id);
+    if (!e) return;
+    e.seen = Date.now();
+    await this.save(true);
+  }
+
+  async webSocketError(ws) { await this.webSocketClose(ws); }
+
+  // Bilet yoksa (düştü / sıradan çıktı) durum gönderilir ve bağlantı kapanır
+  sendView(ws, id) {
+    try {
+      const v = this.view(id);
+      ws.send(JSON.stringify(v));
+      if (v.no === undefined) ws.close(1000, "gone");
+    } catch {}
+  }
+
+  // Kayıttan sonra açık sayfalara: ziyaretçiye kendi durumu, görevliye "yenile" sinyali
+  broadcast() {
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = ws.deserializeAttachment() ?? {};
+      if (a.id) this.sendView(ws, a.id);
+      else if (a.host) try { ws.send(TICK); } catch {}
+    }
+  }
+
+  // Bağlantısı açık ziyaretçilerin son ping zamanı (bilet → ms); bellekteki seen hibernation'da kaybolabilir
+  pings() {
+    const out = {};
+    for (const ws of this.ctx.getWebSockets()) {
+      const { id } = ws.deserializeAttachment() ?? {}, t = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime();
+      if (id && t) out[id] = Math.max(out[id] ?? 0, t);
+    }
+    return out;
   }
 
   need() {
@@ -148,12 +215,14 @@ export class Room extends DurableObject {
     return this.s;
   }
 
-  // Her kayıtta alarm, süreli sırada en erken dolacak çağrıya kurulur (yoksa kaldırılır)
-  async save() {
+  // Her kayıtta alarm, süreli sırada en erken dolacak çağrıya kurulur (yoksa kaldırılır).
+  // quiet: görünür bir değişiklik yok (son görülme, görevli konumu); açık sayfalara bildirilmez
+  async save(quiet = false) {
     await this.ctx.storage.put("s", this.s);
     const next = this.deadline();
     if (next) await this.ctx.storage.setAlarm(next);
     else await this.ctx.storage.deleteAlarm();
+    if (!quiet) this.broadcast();
   }
 
   // Çağrılan grubun gelme süresinin dolduğu an; süresiz sırada null
@@ -277,12 +346,14 @@ export class Room extends DurableObject {
   async rotate() {
     this.need().key = crypto.randomUUID();
     await this.save();
+    for (const ws of this.ctx.getWebSockets()) if ((ws.deserializeAttachment() ?? {}).host) ws.close(4001, "unauthorized");
     return this.s.key;
   }
 
   async destroy() {
     await this.ctx.storage.deleteAll();
     this.s = undefined;
+    for (const ws of this.ctx.getWebSockets()) ws.close(1000, "gone");
   }
 
   // Sabit QR: "s.<imza>", yazdırılıp asılabilir; yalnızca oda sabit moddayken ve anahtar değişmedikçe geçerli
@@ -363,16 +434,23 @@ export class Room extends DurableObject {
 
   // lang: ziyaretçi sayfanın dilini değiştirdiyse bildirim de o dilde gitsin (x-lang başlığı; yoksa dokunulmaz)
   async me(id, lang) {
+    const e = this.need().entries.find((x) => x.id === id);
+    if (e) {
+      // Son görülme görevli panelinde gösterilir; bellekte her yoklamada güncellenir, diske dakikada bir yazılır
+      const now = Date.now(), lng = LANGS.includes(lang) && e.lang !== lang;
+      e.seen = now;
+      if (lng) e.lang = lang;
+      if (lng || now - (this.seenAt ?? 0) >= SEEN_SAVE) { this.seenAt = now; await this.save(true); }
+    }
+    return this.view(id);
+  }
+
+  // Ziyaretçinin gördüğü durum (yoklama ve canlı bağlantı)
+  view(id) {
     const s = this.need();
-    const i = s.entries.findIndex((e) => e.id === id);
-    if (i < 0) return { name: s.name, status: s.expired?.includes(id) ? "expired" : "gone" };
-    const e = s.entries[i], due = this.due(e), now = Date.now();
-    // Son görülme görevli panelinde gösterilir; bellekte her yoklamada güncellenir, diske dakikada bir yazılır
-    e.seen = now;
-    const lng = LANGS.includes(lang) && e.lang !== lang;
-    if (lng) e.lang = lang;
-    if (lng || now - (this.seenAt ?? 0) >= SEEN_SAVE) { this.seenAt = now; await this.save(); }
-    const ahead = this.ahead(e);
+    const e = s.entries.find((x) => x.id === id);
+    if (!e) return { name: s.name, status: s.expired?.includes(id) ? "expired" : "gone" };
+    const due = this.due(e), ahead = this.ahead(e);
     return {
       name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, table: e.table, desk: e.desk, zones: e.zones, zone: e.zone, status: e.status, calledAt: e.calledAt,
       aheadGroups: ahead.length, aheadPeople: ahead.reduce((n, x) => n + x.size, 0),
@@ -653,9 +731,9 @@ export class Room extends DurableObject {
       case "reset": Object.assign(s, { seq: 0, available: 0, spots: {}, tables: [], idle: [], entries: [], expired: [], calls: [], zcalls: [] }); break;
     }
     this.fill();
-    if (action || moved || expired) await this.save();
+    if (action || moved || expired) await this.save(!action && !expired); // yalnızca konum değiştiyse açık sayfalara bildirilmez
     await this.notify();
-    const { qr, ttl, maxGroup, flex, tables, maxEmpty, geo, wait, hours, cap, mode, desks } = c;
+    const { qr, ttl, maxGroup, flex, tables, maxEmpty, geo, wait, hours, cap, mode, desks } = c, pings = this.pings();
     return {
       name: s.name, flex, tables, maxEmpty, mode, desks, idle: s.idle ?? [],
       // spots: bölge başına ayrılmayı bekleyen boş yer
@@ -668,7 +746,7 @@ export class Room extends DurableObject {
       freeTables: s.tables,
       token: await this.token(),
       // seen: ziyaretçi sayfasının son yoklaması; notify: kapalı sayfaya push ile ulaşılabilir
-      entries: s.entries.map(({ device, push, soon, ...x }) => ({ ...x, ...(x.src === "qr" && { notify: !!push }) })),
+      entries: s.entries.map(({ device, push, soon, ...x }) => ({ ...x, ...(x.src === "qr" && { notify: !!push, seen: Math.max(x.seen ?? 0, pings[x.id] ?? 0) || undefined }) })),
     };
   }
 }
@@ -1447,6 +1525,14 @@ async function handle(req, env) {
 
 export default {
   async fetch(req, env) {
+    // Canlı bağlantı doğrudan odaya gider: 101 yanıtı secure() ile kopyalanırsa WebSocket kaybolur.
+    // Başka siteden açılan bağlantı reddedilir (ziyaretçi bileti ya da görevli anahtarı olmadan zaten bir şey alamaz).
+    const url = new URL(req.url), live = req.headers.get("upgrade") === "websocket" && url.pathname.match(/^\/api\/r\/([a-f0-9]{10})\/live$/);
+    if (live) {
+      const origin = req.headers.get("origin");
+      if (origin && new URL(origin).host !== url.host) return new Response("Forbidden", { status: 403 });
+      return env.ROOM.getByName(live[1]).fetch(req);
+    }
     return secure(await handle(req, env));
   },
 };

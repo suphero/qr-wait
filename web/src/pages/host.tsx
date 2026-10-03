@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { api, mins, poll, type AdminState, type Entry } from "@/lib/api";
+import { api, live, mins, type AdminState, type Entry } from "@/lib/api";
 import { deskLabel, fmtOpens, geoErrors, lang, LANGS, pick, pl, S, tableLabel, type Lang } from "@/lib/i18n";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
@@ -325,8 +325,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-// Ziyaretçi sayfası 10 sn'de bir yoklar; son yoklama bundan yeniyse sayfası açık sayılır
-const ACTIVE = 30000;
+// Ziyaretçi sayfası canlı bağlantıda 25 sn'de bir ping atar (yoksa 10 sn'de bir yoklar); son sinyal bundan yeniyse sayfası açık sayılır
+const ACTIVE = 60000;
 
 // Yer bilgisi: çağrılanda ayrılan yer, bekleyende (kişi sayısından farklıysa) kabul edilen yerler
 // wait: süreli sırada gelme süresi (dk); skew: sunucu saati - bu cihazın saati
@@ -412,7 +412,8 @@ function HostPage() {
   useEffect(() => {
     let stop = () => {};
     api<{ room: string }>(`/api/resolve?r=${encodeURIComponent(ref)}`)
-      .then((r) => { room = r.room; act(); stop = poll(act, 4000, true); })
+      // Değişiklikler canlı bağlantıdan "yenile" sinyaliyle gelir; 10 sn'lik yoklama dinamik QR'ı yeniler
+      .then((r) => { room = r.room; act(); stop = live(`/api/r/${room}/live`, () => act(), act, { ms: 4000, slow: 10000, hidden: true, hello: { key } }); })
       .catch((e) => setErr(T.badLink(e.message)));
     return () => stop();
   }, []);
