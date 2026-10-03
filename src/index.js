@@ -25,20 +25,41 @@ const STAT_DAYS = 90; // günlük istatistiklerin saklandığı gün sayısı
 const TZ = "Europe/Istanbul"; // saat dilimi gönderilmeyen eski sıralar
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-// Saat dilimine göre gün ("2026-10-01"), saat (0-23) ve gün içindeki dakika
+// Saat dilimine göre gün ("2026-10-01"), saat (0-23), gün içindeki dakika ve haftanın günü (0 pazartesi … 6 pazar)
 const fmts = {};
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function clock(tz, t = Date.now()) {
-  const f = (fmts[tz] ??= new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }));
+  const f = (fmts[tz] ??= new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }));
   const p = Object.fromEntries(f.formatToParts(t).map((x) => [x.type, x.value]));
-  return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), min: Number(p.hour) * 60 + Number(p.minute) };
+  return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), min: Number(p.hour) * 60 + Number(p.minute), wd: WEEKDAYS.indexOf(p.weekday) };
 }
 const validTz = (tz) => { try { return typeof tz === "string" && !!new Intl.DateTimeFormat("en", { timeZone: tz }) && tz; } catch { return false; } };
 const mins = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
-// Açılış saatleri; from > to gece yarısını geçen aralık (ör. 18:00-02:00)
+// Katılım saatleri: { days: [pazartesi … pazar] }, her gün { from, to } ya da null (kapalı). from > to gece yarısını geçer (ör. cuma 18:00-02:00
+// cumartesi 02:00'ye kadar açık). Eski biçim { from, to } her gün aynı saat demek. Geçersiz gün kapalı; hiç açık gün yoksa null (her zaman açık).
+const span = (x) => (x && HHMM.test(x.from) && HHMM.test(x.to) && x.from !== x.to ? { from: x.from, to: x.to } : null);
+function weekHours(h) {
+  const days = h?.from ? Array(7).fill(h) : Array.isArray(h?.days) && h.days.length === 7 ? h.days : null;
+  const w = days?.map(span);
+  return w?.some(Boolean) ? { days: w } : null;
+}
 function isOpen(hours, tz) {
   if (!hours) return true;
-  const now = clock(tz).min, a = mins(hours.from), b = mins(hours.to);
-  return a < b ? now >= a && now < b : now >= a || now < b;
+  const { min, wd } = clock(tz), today = hours.days[wd], prev = hours.days[(wd + 6) % 7];
+  if (today) {
+    const a = mins(today.from), b = mins(today.to);
+    if (a < b ? min >= a && min < b : min >= a) return true;
+  }
+  return !!prev && mins(prev.from) > mins(prev.to) && min < mins(prev.to); // dünden taşan gece aralığı
+}
+// Kapalıyken bir sonraki açılış: { in: kaç gün sonra (0 bugün), day: haftanın günü, from }
+function nextOpen(hours, tz) {
+  const { min, wd } = clock(tz);
+  for (let d = 0; d <= 7; d++) {
+    const x = hours.days[(wd + d) % 7];
+    if (x && (d > 0 || mins(x.from) > min)) return { in: d, day: (wd + d) % 7, from: x.from };
+  }
+  return null;
 }
 
 // Haversine mesafesi, metre
@@ -76,7 +97,7 @@ const conf = (s) => {
     // Konum kontrolü: "fixed" sıranın haritadaki noktası, "dynamic" QR'ı gösteren görevlinin konumu, "off" yok
     geo: GEOS.has(s.geo) ? s.geo : "fixed",
     wait: s.wait ?? null, // null: süresiz, görevli "Geldi"/"Gelmedi" diyene kadar bekler
-    hours: s.hours ?? null, // { from, to } "HH:MM": bu saatler dışında yeni katılım yok; null: her zaman açık
+    hours: weekHours(s.hours), // { days: [7 × { from, to } | null] }: bu saatler dışında yeni katılım yok; null: her zaman açık
     cap: s.cap ?? null, // en fazla bekleyen grup; null: sınır yok (görevlinin elle eklemesi sınıra takılmaz)
     tz: s.tz ?? TZ,
   };
@@ -211,10 +232,10 @@ export class Room extends DurableObject {
     };
   }
 
-  // Yeni katılım açık mı: görevli durdurmadı, açılış saatlerinde, kapasite dolmadı
+  // Yeni katılım açık mı: görevli durdurmadı, açılış saatlerinde, kapasite dolmadı. Saat dışındaysa opens: bir sonraki açılış.
   gate(waiting) {
-    const s = this.s, c = conf(s);
-    return { paused: !!s.paused, open: isOpen(c.hours, c.tz), full: c.cap !== null && waiting >= c.cap };
+    const s = this.s, c = conf(s), open = isOpen(c.hours, c.tz);
+    return { paused: !!s.paused, open, opens: open ? null : nextOpen(c.hours, c.tz), full: c.cap !== null && waiting >= c.cap };
   }
 
   // Önünde ahead grup olana tahmini bekleme (dk): son 1 saatteki çağrı hızı. En az 3 çağrı yoksa ya da sıra durdurulduysa null.
@@ -298,7 +319,7 @@ export class Room extends DurableObject {
     if (!e) {
       const g = this.gate(s.entries.filter((x) => x.status === "waiting").length);
       if (g.paused) throw fail("paused");
-      if (!g.open) throw fail("hoursClosed", c.hours.from, c.hours.to);
+      if (!g.open) throw fail("hoursClosed", g.opens);
       if (g.full) throw fail("capFull");
       e = await this.ticket(size, accept, "qr", device, "", lang, zones).catch((err) => {
         throw failed(err, "quota") || failed(err, "suspended") ? fail("closed") : err;
@@ -1098,7 +1119,7 @@ function roomFields(b, prev) {
     qr: b.qr === "static" ? "static" : "dynamic", // sabit: basılı QR, giriş yalnızca konumla sınırlı
     geo,
     wait: b.wait == null || b.wait === "" || Number(b.wait) === 0 ? null : WAITS.includes(Number(b.wait)) ? Number(b.wait) : 10,
-    hours: HHMM.test(b.hours?.from) && HHMM.test(b.hours?.to) && b.hours.from !== b.hours.to ? { from: b.hours.from, to: b.hours.to } : null,
+    hours: weekHours(b.hours),
     cap: b.cap == null || b.cap === "" ? null : int(b.cap, 1, MAX_ENTRIES, "capRange", MAX_ENTRIES),
     tz: validTz(b.tz) || prev?.tz || TZ, // yönetim sayfasını açan tarayıcının saat dilimi
     ttl: TTLS.includes(Number(b.ttl)) ? Number(b.ttl) : 90,

@@ -43,12 +43,17 @@ const M = {
     de: "Die Warteschlange nimmt gerade niemanden neu auf. Bitte fragen Sie das Personal.",
     ru: "Очередь сейчас не принимает новых посетителей. Обратитесь к сотруднику.",
   },
-  hoursClosed: (from, to) => ({
-    tr: `Sıra şu an kapalı. Katılım saatleri: ${from}-${to}.`,
-    en: `The queue is closed right now. Joining hours: ${from}–${to}.`,
-    de: `Die Warteschlange ist gerade geschlossen. Anstellzeiten: ${from}–${to}.`,
-    ru: `Очередь сейчас закрыта. Время записи: ${from}–${to}.`,
-  }),
+  // opens: { in: kaç gün sonra, day: 0 pazartesi … 6 pazar, from } → "bugün 09:00", "yarın 09:00", "pazartesi 09:00"
+  hoursClosed: (opens) => {
+    const when = (l) => opens && `${opens.in < 2 ? new Intl.RelativeTimeFormat(l, { numeric: "auto" }).format(opens.in, "day")
+      : new Intl.DateTimeFormat(l, { weekday: "long" }).format(new Date(2024, 0, 1 + opens.day))} ${opens.from}`;
+    return {
+      tr: `Sıra şu an kapalı.${opens ? ` Yeniden açılış: ${when("tr")}.` : ""}`,
+      en: `The queue is closed right now.${opens ? ` Opens again: ${when("en")}.` : ""}`,
+      de: `Die Warteschlange ist gerade geschlossen.${opens ? ` Wieder geöffnet: ${when("de")}.` : ""}`,
+      ru: `Очередь сейчас закрыта.${opens ? ` Снова откроется: ${when("ru")}.` : ""}`,
+    };
+  },
   capFull: {
     tr: "Sıra dolu. Biraz sonra yeniden deneyin.",
     en: "The queue is full. Please try again a little later.",

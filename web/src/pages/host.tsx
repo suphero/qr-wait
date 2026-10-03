@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { api, mins, poll, type AdminState, type Entry } from "@/lib/api";
-import { deskLabel, geoErrors, lang, LANGS, pick, pl, S, tableLabel, type Lang } from "@/lib/i18n";
+import { deskLabel, fmtOpens, geoErrors, lang, LANGS, pick, pl, S, tableLabel, type Lang } from "@/lib/i18n";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +51,7 @@ const T = pick({
     pause: "Girişleri durdur",
     resume: "Girişleri aç",
     pausedNote: "Yeni katılım durduruldu. Sıradakiler çağrılmaya devam eder.",
-    hoursNote: (a: string, b: string) => `Katılım saatleri dışında (${a}-${b}): yeni katılım kapalı.`,
+    hoursNote: (w: string) => `Katılım saatleri dışında: yeni katılım kapalı. Yeniden açılış: ${w}.`,
     fullNote: (n: number) => `Sıra dolu (en fazla ${n} grup): yeni katılım kapalı.`,
     keepOpenTitle: "Bu sayfayı açık tutun",
     keepOpen: "Konum kontrolü bu cihazın konumuna göre yapılıyor. Sayfa kapanırsa, ekran kilitlenirse ya da konum servisleri kapanırsa birkaç dakika içinde kimse sıraya giremez.",
@@ -118,7 +118,7 @@ const T = pick({
     pause: "Stop new joins",
     resume: "Allow new joins",
     pausedNote: "New joins are stopped. Groups already waiting are still called.",
-    hoursNote: (a: string, b: string) => `Outside joining hours (${a}–${b}): no new joins.`,
+    hoursNote: (w: string) => `Outside joining hours: no new joins. Opens again: ${w}.`,
     fullNote: (n: number) => `Queue is full (max ${n} groups): no new joins.`,
     keepOpenTitle: "Keep this page open",
     keepOpen: "The location check uses this device's location. If the page closes, the screen locks or location services are turned off, nobody can join within a few minutes.",
@@ -185,7 +185,7 @@ const T = pick({
     pause: "Anstellen stoppen",
     resume: "Anstellen erlauben",
     pausedNote: "Neues Anstellen ist gestoppt. Wartende Gruppen werden weiter aufgerufen.",
-    hoursNote: (a: string, b: string) => `Außerhalb der Anstellzeiten (${a}–${b}): kein neues Anstellen.`,
+    hoursNote: (w: string) => `Außerhalb der Anstellzeiten: kein neues Anstellen. Wieder geöffnet: ${w}.`,
     fullNote: (n: number) => `Warteschlange voll (max. ${n} Gruppen): kein neues Anstellen.`,
     keepOpenTitle: "Lassen Sie diese Seite geöffnet",
     keepOpen: "Die Standortprüfung nutzt den Standort dieses Geräts. Wird die Seite geschlossen, der Bildschirm gesperrt oder die Ortungsdienste ausgeschaltet, kann sich nach wenigen Minuten niemand mehr anstellen.",
@@ -252,7 +252,7 @@ const T = pick({
     pause: "Остановить запись",
     resume: "Возобновить запись",
     pausedNote: "Запись новых посетителей остановлена. Ожидающие группы по-прежнему вызываются.",
-    hoursNote: (a: string, b: string) => `Вне времени записи (${a}–${b}): новых посетителей нет.`,
+    hoursNote: (w: string) => `Вне времени записи: новых посетителей нет. Снова откроется: ${w}.`,
     fullNote: (n: number) => `Очередь заполнена (макс. ${n} групп): новых посетителей нет.`,
     keepOpenTitle: "Не закрывайте эту страницу",
     keepOpen: "Проверка идёт по местоположению этого устройства. Если страница закроется, экран заблокируется или службы геолокации выключатся, через несколько минут встать в очередь будет нельзя.",
@@ -453,7 +453,7 @@ function HostPage() {
       {s && <p className="text-sm text-muted-foreground print:hidden">{T.waitingSum(waiting.length, waiting.reduce((n, e) => n + e.size, 0))}</p>}
       {s && (s.paused || !s.open || s.full) && (
         <p className="rounded-lg border border-destructive p-3 text-sm font-semibold text-destructive print:hidden">
-          {s.paused ? T.pausedNote : !s.open && s.hours ? T.hoursNote(s.hours.from, s.hours.to) : T.fullNote(s.cap ?? 0)}
+          {s.paused ? T.pausedNote : !s.open && s.opens ? T.hoursNote(fmtOpens(s.opens)) : T.fullNote(s.cap ?? 0)}
         </p>
       )}
       <ErrorText>{err}</ErrorText>

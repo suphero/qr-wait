@@ -1,4 +1,4 @@
-import type { PublicRoom, Table } from "@/lib/api";
+import type { Hours, Opens, PublicRoom, Span, Table } from "@/lib/api";
 
 // Sayfaların dili. Tanıtım sitesinde (<html data-site>, vite.config.ts) adresten gelir: /tr/pricing Türkçe, /pricing İngilizce.
 // Diğer sayfalarda (sıraya giriş, durum, görevli, yönetim) üst çubuktan seçilen dil, yoksa cihazın dil tercihlerinden ilk
@@ -62,7 +62,7 @@ export const S = pick({
     minU: "dk", hourU: "sa",
     eta: (t: string) => `Tahmini bekleme: yaklaşık ${t}`,
     closedPaused: "Sıra şu an yeni katılıma kapalı.",
-    closedHours: (a: string, b: string) => `Sıra şu an kapalı. Katılım saatleri: ${a}-${b}.`,
+    closedHours: "Sıra şu an kapalı.", opensAt: (w: string) => `Yeniden açılış: ${w}.`, everyDay: "Her gün", closedDay: "kapalı",
     closedFull: "Sıra şu an dolu. Biraz sonra yeniden deneyin.",
     noGeo: "Tarayıcınız konum desteklemiyor.",
     geoDenied: "Konum izni gerekli. Tarayıcı ayarlarından bu siteye konum izni verin.",
@@ -82,7 +82,7 @@ export const S = pick({
     minU: "min", hourU: "h",
     eta: (t: string) => `Estimated wait: about ${t}`,
     closedPaused: "The queue isn't taking new people right now.",
-    closedHours: (a: string, b: string) => `The queue is closed right now. Joining hours: ${a}–${b}.`,
+    closedHours: "The queue is closed right now.", opensAt: (w: string) => `Opens again: ${w}.`, everyDay: "Every day", closedDay: "closed",
     closedFull: "The queue is full right now. Please try again a little later.",
     noGeo: "Your browser doesn't support location.",
     geoDenied: "Location access is required. Allow this site to use your location in your browser settings.",
@@ -102,7 +102,7 @@ export const S = pick({
     minU: "Min.", hourU: "Std.",
     eta: (t: string) => `Geschätzte Wartezeit: etwa ${t}`,
     closedPaused: "Die Warteschlange nimmt gerade niemanden neu auf.",
-    closedHours: (a: string, b: string) => `Die Warteschlange ist gerade geschlossen. Anstellzeiten: ${a}–${b}.`,
+    closedHours: "Die Warteschlange ist gerade geschlossen.", opensAt: (w: string) => `Wieder geöffnet: ${w}.`, everyDay: "Täglich", closedDay: "geschlossen",
     closedFull: "Die Warteschlange ist gerade voll. Bitte versuchen Sie es etwas später erneut.",
     noGeo: "Ihr Browser unterstützt keine Standortbestimmung.",
     geoDenied: "Die Standortfreigabe ist erforderlich. Erlauben Sie dieser Seite in den Browsereinstellungen den Zugriff auf Ihren Standort.",
@@ -122,7 +122,7 @@ export const S = pick({
     minU: "мин", hourU: "ч",
     eta: (t: string) => `Примерное ожидание: около ${t}`,
     closedPaused: "Очередь сейчас не принимает новых посетителей.",
-    closedHours: (a: string, b: string) => `Очередь сейчас закрыта. Время записи: ${a}–${b}.`,
+    closedHours: "Очередь сейчас закрыта.", opensAt: (w: string) => `Снова откроется: ${w}.`, everyDay: "Ежедневно", closedDay: "закрыто",
     closedFull: "Очередь сейчас заполнена. Попробуйте чуть позже.",
     noGeo: "Ваш браузер не поддерживает геолокацию.",
     geoDenied: "Нужен доступ к геолокации. Разрешите этому сайту определять местоположение в настройках браузера.",
@@ -143,8 +143,24 @@ export const fmtWait = (n: number) => {
   return m < 60 ? `${m} ${S.minU}` : `${Math.floor(m / 60)} ${S.hourU}${m % 60 ? ` ${m % 60} ${S.minU}` : ""}`;
 };
 // Yeni katılım kapalıysa nedeni; açıksa null
-export const closedText = (r: { paused: boolean; open: boolean; full: boolean; hours: { from: string; to: string } | null }) =>
-  r.paused ? S.closedPaused : !r.open && r.hours ? S.closedHours(r.hours.from, r.hours.to) : r.full ? S.closedFull : null;
+export const closedText = (r: { paused: boolean; open: boolean; full: boolean; opens: Opens | null }) =>
+  r.paused ? S.closedPaused : !r.open ? `${S.closedHours}${r.opens ? ` ${S.opensAt(fmtOpens(r.opens))}` : ""}` : r.full ? S.closedFull : null;
+// Haftanın günü adı, 0 pazartesi (2024-01-01 pazartesi)
+export const dayName = (i: number, weekday: "long" | "short" = "long") => new Intl.DateTimeFormat(lang, { weekday }).format(new Date(2024, 0, 1 + i));
+// Bir sonraki açılış: "bugün 09:00", "yarın 09:00", "pazartesi 09:00"
+export const fmtOpens = (o: Opens) =>
+  `${o.in < 2 ? new Intl.RelativeTimeFormat(lang, { numeric: "auto" }).format(o.in, "day") : dayName(o.day)} ${o.from}`;
+// Haftalık saatlerin kısa özeti; aynı saatli ardışık günler birleşir: "Pzt–Cum 09:00–18:00 · Cmt 09:00–12:00 · Paz kapalı"
+export function fmtWeek(h: Hours) {
+  const txt = (x: Span | null) => (x ? `${x.from}–${x.to}` : S.closedDay);
+  const runs: { a: number; b: number; t: string }[] = [];
+  h.days.forEach((x, i) => {
+    const t = txt(x), last = runs.at(-1);
+    if (last?.t === t) last.b = i; else runs.push({ a: i, b: i, t });
+  });
+  if (runs.length === 1) return `${S.everyDay} ${runs[0].t}`;
+  return runs.map(({ a, b, t }) => `${dayName(a, "short")}${b > a ? `–${dayName(b, "short")}` : ""} ${t}`).join(" · ");
+}
 export const geoErrors = { unsupported: S.noGeo, denied: S.geoDenied };
 // 850 m, 1,2 km / 1.2 km
 export const fmtDistL = (m: number) => (m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m`

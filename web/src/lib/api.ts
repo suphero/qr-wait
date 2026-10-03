@@ -47,15 +47,18 @@ export function poll(fn: () => void, ms: number, whenHidden = false) {
 }
 
 // --- API yanıt tipleri (src/index.js) ---
-// Katılım saatleri "HH:MM"; from > to gece yarısını geçer
-export type Hours = { from: string; to: string };
+// Katılım saatleri "HH:MM"; from > to gece yarısını geçer. days: pazartesi … pazar, null: o gün kapalı
+export type Span = { from: string; to: string };
+export type Hours = { days: (Span | null)[] };
+// Saat dışında bir sonraki açılış: in kaç gün sonra (0 bugün), day haftanın günü (0 pazartesi)
+export type Opens = { in: number; day: number; from: string };
 // Konum kontrolü: sıranın sabit noktası, QR'ı gösteren görevlinin konumu ya da yok
 export type Geo = "off" | "fixed" | "dynamic";
 // lat/lng: yalnızca sabit konumlu sıralarda; diğerleri haritada görünmez
 export type Status = {
   name: string; slug?: string; lat: number | null; lng: number | null; flex: boolean; private: boolean; category: string; maxGroup: number; geo: Geo;
   wait: number | null; // çağrılanın gelme süresi (dk), null: süresiz
-  paused: boolean; open: boolean; full: boolean; hours: Hours | null; // yeni katılım: durduruldu / saat dışı / dolu
+  paused: boolean; open: boolean; full: boolean; hours: Hours | null; opens: Opens | null; // yeni katılım: durduruldu / saat dışı / dolu
   eta: number | null; // şimdi girene tahmini bekleme (dk)
   waiting: number; people: number; next: number | null; called: number[]; lastNo: number | null;
   deskOf: Record<number, string>; // çağrılan numara → gişe (gişe modu)
@@ -76,7 +79,7 @@ export type Entry = {
 export type AdminState = {
   name: string; flex: boolean; tables: boolean; mode: Mode; desks: string[]; idle: string[]; zones: string[]; spots: Record<string, number>; maxEmpty: number | null; available: number; added?: number;
   seated?: number | null; freeTables: Table[]; qr: "dynamic" | "static"; ttl: number; maxGroup: number; geo: Geo; wait: number | null; now: number;
-  hours: Hours | null; cap: number | null; paused: boolean; open: boolean; full: boolean;
+  hours: Hours | null; opens: Opens | null; cap: number | null; paused: boolean; open: boolean; full: boolean;
   token: string; entries: Entry[];
 };
 export type RoomInfo = {

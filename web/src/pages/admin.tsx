@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import {
   BanIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsUpDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon,
@@ -18,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, CATEGORIES, catIcon, locate, packName, perThousand, poll, type Geo, type Mode as QueueMode, type Pkg, type RoomInfo, type Stats } from "@/lib/api";
-import { fmtDistL, lang } from "@/lib/i18n";
+import { dayName, fmtDistL, fmtWeek, lang } from "@/lib/i18n";
 import { baseMap, L, meters } from "@/lib/leaflet";
 import { mount, signupRef } from "@/lib/mount";
 import { cn } from "@/lib/utils";
@@ -39,8 +40,48 @@ type Form = {
   name: string; category: string; private: boolean; slug: string; radius: string; flex: boolean; skip: boolean;
   mode: QueueMode; desks: string; zones: string; maxEmpty: string; maxGroup: string; qr: "dynamic" | "static"; ttl: string; geo: Geo;
   timed: "off" | "on"; wait: string;
-  limited: "off" | "on"; from: string; to: string; cap: string;
+  limited: "off" | "on"; days: Day[]; cap: string; tz: string;
 };
+type Day = { on: boolean; from: string; to: string };
+// Saat dilimleri: yeni sırada formu açan tarayıcınınki önerilir. Liste eski tarayıcıda yoksa yalnızca seçili olan.
+const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const zonesWith = (tz: string) => { const all: string[] = (Intl as any).supportedValuesOf?.("timeZone") ?? []; return all.includes(tz) ? all : [tz, ...all]; };
+
+// Haftalık katılım saatleri: her gün açık/kapalı ve saat aralığı. İlk açık günün saatleri tek dokunuşla diğer açık günlere kopyalanır.
+function WeekHours({ days, onChange, empty }: { days: Day[]; onChange: (d: Day[]) => void; empty: boolean }) {
+  const setDay = (i: number, d: Partial<Day>) => onChange(days.map((x, j) => (j === i ? { ...x, ...d } : x)));
+  const first = days.find((d) => d.on);
+  const same = days.every((d) => !d.on || (d.from === first?.from && d.to === first?.to));
+  return (
+    <div className="flex flex-col gap-2">
+      <div className={cn("flex flex-col divide-y rounded-lg border", empty && "border-destructive")}>
+        {days.map((d, i) => (
+          <div key={i} className="flex min-h-14 items-center gap-3 px-3 py-1.5">
+            <Checkbox id={`day${i}`} checked={d.on} onCheckedChange={(c) => setDay(i, { on: c === true })} />
+            <label htmlFor={`day${i}`} className="w-12 shrink-0 font-medium sm:w-28">
+              <span className="sm:hidden">{dayName(i, "short")}</span><span className="hidden sm:inline">{dayName(i)}</span>
+            </label>
+            {d.on ? (
+              <div className="flex flex-1 items-center gap-2">
+                <Input type="time" required aria-label={`${dayName(i)} ${T.fromL}`} value={d.from} onChange={(e) => setDay(i, { from: e.target.value })} className="min-w-0 flex-1" />
+                <span className="text-muted-foreground">–</span>
+                <Input type="time" required aria-label={`${dayName(i)} ${T.toL}`} value={d.to} onChange={(e) => setDay(i, { to: e.target.value })} className="min-w-0 flex-1" />
+              </div>
+            ) : (
+              <span className="text-muted-foreground">{T.dayClosed}</span>
+            )}
+          </div>
+        ))}
+      </div>
+      {empty && <p role="alert" className="text-sm font-semibold text-destructive">{T.noDay}</p>}
+      {first && !same && (
+        <Button type="button" variant="secondary" className="self-start" onClick={() => onChange(days.map((d) => (d.on ? { ...d, from: first.from, to: first.to } : d)))}>
+          <CopyIcon /> {T.copyHours(first.from, first.to)}
+        </Button>
+      )}
+    </div>
+  );
+}
 
 // Onay kutusu + başlık + açıklama
 function Check({ checked, onChange, title, children }: { checked: boolean; onChange: (v: boolean) => void; title: string; children: ReactNode }) {
@@ -79,7 +120,7 @@ function Inline({ id, label, desc, children }: { id: string; label: string; desc
 }
 
 // Sabit konumlu sıranın noktası: adres arama, harita, kabul dairesi. Yalnızca sabit konum kontrolünde görünür.
-function SpotPicker({ pt, setPt, radius }: { pt: Pt | null; setPt: (p: Pt) => void; radius: number }) {
+function SpotPicker({ pt, setPt, radius, missing }: { pt: Pt | null; setPt: (p: Pt) => void; radius: number; missing: boolean }) {
   const [pos, setPos] = useState(pt ? "" : T.pickSpot);
   const [q, setQ] = useState("");
   const mapEl = useRef<HTMLDivElement>(null);
@@ -129,11 +170,11 @@ function SpotPicker({ pt, setPt, radius }: { pt: Pt | null; setPt: (p: Pt) => vo
         </div>
       </Field>
       <div className="flex flex-col gap-2">
-        <div ref={mapEl} className="z-0 h-[280px] rounded-lg" />
+        <div ref={mapEl} id="map" className={cn("z-0 h-[280px] rounded-lg", missing && "ring-2 ring-destructive")} />
         <Button type="button" variant="secondary" onClick={async () => {
           try { const c = await locate(); pickAndFit({ lat: c.latitude, lng: c.longitude }); } catch (e: any) { setPos(e.message); }
         }}>{T.useMyLoc}</Button>
-        <p className="text-sm text-muted-foreground">{pos}</p>
+        {missing ? <p role="alert" className="text-sm font-semibold text-destructive">{T.pickOnMap}</p> : <p className="text-sm text-muted-foreground">{pos}</p>}
       </div>
     </>
   );
@@ -161,6 +202,24 @@ function Choice<V extends string>({ label, value, onChange, items }: {
   );
 }
 
+// Kapalıyken yalnızca başlık ve seçili değerin özeti görünen ayar satırı. İçerik kapalıyken de bağlı kalır (değerler ve doğrulama korunur).
+function Fold({ id, title, summary, open, onToggle, children }: { id: string; title: string; summary: ReactNode; open: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <div className="group/fold border-t first:border-t-0">
+      <button type="button" aria-expanded={open} aria-controls={`fold-${id}`} onClick={onToggle}
+        className="flex w-full items-center gap-3 rounded-md py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="font-semibold group-has-[:invalid]/fold:text-destructive">{title}</span>
+          <span className="truncate text-sm text-muted-foreground group-has-[:invalid]/fold:hidden">{summary}</span>
+          <span className="hidden text-sm font-medium text-destructive group-has-[:invalid]/fold:inline">⚠ {T.foldInvalid}</span>
+        </span>
+        <ChevronDownIcon className={cn("size-5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      <div id={`fold-${id}`} data-fold={id} className={cn("flex-col gap-4 pb-4", open ? "flex" : "hidden")}>{children}</div>
+    </div>
+  );
+}
+
 // Yeni + düzenle sayfası (#yeni, #duzenle-<id>). room: düzenlenen oda, yoksa yeni oda.
 function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: RoomInfo | null; rooms: RoomInfo[]; home: string; onDone: () => void; onCancel: () => void; onError: (m: string) => void }) {
   const confirm = useConfirm();
@@ -170,21 +229,33 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
     radius: String(room?.radius ?? 300), flex: !!room?.flex, skip: !!room?.skip, mode: room?.mode ?? "seats", desks: room?.desks?.join(", ") || "1, 2", zones: room?.zones?.join(", ") ?? "", maxEmpty: String(room?.maxEmpty ?? ""), maxGroup: String(room?.maxGroup ?? 8), qr: room?.qr ?? "dynamic", ttl: String(room?.ttl ?? 90),
     geo: room?.geo ?? "fixed",
     timed: room?.wait ? "on" : "off", wait: String(room?.wait ?? 10),
-    limited: room?.hours ? "on" : "off", from: room?.hours?.from ?? "09:00", to: room?.hours?.to ?? "18:00", cap: String(room?.cap ?? ""),
+    limited: room?.hours ? "on" : "off", cap: String(room?.cap ?? ""),
+    tz: room?.tz ?? browserTz, // mevcut sıranın saat dilimi korunur; başka ülkeden düzenleyen kişinin tarayıcısı değiştirmez
+    // Yeni sırada hafta içi 09:00-18:00; kapalı günlerin saati açılınca bu varsayılandan başlar
+    days: Array.from({ length: 7 }, (_, i) => { const x = room?.hours?.days[i]; return x ? { on: true, ...x } : { on: !room?.hours && i < 5, from: "09:00", to: "18:00" }; }),
   });
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
   const modeTouched = useRef(!!room); // yeni sırada tür elle seçilmedikçe kategoriden gelir (restoran → masa)
   const slugTouched = useRef(!!room?.slug && !room.private); // mevcut odanın adresi, ad değişince kendiliğinden değişmesin
   const [pt, setPt] = useState<Pt | null>(room?.lat != null ? { lat: room.lat, lng: room.lng! } : null);
   const fixed = f.geo === "fixed";
+  const [noPt, setNoPt] = useState(false); // kaydet'e nokta seçilmeden basıldı; nokta seçilince kalkar
+  const noDay = f.limited === "on" && !f.days.some((d) => d.on); // belirli saatler seçili ama hiç açık gün yok
+  const [dayErr, setDayErr] = useState(false); // kaydet'e açık gün olmadan basıldı
+  const spans = f.days.map((d) => (d.on ? { from: d.from, to: d.to } : null));
+
+  // Açık ayar satırları. Kaydet'e basınca geçersiz alan kapalı bir satırdaysa önce o satır açılır, tarayıcı uyarısı görünsün diye.
+  const [open, setOpen] = useState<string[]>([]);
+  const reveal = (k: string) => setOpen((o) => (o.includes(k) ? o : [...o, k]));
 
   async function submit(ev: FormEvent) {
     ev.preventDefault();
-    if (fixed && !pt) return onError(T.pickOnMap);
-    const { slug, timed, limited, from, to, ...rest } = f;
+    if (fixed && !pt) { setNoPt(true); document.getElementById("map")?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    if (noDay) { setDayErr(true); flushSync(() => reveal("join")); document.getElementById("fold-join")?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    const { slug, timed, limited, days, ...rest } = f;
     // Nokta yalnızca sabit konumda anlamlı; diğerlerinde sıra haritada görünmez
     const body = { ...rest, ...(f.private ? {} : { slug }), radius: +f.radius, maxEmpty: f.maxEmpty === "" ? null : +f.maxEmpty, maxGroup: +f.maxGroup, ttl: +f.ttl, wait: timed === "on" ? +f.wait : null,
-      hours: limited === "on" ? { from, to } : null, cap: f.cap === "" ? null : +f.cap, tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      hours: limited === "on" ? { days: spans } : null, cap: f.cap === "" ? null : +f.cap,
       ...(fixed ? pt : {}) };
     const prev = rooms.find((r) => r.room === room?.room);
     const changed = prev?.slug && (f.private ? !prev.private : prev.slug !== slug);
@@ -203,6 +274,17 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
 
   const warn = f.qr === "static" && f.geo === "dynamic" && <p className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm">{T.staticHostWarn}</p>;
 
+  const toggle = (k: string) => setOpen((o) => (o.includes(k) ? o.filter((x) => x !== k) : [...o, k]));
+  const fold = (id: string, title: string, summary: ReactNode, children: ReactNode) => (
+    <Fold id={id} title={title} summary={summary} open={open.includes(id)} onToggle={() => toggle(id)}>{children}</Fold>
+  );
+  function revealInvalid(form: HTMLFormElement | null) {
+    const bad = [...(form?.elements ?? [])].find((el) => "validity" in el && !(el as HTMLInputElement).validity.valid);
+    const k = bad?.closest("[data-fold]")?.getAttribute("data-fold");
+    if (k && !open.includes(k)) flushSync(() => reveal(k));
+  }
+  const ttlText = +f.ttl < 120 ? T.sec(+f.ttl) : T.min(+f.ttl / 60);
+
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -210,77 +292,60 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
         <Title className="mt-0 flex-1">{room ? T.edit(room.name) : T.newRoom}</Title>
       </div>
 
-      {/* Geniş ekranda iki sütun: solda kimlik ve konum (harita), sağda sıra kuralları */}
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-4">
-          <Section title={T.secBasics}>
-            <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
-              <Field>
-                <FieldLabel htmlFor="name">{T.name}</FieldLabel>
-                <Input id="name" required maxLength={60} placeholder={T.namePh} value={f.name}
-                  onChange={(e) => { set("name", e.target.value); if (!slugTouched.current) set("slug", slugify(e.target.value)); }} />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="category">{T.category}</FieldLabel>
-                <NativeSelect id="category" value={f.category} onChange={(e) => {
-                  set("category", e.target.value);
-                  if (!modeTouched.current) set("mode", e.target.value === "restoran" ? "tables" : ["gise", "resmi"].includes(e.target.value) ? "desks" : "seats");
-                }}>
-                  {Object.entries(CATEGORIES).map(([k, [i, t]]) => <NativeSelectOption key={k} value={k}>{i} {t}</NativeSelectOption>)}
-                </NativeSelect>
-              </Field>
-            </div>
-            {f.private ? (
-              <p className="text-sm text-muted-foreground">{room?.private ? T.keepSecret(room.slug ?? "") : T.secretNew}</p>
-            ) : (
-              <Field>
-                <FieldLabel htmlFor="slug">{T.slug}</FieldLabel>
-                <Input id="slug" required minLength={3} maxLength={40} pattern="(?!..--)[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder="antalya-konserve" value={f.slug}
-                  onChange={(e) => { slugTouched.current = true; set("slug", e.target.value); }} />
-                <FieldDescription>{T.slugDesc(`${bare(home)}${f.slug || "…"}`)}</FieldDescription>
-              </Field>
-            )}
-            <Check title={T.hidden} checked={f.private} onChange={(v) => set("private", v)}>
-              {T.hiddenDesc}
-            </Check>
-          </Section>
-
-          <Section title={T.geo}>
-            <Choice label={T.geo} value={f.geo} onChange={(v) => set("geo", v)} items={[
-              { v: "fixed", title: T.geoFixed, desc: T.geoFixedDesc, extra: <>
-                <SpotPicker pt={pt} setPt={setPt} radius={+f.radius || 300} />
-                {radiusField(T.radiusDesc)}
-              </> },
-              { v: "dynamic", title: T.geoDynamic, desc: T.geoDynamicDesc, extra: radiusField(T.radiusHostDesc) },
-              { v: "off", title: T.geoOff, desc: T.geoOffDesc },
-            ]} />
-            {warn}
-          </Section>
-
-          <Section title={T.joinSec}>
-            <Choice label={T.joinSec} value={f.limited} onChange={(v) => set("limited", v)} items={[
-              { v: "off", title: T.always, desc: T.alwaysDesc },
-              { v: "on", title: T.hoursOn, desc: T.hoursOnDesc, extra: (
-                <div className="grid grid-cols-2 gap-4">
-                  <Field>
-                    <FieldLabel htmlFor="from">{T.fromL}</FieldLabel>
-                    <Input id="from" type="time" required value={f.from} onChange={(e) => set("from", e.target.value)} />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="to">{T.toL}</FieldLabel>
-                    <Input id="to" type="time" required value={f.to} onChange={(e) => set("to", e.target.value)} />
-                  </Field>
-                </div>
-              ) },
-            ]} />
-            <Inline id="cap" label={T.capQ} desc={T.capDesc}>
-              <Input id="cap" type="number" min={1} max={1000} inputMode="numeric" placeholder={T.noLimit} value={f.cap} onChange={(e) => set("cap", e.target.value)} />
-            </Inline>
-          </Section>
+      {/* Önde yalnızca her sırada gereken iki şey: ad ve konum. Geri kalanı varsayılanlarıyla "Diğer ayarlar"da. */}
+      <Section title={T.secBasics}>
+        <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+          <Field>
+            <FieldLabel htmlFor="name">{T.name}</FieldLabel>
+            <Input id="name" required maxLength={60} placeholder={T.namePh} value={f.name}
+              onChange={(e) => { set("name", e.target.value); if (!slugTouched.current) set("slug", slugify(e.target.value)); }} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="category">{T.category}</FieldLabel>
+            <NativeSelect id="category" value={f.category} onChange={(e) => {
+              set("category", e.target.value);
+              if (!modeTouched.current) set("mode", e.target.value === "restoran" ? "tables" : ["gise", "resmi"].includes(e.target.value) ? "desks" : "seats");
+            }}>
+              {Object.entries(CATEGORIES).map(([k, [i, t]]) => <NativeSelectOption key={k} value={k}>{i} {t}</NativeSelectOption>)}
+            </NativeSelect>
+          </Field>
         </div>
+        <Check title={T.hidden} checked={f.private} onChange={(v) => set("private", v)}>
+          {T.hiddenDesc}
+        </Check>
+        {f.private ? (
+          <p className="text-sm text-muted-foreground">{room?.private ? T.keepSecret(room.slug ?? "") : T.secretNew}</p>
+        ) : (
+          <Field>
+            <FieldLabel htmlFor="slug">{T.slug}</FieldLabel>
+            {/* Alan adı önekte sabit; kullanıcı yalnızca kendi kısmını görür ve düzenler */}
+            <div className="flex h-11 items-center rounded-lg border border-input bg-card focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 has-[:invalid:not(:placeholder-shown)]:border-destructive dark:bg-input/30">
+              <span className="max-w-[55%] shrink-0 truncate pl-3 text-base text-foreground/60 select-none">{bare(home)}</span>
+              <Input id="slug" required minLength={3} maxLength={40} pattern="(?!..--)[a-z0-9][a-z0-9\-]*[a-z0-9]" placeholder={T.slugPh} value={f.slug}
+                className="h-full rounded-none border-0 bg-transparent pl-0.5 focus-visible:ring-0 dark:bg-transparent"
+                onChange={(e) => { slugTouched.current = true; set("slug", e.target.value); }} />
+            </div>
+            <FieldDescription>{T.slugDesc(`${bare(home)}${f.slug || "…"}`)}</FieldDescription>
+          </Field>
+        )}
+      </Section>
 
-        <div className="flex flex-col gap-4">
-          <Section title={T.mode}>
+      <Section title={T.geo}>
+        <Choice label={T.geo} value={f.geo} onChange={(v) => set("geo", v)} items={[
+          { v: "fixed", title: T.geoFixed, desc: T.geoFixedDesc, extra: <>
+            <SpotPicker pt={pt} setPt={(p) => { setNoPt(false); setPt(p); }} radius={+f.radius || 300} missing={noPt} />
+            {radiusField(T.radiusDesc)}
+          </> },
+          { v: "dynamic", title: T.geoDynamic, desc: T.geoDynamicDesc, extra: radiusField(T.radiusHostDesc) },
+          { v: "off", title: T.geoOff, desc: T.geoOffDesc },
+        ]} />
+        {warn}
+      </Section>
+
+      <Section title={T.secMore}>
+        <p className="-mt-2 text-sm text-muted-foreground">{T.moreDesc}</p>
+        <div>
+          {fold("mode", T.mode, `${{ seats: T.seats, tables: T.tables, desks: T.desks }[f.mode]} · ${T.maxPeople(+f.maxGroup || 1)}`, <>
             <Choice label={T.mode} value={f.mode} onChange={(v) => { modeTouched.current = true; set("mode", v); }} items={[
               { v: "seats", title: T.seats, desc: T.seatsDesc, extra: <>
                 <Check title={T.flex} checked={f.flex} onChange={(v) => set("flex", v)}>{T.flexDesc}</Check>
@@ -309,9 +374,30 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
             <Inline id="maxGroup" label={T.maxGroupQ} desc={T.maxGroupDesc}>
               <Input id="maxGroup" type="number" min={1} max={20} required inputMode="numeric" value={f.maxGroup} onChange={(e) => set("maxGroup", e.target.value)} />
             </Inline>
-          </Section>
+          </>)}
 
-          <Section title={T.waitSec}>
+          {fold("join", T.joinSec, [f.limited === "on" ? (noDay ? `⚠ ${T.noDay}` : fmtWeek({ days: spans })) : T.always, f.cap !== "" && T.capTag(+f.cap)].filter(Boolean).join(" · "), <>
+            <Choice label={T.joinSec} value={f.limited} onChange={(v) => set("limited", v)} items={[
+              { v: "off", title: T.always, desc: T.alwaysDesc },
+              { v: "on", title: T.hoursOn, desc: T.hoursOnDesc, extra: (
+                <>
+                  <WeekHours days={f.days} empty={dayErr && noDay} onChange={(d) => set("days", d)} />
+                  <Field>
+                    <FieldLabel htmlFor="tz">{T.tzL}</FieldLabel>
+                    <NativeSelect id="tz" value={f.tz} onChange={(e) => set("tz", e.target.value)}>
+                      {zonesWith(f.tz).map((z) => <NativeSelectOption key={z} value={z}>{z.replaceAll("_", " ")}</NativeSelectOption>)}
+                    </NativeSelect>
+                    <FieldDescription>{T.tzDesc}</FieldDescription>
+                  </Field>
+                </>
+              ) },
+            ]} />
+            <Inline id="cap" label={T.capQ} desc={T.capDesc}>
+              <Input id="cap" type="number" min={1} max={1000} inputMode="numeric" placeholder={T.noLimit} value={f.cap} onChange={(e) => set("cap", e.target.value)} />
+            </Inline>
+          </>)}
+
+          {fold("wait", T.waitSec, f.timed === "on" ? T.waitTag(+f.wait) : T.waitOff, (
             <Choice label={T.waitSec} value={f.timed} onChange={(v) => set("timed", v)} items={[
               { v: "off", title: T.waitOff, desc: T.waitOffDesc },
               { v: "on", title: T.waitOn, desc: T.waitOnDesc, extra: (
@@ -322,9 +408,9 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
                 </Inline>
               ) },
             ]} />
-          </Section>
+          ))}
 
-          <Section title={T.qr}>
+          {fold("qr", T.qr, f.qr === "dynamic" ? `${T.dynamic} · ${ttlText}` : T.static, <>
             <Choice label={T.qr} value={f.qr} onChange={(v) => set("qr", v)} items={[
               { v: "dynamic", title: T.dynamic, desc: T.dynamicDesc, extra: (
                 <Inline id="ttl" label={T.ttlQ} desc={T.ttlDesc}>
@@ -339,13 +425,13 @@ function RoomForm({ room, rooms, home, onDone, onCancel, onError }: { room: Room
               { v: "static", title: T.static, desc: T.staticDesc },
             ]} />
             {warn}
-          </Section>
+          </>)}
         </div>
-      </div>
+      </Section>
 
       <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t bg-background px-4 py-3">
         <Button type="button" variant="secondary" className="min-w-32" onClick={onCancel}>{T.cancel}</Button>
-        <Button className="min-w-32">{T.save}</Button>
+        <Button className="min-w-32" onClick={(e) => revealInvalid(e.currentTarget.form)}>{T.save}</Button>
       </div>
     </form>
   );
@@ -374,7 +460,7 @@ function RoomRow({ r, dist, onChange, onEdit, onStats, onError }: { r: RoomInfo;
           {r.slug ? <a className="underline-offset-2 hover:underline" href={r.page} target="_blank">{r.private ? T.hiddenTag : bare(r.page)}</a> : T.noSlug}
         </div>
         <div className="text-xs text-muted-foreground">
-          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.mode === "desks" ? T.deskTag(r.desks.length) : r.flex && T.flexTag, !!r.zones?.length && T.zoneTag(r.zones.join("/")), r.skip && T.skipTag, r.wait && T.waitTag(r.wait), r.hours && `${r.hours.from}–${r.hours.to}`, r.cap && T.capTag(r.cap), r.paused && T.pausedTag,
+          {[r.geo === "off" ? T.geoOffTag : r.geo === "dynamic" ? T.geoHostTag(r.radius) : `${r.radius} m`, T.maxPeople(r.maxGroup), r.tables ? `${T.tableTag}${r.maxEmpty !== null ? ` ${T.maxEmptyTag(r.maxEmpty)}` : ""}` : r.mode === "desks" ? T.deskTag(r.desks.length) : r.flex && T.flexTag, !!r.zones?.length && T.zoneTag(r.zones.join("/")), r.skip && T.skipTag, r.wait && T.waitTag(r.wait), r.hours && fmtWeek(r.hours), r.cap && T.capTag(r.cap), r.paused && T.pausedTag,
             r.qr === "static" ? T.staticTag : T.ttlTag(r.ttl)].filter(Boolean).join(" · ")}
         </div>
       </TableCell>
@@ -959,7 +1045,7 @@ function RoomsPanel({ me, paid, notice, reloadMe, logout }: { me: Me; paid: bool
   );
 
   if (formOpen.current) return (
-    <Page className="max-w-6xl">
+    <Page className="max-w-3xl">
       {editing !== undefined && (
         <RoomForm key={editing?.room ?? "new"} room={editing} rooms={rooms ?? []} home={me.home || ""} onError={setErr}
           onDone={() => { go(""); load(); }} onCancel={() => go("")} />

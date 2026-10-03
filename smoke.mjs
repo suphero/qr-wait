@@ -266,12 +266,24 @@ assert.equal((await ostat()).paused, true);
 assert.equal((await gadmin({ action: "resume" })).paused, false);
 assert.ok((await gjoin("cap-device-0000002", spot)).no, "açılınca girilir");
 const hm = (h) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(Date.now() + h * 3600e3);
+// Eski biçim { from, to } her gün aynı saat olarak saklanır
 await put({ hours: { from: hm(2), to: hm(3) } });
-assert.match((await gjoin("cap-device-0000003", spot)).error, /Katılım saatleri/);
+assert.match((await gjoin("cap-device-0000003", spot)).error, /Sıra şu an kapalı\. Yeniden açılış: bugün/);
 assert.equal((await ostat()).open, false);
+assert.deepEqual((await ostat()).opens?.from, hm(2));
 await put({ hours: { from: hm(-1), to: hm(1) } });
 assert.equal((await ostat()).open, true, "saat aralığında açık");
-assert.deepEqual((await ofind()).hours, { from: hm(-1), to: hm(1) });
+assert.deepEqual((await ofind()).hours, { days: Array(7).fill({ from: hm(-1), to: hm(1) }) });
+// Haftalık: bugün kapalı, yarın açık; bugün açık gün
+const wd = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(new Intl.DateTimeFormat("en", { timeZone: "Europe/Istanbul", weekday: "short" }).format(new Date()));
+const week = (fn) => ({ days: Array.from({ length: 7 }, (_, i) => fn(i)) });
+await put({ hours: week((i) => (i === (wd + 1) % 7 ? { from: "09:00", to: "12:00" } : null)) });
+assert.match((await gjoin("cap-device-0000003", spot)).error, /Yeniden açılış: yarın 09:00/);
+assert.deepEqual((await ostat()).opens, { in: 1, day: (wd + 1) % 7, from: "09:00" });
+await put({ hours: week((i) => (i === wd ? { from: hm(-1), to: hm(1) } : null)) });
+assert.equal((await ostat()).open, true, "bugünün aralığında açık");
+await put({ hours: week(() => null) });
+assert.equal((await ofind()).hours, null, "hiç açık gün yoksa her zaman açık");
 await put({});
 // Tahmini bekleme: son 1 saatte en az 3 çağrı olunca
 assert.equal((await ostat()).eta, null, "çağrı yokken tahmin yok");
