@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { api, catIcon, locate, poll, type Me, type Status } from "@/lib/api";
-import { closedText, fmtWait, geoErrors, lang, orList, pick, pl, S, tableLabel } from "@/lib/i18n";
+import { closedText, deskLabel, fmtWait, geoErrors, lang, orList, pick, pl, S, tableLabel } from "@/lib/i18n";
 import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
@@ -177,7 +177,8 @@ async function enablePush(id: string) {
   } catch { return false; }
 }
 
-async function alertUser(id: string, table?: string) {
+// place: masa ya da gişe adı; table: masa modunda başlık "Masanız hazır"
+async function alertUser(id: string, place?: string, table = false) {
   navigator.vibrate?.([500, 200, 500, 200, 500]);
   try {
     const a = new AudioContext(), o = a.createOscillator();
@@ -186,7 +187,7 @@ async function alertUser(id: string, table?: string) {
   if (window.Notification?.permission === "granted") {
     const reg = await navigator.serviceWorker?.ready;
     // push ile aynı tag: ikisi birden gelirse tek bildirim görünür
-    reg?.showNotification(table ? T.tableReady : T.yourTurn, { body: `${table ? `${table}. ` : ""}${T.notifBody}`, tag: `called-${id}`, icon: "/icons/icon-192.png", vibrate: [500, 200, 500] } as NotificationOptions);
+    reg?.showNotification(table ? T.tableReady : T.yourTurn, { body: `${place ? `${place}. ` : ""}${T.notifBody}`, tag: `called-${id}`, icon: "/icons/icon-192.png", vibrate: [500, 200, 500] } as NotificationOptions);
   }
 }
 
@@ -245,7 +246,7 @@ function JoinPage() {
       setMe(s);
       setView("wait");
       if (s.status === "called") {
-        if (!notified.current) { notified.current = true; alertUser(id, s.table && tableLabel(s.table)); }
+        if (!notified.current) { notified.current = true; alertUser(id, s.table ? tableLabel(s.table) : s.desk && deskLabel(s.desk), !!s.table); }
       } else pushUI(id);
     } catch (e: any) { setErr(e.message); }
   }
@@ -350,7 +351,7 @@ function JoinPage() {
             {called ? (
               <p>
                 <b>{me.table ? T.tableReady : T.yourTurn}</b><br />
-                {me.table && <span className="my-2 block text-4xl font-extrabold">{tableLabel(me.table)}</span>}
+                {(me.table || me.desk) && <span className="my-2 block text-4xl font-extrabold">{me.table ? tableLabel(me.table) : deskLabel(me.desk!)}</span>}
                 {me.alloc && me.alloc !== me.size ? T.alloc(me.alloc) : null}
                 {T.show}<br />
                 {!timed && T.now}

@@ -58,26 +58,29 @@ export type Status = {
   paused: boolean; open: boolean; full: boolean; hours: Hours | null; // yeni katılım: durduruldu / saat dışı / dolu
   eta: number | null; // şimdi girene tahmini bekleme (dk)
   waiting: number; people: number; next: number | null; called: number[]; lastNo: number | null;
+  deskOf: Record<number, string>; // çağrılan numara → gişe (gişe modu)
 };
 export type PublicRoom = Status & { link: string };
+// Sıra türü: boş yer havuzu, masalar, tek sıra + birden çok gişe
+export type Mode = "seats" | "tables" | "desks";
 export type Table = { id: string; cap: number; name: string; at: number };
 export type Me = {
-  name: string; status: "waiting" | "called" | "gone" | "expired"; no: number; size: number; accept: number[]; alloc?: number; table?: Table; calledAt?: number;
+  name: string; status: "waiting" | "called" | "gone" | "expired"; no: number; size: number; accept: number[]; alloc?: number; table?: Table; desk?: string; calledAt?: number;
   aheadGroups: number; aheadPeople: number; wait: number | null; remaining: number | null; eta: number | null;
 };
 export type Entry = {
-  id: string; no: number; size: number; accept?: number[]; alloc?: number; table?: Table; src: "qr" | "manual"; note: string;
+  id: string; no: number; size: number; accept?: number[]; alloc?: number; table?: Table; desk?: string; src: "qr" | "manual"; note: string;
   status: "waiting" | "called"; at: number; calledAt?: number;
 };
 export type AdminState = {
-  name: string; flex: boolean; tables: boolean; maxEmpty: number | null; available: number; added?: number;
+  name: string; flex: boolean; tables: boolean; mode: Mode; desks: string[]; idle: string[]; maxEmpty: number | null; available: number; added?: number;
   seated?: number | null; freeTables: Table[]; qr: "dynamic" | "static"; ttl: number; maxGroup: number; geo: Geo; wait: number | null; now: number;
   hours: Hours | null; cap: number | null; paused: boolean; open: boolean; full: boolean;
   token: string; entries: Entry[];
 };
 export type RoomInfo = {
   room: string; name: string; slug?: string; lat: number | null; lng: number | null; radius: number; flex: boolean; skip: boolean; private: boolean; key: string;
-  category: string; mode: "seats" | "tables"; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; geo: Geo; wait: number | null; hours: Hours | null; cap: number | null; tz: string; paused: boolean; waiting: number; people: number; called: number; link: string; page: string;
+  category: string; mode: Mode; desks: string[]; tables: boolean; maxEmpty: number | null; maxGroup: number; qr: "dynamic" | "static"; ttl: number; geo: Geo; wait: number | null; hours: Hours | null; cap: number | null; tz: string; paused: boolean; waiting: number; people: number; called: number; link: string; page: string;
 };
 
 // Günlük sıra istatistikleri (GET /api/admin/rooms/<id>/stats); kişisel veri yok

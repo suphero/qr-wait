@@ -7,6 +7,8 @@ export const langOf = (l) => (LANGS.includes(l) ? l : "en");
 const all = (s) => ({ tr: s, en: s, de: s, ru: s });
 // "7" → "Masa 7", "Bahçe 3" olduğu gibi
 const tableNo = (name) => (/^\d+$/.test(name) ? { tr: `Masa ${name}`, en: `Table ${name}`, de: `Tisch ${name}`, ru: `Стол ${name}` } : all(name));
+// "3" → "Gişe 3", "Vezne A" olduğu gibi
+const deskNo = (name) => (/^\d+$/.test(name) ? { tr: `Gişe ${name}`, en: `Counter ${name}`, de: `Schalter ${name}`, ru: `Окно ${name}` } : all(name));
 
 const M = {
   // --- ziyaretçi ---
@@ -108,6 +110,13 @@ const M = {
       ru: `${t.ru} уже среди свободных столов`,
     };
   },
+  desks: (n) => ({
+    tr: `Gişe modunda 1-${n} gişe adı girin`,
+    en: `Enter 1–${n} counter names for counter mode`,
+    de: `Geben Sie für den Schaltermodus 1–${n} Schalternamen ein`,
+    ru: `Для режима окон укажите от 1 до ${n} названий окон`,
+  }),
+  badDesk: { tr: "Gişe bulunamadı", en: "Counter not found", de: "Schalter nicht gefunden", ru: "Окно не найдено" },
   tableCap: (n) => ({
     tr: `Masa 1-${n} kişilik olmalı`,
     en: `A table must seat 1–${n} people`,
@@ -321,6 +330,7 @@ const M = {
     ru: `${name} · № ${no}. Вы выбыли из очереди, потому что не подошли вовремя.`,
   }),
   table: tableNo,
+  desk: deskNo,
   tableFor: (cap) => ({ tr: `${cap} kişilik masa`, en: `Table for ${cap}`, de: `Tisch für ${cap}`, ru: `Стол на ${cap}` }),
 };
 
@@ -332,6 +342,8 @@ export function msg(lang, key, ...args) {
 
 // web/src/lib/i18n.ts'teki tableLabel ile aynı
 export const tableLabel = (t, lang) => (t.name ? msg(lang, "table", t.name) : msg(lang, "tableFor", t.cap));
+// web/src/lib/i18n.ts'teki deskLabel ile aynı
+export const deskLabel = (d, lang) => msg(lang, "desk", d);
 
 // Çevrilebilir hata: throw fail("group", 8). Mesajı "§[\"group\",8]"; localize() isteğin dilinde metne çevirir.
 export const fail = (key, ...args) => new Error(`§${JSON.stringify([key, ...args])}`);

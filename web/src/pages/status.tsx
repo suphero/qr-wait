@@ -3,7 +3,7 @@ import { ErrorText, Page, Title } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, catIcon, poll, type PublicRoom, type Status } from "@/lib/api";
-import { closedText, fmtWait, lang, pick, S, waitText, word } from "@/lib/i18n";
+import { closedText, deskLabel, fmtWait, lang, pick, S, waitText, word } from "@/lib/i18n";
 import { LEGAL, siteUrl } from "@/components/legal";
 import { mount } from "@/lib/mount";
 
@@ -170,7 +170,7 @@ function StatusPage() {
               {s.called.length ? (
                 <div className="flex flex-wrap gap-2">
                   {s.called.map((n) => (
-                    <span key={n} className="rounded-lg bg-success px-4 py-1 text-2xl font-extrabold text-success-foreground tabular-nums">{n}</span>
+                    <span key={n} className="rounded-lg bg-success px-4 py-1 text-2xl font-extrabold text-success-foreground tabular-nums">{n}{s.deskOf?.[n] && <span className="text-lg font-semibold"> → {deskLabel(s.deskOf[n])}</span>}</span>
                   ))}
                 </div>
               ) : <p className="text-muted-foreground">{T.noneCalled}</p>}

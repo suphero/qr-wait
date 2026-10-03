@@ -329,6 +329,39 @@ await tadmin({ action: "table", n: 2 });
 ts = await tadmin({ action: "untable", id: (await tadmin()).freeTables[0].id });
 assert.equal(ts.freeTables.length, 0);
 await req("DELETE", `/api/admin/rooms/${tr.room}`, undefined, PW);
+// Gişe modu: tek sıra, "Sıradakini çağır" gişeye yönlendirir; önceki grup gelmiş sayılır; boştaki gişe ilk gelene
+assert.match((await post("/api/admin/rooms", { name: "Banka", slug: `${slug}-gise`, radius: 300, mode: "desks", desks: " , ", ...spot }, PW)).error, /gişe adı/);
+const dr = await post("/api/admin/rooms", { name: "Banka", slug: `${slug}-gise`, radius: 300, mode: "desks", desks: "1, 2, Vezne A, 2", flex: true, ...spot }, PW);
+const dadmin = (body = {}) => post(`/api/r/${dr.room}/admin`, body, { "x-key": dr.key });
+let ds = await dadmin();
+assert.deepEqual([ds.mode, ds.desks, ds.flex], ["desks", ["1", "2", "Vezne A"], false], "tekrarlanan gişe atılır, esnek yer yok");
+const djoin = (device) => post(`/api/r/${dr.room}/join`, { t: ds.token, ...spot, size: 1, device });
+const dme = async (id) => (await fetch(`${B}/api/r/${dr.room}/me?id=${id}`)).json();
+const d1 = await djoin("desk-device-00000001"), d2 = await djoin("desk-device-00000002"), d3 = await djoin("desk-device-00000003");
+assert.equal((await dme(d1.id)).status, "waiting", "gişe açılmadan kimse çağrılmaz");
+await dadmin({ action: "next", desk: "1" });
+await dadmin({ action: "next", desk: "2" });
+assert.deepEqual(((m) => [m.status, m.desk])(await dme(d1.id)), ["called", "1"]);
+assert.equal((await dme(d2.id)).desk, "2");
+assert.deepEqual((await req("GET", `/api/r/${dr.room}/status`)).deskOf, { [d1.no]: "1", [d2.no]: "2" });
+await dadmin({ action: "next", desk: "1" }); // #1'in işi bitti, #3 gişe 1'e
+assert.equal((await dme(d1.id)).status, "gone");
+assert.equal((await dme(d3.id)).desk, "1");
+ds = await dadmin({ action: "next", desk: "Vezne A" }); // bekleyen yok: gişe boşta bekler
+assert.deepEqual(ds.idle, ["Vezne A"]);
+const d4 = await djoin("desk-device-00000004");
+assert.equal((await dme(d4.id)).desk, "Vezne A", "boştaki gişeye ilk giren hemen çağrılır");
+ds = await dadmin({ action: "drop", id: d2.id }); // gişe 2'deki gelmedi: gişe boşa düşer
+assert.deepEqual(ds.idle, ["2"]);
+ds = await dadmin({ action: "undesk", desk: "2" });
+assert.deepEqual(ds.idle, []);
+assert.equal((await dadmin({ action: "next", desk: "9" })).error, "Gişe bulunamadı");
+const d5 = await djoin("desk-device-00000005");
+assert.equal((await dme(d5.id)).status, "waiting");
+await dadmin({ action: "call", id: d5.id, desk: "2" });
+assert.equal((await dme(d5.id)).desk, "2", "elle çağırma seçilen gişeye");
+assert.equal((await req("GET", `/api/admin/rooms/${dr.room}/stats`, undefined, PW)).days.at(-1).served, 1);
+await req("DELETE", `/api/admin/rooms/${dr.room}`, undefined, PW);
 // Şifre değişince eski oturum düşer; kullanıcının seçtiği şifre sızıntı listelerinde olmamalı
 const strong = () => `smoke-${randomBytes(12).toString("hex")}`;
 assert.match((await post("/api/admin/password", { old: "yanlis-sifre", password: strong() }, PW)).error, /hatalı/);

@@ -1,4 +1,4 @@
-import { PauseIcon, PlayIcon } from "lucide-react";
+import { ChevronDownIcon, PauseIcon, PlayIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConfirm } from "@/components/confirm";
@@ -7,9 +7,11 @@ import { ErrorText, Page, Title } from "@/components/page";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { api, mins, poll, type AdminState, type Entry } from "@/lib/api";
-import { geoErrors, lang, LANGS, pick, pl, tableLabel, type Lang } from "@/lib/i18n";
+import { deskLabel, geoErrors, lang, LANGS, pick, pl, S, tableLabel, type Lang } from "@/lib/i18n";
 import { mount } from "@/lib/mount";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +69,12 @@ const T = pick({
     joinTables: "Birleştirdiğiniz masaları toplam kişi sayısıyla girin.",
     freeTables: "Boş masalar (uygun grup bekliyor)",
     remove: "Kaldır",
+    desksTitle: "Gişeler",
+    thisDevice: "Bu cihazın gişesi",
+    allDesks: "Tüm gişeler",
+    nextBtn: "Sıradakini çağır",
+    idle: "Boşta: sıraya ilk giren buraya çağrılacak",
+    deskHint: "Sıradakini çağırınca bu gişede önceki çağrılan grup gelmiş sayılır.",
     freedSeats: "Boşalan yer sayısı",
     callNext: "Yer boşaldı, sıradakileri çağır",
     available: (n: number) => <>Ayrılmayı bekleyen boş yer: <b>{n}</b> (sıradaki grup sığmıyor)</>,
@@ -126,6 +134,12 @@ const T = pick({
     joinTables: "For tables pushed together, enter the total number of seats.",
     freeTables: "Free tables (waiting for a suitable group)",
     remove: "Remove",
+    desksTitle: "Counters",
+    thisDevice: "This device's counter",
+    allDesks: "All counters",
+    nextBtn: "Call next",
+    idle: "Free: the next person to join is sent here",
+    deskHint: "Calling the next group marks the group previously called to this counter as served.",
     freedSeats: "Places freed",
     callNext: "Places freed, call the next ones",
     available: (n: number) => <>Free places not yet assigned: <b>{n}</b> (the next group doesn't fit)</>,
@@ -185,6 +199,12 @@ const T = pick({
     joinTables: "Bei zusammengestellten Tischen die Gesamtzahl der Plätze eingeben.",
     freeTables: "Freie Tische (warten auf eine passende Gruppe)",
     remove: "Entfernen",
+    desksTitle: "Schalter",
+    thisDevice: "Schalter dieses Geräts",
+    allDesks: "Alle Schalter",
+    nextBtn: "Nächste aufrufen",
+    idle: "Frei: Wer sich als Nächstes anstellt, wird hierher gerufen",
+    deskHint: "Beim Aufrufen der nächsten Gruppe gilt die zuvor an diesen Schalter gerufene Gruppe als bedient.",
     freedSeats: "Frei gewordene Plätze",
     callNext: "Plätze frei, Nächste aufrufen",
     available: (n: number) => <>Noch nicht vergebene freie Plätze: <b>{n}</b> (die nächste Gruppe passt nicht)</>,
@@ -244,6 +264,12 @@ const T = pick({
     joinTables: "Для составленных вместе столов укажите общее число мест.",
     freeTables: "Свободные столы (ждут подходящую группу)",
     remove: "Убрать",
+    desksTitle: "Окна",
+    thisDevice: "Окно этого устройства",
+    allDesks: "Все окна",
+    nextBtn: "Вызвать следующего",
+    idle: "Свободно: следующий вставший в очередь будет вызван сюда",
+    deskHint: "При вызове следующей группы ранее вызванная к этому окну группа считается обслуженной.",
     freedSeats: "Освободилось мест",
     callNext: "Места освободились, вызвать следующих",
     available: (n: number) => <>Свободные нераспределённые места: <b>{n}</b> (следующая группа не помещается)</>,
@@ -285,7 +311,8 @@ function Row({ e, wait, skew, children }: { e: Entry; wait?: number | null; skew
       <b className="min-w-[3.5em] tabular-nums">#{e.no}</b>
       <span className="flex-1">
         {T.people(e.size)}
-        {e.table ? <> · <b>{tableLabel(e.table)}</b>{e.table.name && ` (${T.seats(e.table.cap)})`}</>
+        {e.desk ? <> · <b>{deskLabel(e.desk)}</b></>
+          : e.table ? <> · <b>{tableLabel(e.table)}</b>{e.table.name && ` (${T.seats(e.table.cap)})`}</>
           : e.status === "called" ? e.alloc != null && <> · <b>{T.places(e.alloc)}</b></>
           : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${T.acceptOk(e.accept.join("/"))}` : ""}
         {e.src === "manual" && ` · ${T.manual}`}
@@ -312,6 +339,8 @@ function HostPage() {
   const [addSize, setAddSize] = useState(2);
   const [addAccept, setAddAccept] = useState([2]);
   const [addNote, setAddNote] = useState("");
+  // Gişe modunda bu cihazın gişesi (hatırlanır); boş: tüm gişeler bu panelden yönetilir
+  const [myDesk, setMyDesk] = useState(() => localStorage.getItem(`desk:${ref}`) ?? "");
   const qr = useRef({ at: 0, text: "" });
   const skew = useRef(0);
   // Dinamik konumda görevlinin son konumu; her yoklamayla odaya gider
@@ -383,6 +412,9 @@ function HostPage() {
   const waiting = s?.entries.filter((e) => e.status === "waiting") ?? [];
   const called = s?.entries.filter((e) => e.status === "called") ?? [];
   const fixed = s?.qr === "static";
+  const desks = s?.mode === "desks";
+  const shownDesks = s && desks ? (s.desks.includes(myDesk) ? [myDesk] : s.desks) : [];
+  const pickDesk = (d: string) => { setMyDesk(d); localStorage.setItem(`desk:${ref}`, d); };
 
   return (
     <Page>
@@ -460,7 +492,38 @@ function HostPage() {
         </Section>
       )}
 
-      {s && !s.tables && <Section title={T.freedSeats}>
+      {desks && s && (
+        <Section title={T.desksTitle}>
+          <div className="flex flex-col gap-3">
+            {s.desks.length > 1 && (
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">{T.thisDevice}</span>
+                <NativeSelect className="flex-1" value={s.desks.includes(myDesk) ? myDesk : ""} onChange={(e) => pickDesk(e.target.value)}>
+                  <NativeSelectOption value="">{T.allDesks}</NativeSelectOption>
+                  {s.desks.map((d) => <NativeSelectOption key={d} value={d}>{deskLabel(d)}</NativeSelectOption>)}
+                </NativeSelect>
+              </label>
+            )}
+            {shownDesks.map((d) => {
+              const cur = called.find((e) => e.desk === d), idle = s.idle.includes(d);
+              return (
+                <div key={d} className="flex flex-wrap items-center gap-2 border-b pb-3 last:border-0 last:pb-0">
+                  <span className="flex-1">
+                    <b>{deskLabel(d)}</b>
+                    {cur ? <> · <b className="tabular-nums">#{cur.no}</b></> : idle && <span className="text-sm text-muted-foreground"> · {T.idle}</span>}
+                  </span>
+                  {idle && <Button variant="secondary" size="sm" onClick={() => act({ action: "undesk", desk: d })}>{S.cancel}</Button>}
+                  <Button size={shownDesks.length === 1 ? "lg" : "default"} className={cn(shownDesks.length === 1 && "w-full")}
+                    disabled={idle && !waiting.length} onClick={() => act({ action: "next", desk: d })}>{T.nextBtn}</Button>
+                </div>
+              );
+            })}
+            <p className="text-sm text-muted-foreground">{T.deskHint}</p>
+          </div>
+        </Section>
+      )}
+
+      {s?.mode === "seats" && <Section title={T.freedSeats}>
         <div className="flex gap-2">
           <Input className="w-24" type="number" min={1} max={500} inputMode="numeric" value={freeN} onChange={(e) => setFreeN(e.target.value)} />
           <Button className="flex-1 whitespace-normal" onClick={() => act({ action: "free", n: +freeN })}>{T.callNext}</Button>
@@ -486,7 +549,14 @@ function HostPage() {
       <Section title={T.waiting}>
         {waiting.map((e) => (
           <Row key={e.id} e={e}>
-            <Button variant="secondary" size="sm" onClick={() => act({ action: "call", id: e.id })}>{T.call}</Button>
+            {desks && shownDesks.length > 1 ? (
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild><Button variant="secondary" size="sm">{T.call} <ChevronDownIcon /></Button></DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {shownDesks.map((d) => <DropdownMenuItem key={d} onSelect={() => act({ action: "call", id: e.id, desk: d })}>{deskLabel(d)}</DropdownMenuItem>)}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : <Button variant="secondary" size="sm" onClick={() => act({ action: "call", id: e.id, desk: shownDesks[0] })}>{T.call}</Button>}
             <Button variant="secondary" size="sm" onClick={() => act({ action: "drop", id: e.id })}>{T.del}</Button>
           </Row>
         ))}

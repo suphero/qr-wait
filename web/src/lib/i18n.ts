@@ -57,6 +57,7 @@ export const S = pick({
     empty: "Şu an sıra yok",
     or: "veya",
     table: (n: string) => `Masa ${n}`,
+    desk: (n: string) => `Gişe ${n}`,
     tableFor: (c: number) => `${c} kişilik masa`,
     minU: "dk", hourU: "sa",
     eta: (t: string) => `Tahmini bekleme: yaklaşık ${t}`,
@@ -76,6 +77,7 @@ export const S = pick({
     empty: "No queue right now",
     or: "or",
     table: (n: string) => `Table ${n}`,
+    desk: (n: string) => `Counter ${n}`,
     tableFor: (c: number) => `Table for ${c}`,
     minU: "min", hourU: "h",
     eta: (t: string) => `Estimated wait: about ${t}`,
@@ -95,6 +97,7 @@ export const S = pick({
     empty: "Derzeit keine Warteschlange",
     or: "oder",
     table: (n: string) => `Tisch ${n}`,
+    desk: (n: string) => `Schalter ${n}`,
     tableFor: (c: number) => `Tisch für ${c}`,
     minU: "Min.", hourU: "Std.",
     eta: (t: string) => `Geschätzte Wartezeit: etwa ${t}`,
@@ -114,6 +117,7 @@ export const S = pick({
     empty: "Сейчас очереди нет",
     or: "или",
     table: (n: string) => `Стол ${n}`,
+    desk: (n: string) => `Окно ${n}`,
     tableFor: (c: number) => `Стол на ${c}`,
     minU: "мин", hourU: "ч",
     eta: (t: string) => `Примерное ожидание: около ${t}`,
@@ -131,6 +135,8 @@ export const waitText = (r: PublicRoom) => (r.waiting ? S.waiting(r) : S.empty);
 export const orList = (a: number[]) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} ${S.or} ${a.at(-1)}` : String(a[0]));
 // src/i18n.js'teki tableLabel ile aynı
 export const tableLabel = (t: Pick<Table, "name" | "cap">) => (/^\d+$/.test(t.name) ? S.table(t.name) : t.name || S.tableFor(t.cap));
+// src/i18n.js'teki deskLabel ile aynı: "3" → "Gişe 3", "Vezne A" olduğu gibi
+export const deskLabel = (d: string) => (/^\d+$/.test(d) ? S.desk(d) : d);
 // Tahmini bekleme: 25 dk, 1 sa 10 dk. 10 dk'dan uzunsa 5'e yuvarlanır (kesinlik izlenimi vermesin).
 export const fmtWait = (n: number) => {
   const m = n > 10 ? Math.ceil(n / 5) * 5 : n;
