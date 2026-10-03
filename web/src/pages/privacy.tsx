@@ -20,7 +20,7 @@ const S: Section[] = pick<Section[]>({
       <>QR Wait ile sıra kuran işletmeler (hesap sahipleri), kendi sıralarına giren ziyaretçilerin verileri bakımından veri sorumlusudur; QR Wait bu verileri işletme adına, yalnızca hizmetin çalışması için işleyen <b>veri işleyen</b> konumundadır.</>,
     ] },
     { h: "Sıraya giren ziyaretçilerin verileri", ul: [
-      <><b>Sıra kaydı:</b> grup büyüklüğü, kabul edilen yer sayıları, sıra numarası, giriş ve çağrılma zamanı, arayüz dili.</>,
+      <><b>Sıra kaydı:</b> grup büyüklüğü, kabul edilen yer sayıları, sıra numarası, giriş ve çağrılma zamanı, arayüz dili, sıra sayfanızın en son açık olduğu an (görevli, çağrıdan haberiniz olup olamayacağını görsün diye; bildirimlerin açık olup olmadığıyla birlikte gösterilir).</>,
       <><b>Cihaz kimliği:</b> tarayıcınızda üretilen rastgele bir kimlik; aynı telefonla ikinci numara alınmasını önler. Adınızla ya da telefon numaranızla ilişkili değildir.</>,
       <><b>Konum:</b> sıra konum kontrolü kullanıyorsa yalnızca sıraya girerken, sıranın alanında ya da görevlinin yakınında olduğunuzu doğrulamak için o anda kullanılır. <b>Konumunuz saklanmaz.</b></>,
       <><b>Bildirim aboneliği:</b> "sıra size geldi" bildirimine izin verirseniz tarayıcınızın bildirim adresi.</>,
@@ -76,7 +76,7 @@ const S: Section[] = pick<Section[]>({
       <>Businesses that set up queues with QR Wait (account holders) are the controllers of the data of visitors joining their queues; QR Wait acts as a <b>processor</b>, handling that data on the business's behalf solely to run the service.</>,
     ] },
     { h: "Data of visitors joining a queue", ul: [
-      <><b>Queue entry:</b> group size, accepted numbers of places, queue number, time of joining and being called, interface language.</>,
+      <><b>Queue entry:</b> group size, accepted numbers of places, queue number, time of joining and being called, interface language, the last time your queue page was open (shown to the attendant together with whether notifications are on, so they can tell whether you'll hear about the call).</>,
       <><b>Device ID:</b> a random identifier generated in your browser to prevent a second number from the same phone. It is not linked to your name or phone number.</>,
       <><b>Location:</b> if the queue uses a location check, used only at the moment you join, to check that you are at the queue's location or near the attendant. <b>Your location is not stored.</b></>,
       <><b>Notification subscription:</b> your browser's push address, if you allow "it's your turn" notifications.</>,
@@ -132,7 +132,7 @@ const S: Section[] = pick<Section[]>({
       <>Betriebe, die mit QR Wait Warteschlangen einrichten (Kontoinhaber), sind für die Daten der Besucher ihrer Warteschlangen verantwortlich; QR Wait verarbeitet diese Daten als <b>Auftragsverarbeiter</b> im Auftrag des Betriebs und nur zum Betrieb des Dienstes.</>,
     ] },
     { h: "Daten von Besuchern einer Warteschlange", ul: [
-      <><b>Eintrag:</b> Gruppengröße, akzeptierte Platzanzahlen, Nummer, Zeitpunkt des Eintritts und des Aufrufs, Sprache.</>,
+      <><b>Eintrag:</b> Gruppengröße, akzeptierte Platzanzahlen, Nummer, Zeitpunkt des Eintritts und des Aufrufs, Sprache, der Zeitpunkt, zu dem Ihre Warteschlangenseite zuletzt geöffnet war (wird dem Personal zusammen mit dem Mitteilungsstatus angezeigt, damit es sieht, ob Sie vom Aufruf erfahren).</>,
       <><b>Geräte-ID:</b> eine in Ihrem Browser erzeugte Zufallskennung, die eine zweite Nummer vom selben Telefon verhindert. Sie ist nicht mit Ihrem Namen oder Ihrer Telefonnummer verknüpft.</>,
       <><b>Standort:</b> wird, falls die Warteschlange eine Standortprüfung nutzt, nur beim Eintritt verwendet, um zu prüfen, dass Sie am Ort der Warteschlange oder in der Nähe des Personals sind. <b>Ihr Standort wird nicht gespeichert.</b></>,
       <><b>Benachrichtigungsabo:</b> die Push-Adresse Ihres Browsers, wenn Sie „Sie sind dran“-Benachrichtigungen erlauben.</>,
@@ -188,7 +188,7 @@ const S: Section[] = pick<Section[]>({
       <>Предприятия, создающие очереди в QR Wait (владельцы учётных записей), являются операторами данных посетителей своих очередей; QR Wait выступает <b>обработчиком</b> и обрабатывает эти данные от имени предприятия только для работы сервиса.</>,
     ] },
     { h: "Данные посетителей очереди", ul: [
-      <><b>Запись в очереди:</b> размер группы, подходящее количество мест, номер, время записи и вызова, язык интерфейса.</>,
+      <><b>Запись в очереди:</b> размер группы, подходящее количество мест, номер, время записи и вызова, язык интерфейса, время, когда страница очереди была открыта в последний раз (показывается сотруднику вместе с тем, включены ли уведомления, чтобы он видел, узнаете ли вы о вызове).</>,
       <><b>Идентификатор устройства:</b> случайный идентификатор, созданный в вашем браузере, чтобы с одного телефона нельзя было взять второй номер. Он не связан с вашим именем или номером телефона.</>,
       <><b>Местоположение:</b> если очередь проверяет местоположение, используется только в момент записи, чтобы проверить, что вы находитесь у очереди или рядом с сотрудником. <b>Местоположение не сохраняется.</b></>,
       <><b>Подписка на уведомления:</b> push-адрес браузера, если вы разрешили уведомления «ваша очередь».</>,

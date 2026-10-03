@@ -19,6 +19,7 @@ const MAX_ENTRIES = 1000;
 const GEOS = new Set(["off", "fixed", "dynamic"]);
 const WAITS = [3, 5, 10, 15, 20, 30]; // çağrılanın gelme süresi seçenekleri (dk); süre dolunca sıradan düşer
 const HERE_TTL = 5 * 60 * 1000; // dinamik konum: görevli konumu bundan eskiyse ziyaretçi giremez (panel kapalı / konum alınamıyor)
+const SEEN_SAVE = 60 * 1000; // ziyaretçi sayfasının son görülme zamanı en fazla bu aralıkla diske yazılır (her yoklamada değil)
 const SOON = 2; // önünde en fazla bu kadar grup kalınca "sıranız yaklaşıyor" bildirimi
 const ETA_WINDOW = 60 * 60 * 1000; // tahmini bekleme: son 1 saatteki çağrı hızından
 const STAT_DAYS = 90; // günlük istatistiklerin saklandığı gün sayısı
@@ -325,6 +326,7 @@ export class Room extends DurableObject {
         throw failed(err, "quota") || failed(err, "suspended") ? fail("closed") : err;
       });
     }
+    e.seen = Date.now();
     this.fill(); // boş yer / bekleyen masa varsa hemen çağrılır
     await this.save();
     await this.notify();
@@ -364,8 +366,12 @@ export class Room extends DurableObject {
     const s = this.need();
     const i = s.entries.findIndex((e) => e.id === id);
     if (i < 0) return { name: s.name, status: s.expired?.includes(id) ? "expired" : "gone" };
-    const e = s.entries[i], due = this.due(e);
-    if (LANGS.includes(lang) && e.lang !== lang) { e.lang = lang; await this.save(); }
+    const e = s.entries[i], due = this.due(e), now = Date.now();
+    // Son görülme görevli panelinde gösterilir; bellekte her yoklamada güncellenir, diske dakikada bir yazılır
+    e.seen = now;
+    const lng = LANGS.includes(lang) && e.lang !== lang;
+    if (lng) e.lang = lang;
+    if (lng || now - (this.seenAt ?? 0) >= SEEN_SAVE) { this.seenAt = now; await this.save(); }
     const ahead = this.ahead(e);
     return {
       name: s.name, no: e.no, size: e.size, accept: acceptOf(e), alloc: e.alloc, table: e.table, desk: e.desk, zones: e.zones, zone: e.zone, status: e.status, calledAt: e.calledAt,
@@ -661,7 +667,8 @@ export class Room extends DurableObject {
       seated: table && (s.entries.find((x) => x.table === table)?.no ?? null),
       freeTables: s.tables,
       token: await this.token(),
-      entries: s.entries.map(({ device, push, soon, ...x }) => x),
+      // seen: ziyaretçi sayfasının son yoklaması; notify: kapalı sayfaya push ile ulaşılabilir
+      entries: s.entries.map(({ device, push, soon, ...x }) => ({ ...x, ...(x.src === "qr" && { notify: !!push }) })),
     };
   }
 }

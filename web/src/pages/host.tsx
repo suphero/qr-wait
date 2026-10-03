@@ -39,6 +39,10 @@ const T = pick({
     acceptOk: (list: string) => `${list} yer olur`,
     manual: "elle",
     ago: (n: number) => `${n} dk önce`,
+    online: "sayfası açık",
+    seen: (n: number) => (n < 1 ? "az önce görüldü" : n < 60 ? `${n} dk önce görüldü` : "1 saattir görülmedi"),
+    pushOn: "Bildirim açık: sayfası kapalıyken de çağrıdan haberi olur",
+    pushOff: "Bildirim kapalı: yalnızca sayfası açıkken çağrıdan haberi olur",
     remain: (n: number) => (n < 1 ? "1 dk'dan az kaldı" : `${n} dk kaldı`),
     min: (n: number) => `${n} dk`,
     waitingSum: (g: number, p: number) => `${g} grup / ${p} kişi bekliyor`,
@@ -106,6 +110,10 @@ const T = pick({
     acceptOk: (list: string) => `${list} places OK`,
     manual: "added manually",
     ago: (n: number) => `${n} min ago`,
+    online: "page open",
+    seen: (n: number) => (n < 1 ? "seen just now" : n < 60 ? `seen ${n} min ago` : "not seen for 1 hour"),
+    pushOn: "Notifications on: they'll hear about the call even with the page closed",
+    pushOff: "Notifications off: they'll only hear about the call while the page is open",
     remain: (n: number) => (n < 1 ? "under 1 min left" : `${n} min left`),
     min: (n: number) => `${n} min`,
     waitingSum: (g: number, p: number) => `${pl(g, { one: "group", other: "groups" })} / ${pl(p, { one: "person", other: "people" })} waiting`,
@@ -173,6 +181,10 @@ const T = pick({
     acceptOk: (list: string) => `${list} Plätze möglich`,
     manual: "manuell",
     ago: (n: number) => `vor ${n} Min.`,
+    online: "Seite geöffnet",
+    seen: (n: number) => (n < 1 ? "gerade eben gesehen" : n < 60 ? `vor ${n} Min. gesehen` : "seit 1 Std. nicht gesehen"),
+    pushOn: "Mitteilungen an: erfährt vom Aufruf auch bei geschlossener Seite",
+    pushOff: "Mitteilungen aus: erfährt vom Aufruf nur bei geöffneter Seite",
     remain: (n: number) => (n < 1 ? "unter 1 Min. übrig" : `noch ${n} Min.`),
     min: (n: number) => `${n} Min.`,
     waitingSum: (g: number, p: number) => `${pl(g, { one: "Gruppe", other: "Gruppen" })} / ${pl(p, { one: "Person", other: "Personen" })} warten`,
@@ -240,6 +252,10 @@ const T = pick({
     acceptOk: (list: string) => `подойдёт мест: ${list}`,
     manual: "добавлен вручную",
     ago: (n: number) => `${n} мин назад`,
+    online: "страница открыта",
+    seen: (n: number) => (n < 1 ? "был(а) только что" : n < 60 ? `был(а) ${n} мин назад` : "не появлялся(-ась) больше часа"),
+    pushOn: "Уведомления включены: узнает о вызове, даже если страница закрыта",
+    pushOff: "Уведомления выключены: узнает о вызове, только пока страница открыта",
     remain: (n: number) => (n < 1 ? "меньше 1 мин" : `осталось ${n} мин`),
     min: (n: number) => `${n} мин`,
     waitingSum: (g: number, p: number) => `Ждут: ${pl(g, { one: "группа", few: "группы", many: "групп", other: "группы" })} / ${pl(p, { one: "человек", few: "человека", many: "человек", other: "человека" })}`,
@@ -309,10 +325,15 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+// Ziyaretçi sayfası 10 sn'de bir yoklar; son yoklama bundan yeniyse sayfası açık sayılır
+const ACTIVE = 30000;
+
 // Yer bilgisi: çağrılanda ayrılan yer, bekleyende (kişi sayısından farklıysa) kabul edilen yerler
 // wait: süreli sırada gelme süresi (dk); skew: sunucu saati - bu cihazın saati
+// QR ile girenlerde ulaşılabilirlik: sayfa son yoklamadan beri açık mı, bildirim açık mı (kararı görevli verir)
 function Row({ e, wait, skew, children }: { e: Entry; wait?: number | null; skew?: number; children: ReactNode }) {
   const left = wait && e.calledAt ? Math.floor((e.calledAt + wait * 60000 - Date.now() - (skew ?? 0)) / 60000) : null;
+  const away = e.seen ? Date.now() + (skew ?? 0) - e.seen : null;
   const late = left !== null ? left < 1 : e.calledAt && mins(e.calledAt) >= 10;
   return (
     <div className="flex items-center gap-2 border-b py-2 last:border-0">
@@ -325,6 +346,8 @@ function Row({ e, wait, skew, children }: { e: Entry; wait?: number | null; skew
           : e.accept && (e.accept.length > 1 || e.accept[0] !== e.size) ? ` · ${T.acceptOk(e.accept.join("/"))}` : ""}
         {e.zone ? <> · <b>{e.zone}</b></> : e.zones && ` · ${e.zones.join("/")}`}
         {e.src === "manual" && ` · ${T.manual}`}
+        {away !== null && <> · <span className={cn(away >= ACTIVE && "text-muted-foreground")}>{away < ACTIVE ? `🟢 ${T.online}` : T.seen(Math.floor(away / 60000))}</span></>}
+        {e.notify !== undefined && <> · <span title={e.notify ? T.pushOn : T.pushOff} aria-label={e.notify ? T.pushOn : T.pushOff}>{e.notify ? "🔔" : "🔕"}</span></>}
         {e.note && ` · ${e.note}`}
         {e.calledAt && <> · <span className={cn(late && "font-bold text-destructive")}>{left !== null ? T.remain(left) : T.ago(mins(e.calledAt))}</span></>}
       </span>
@@ -580,7 +603,7 @@ function HostPage() {
 
       <Section title={T.waiting}>
         {waiting.map((e) => (
-          <Row key={e.id} e={e}>
+          <Row key={e.id} e={e} skew={skew.current}>
             {desks && shownDesks.length > 1 ? (
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild><Button variant="secondary" size="sm">{T.call} <ChevronDownIcon /></Button></DropdownMenuTrigger>

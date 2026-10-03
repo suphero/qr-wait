@@ -99,8 +99,15 @@ const sub = { endpoint: `https://fcm.googleapis.com/fcm/send/${"x".repeat(40)}`,
 assert.deepEqual(await post(`/api/r/${room}/push`, { id: a.id, sub }), { ok: true });
 assert.equal((await post(`/api/r/${room}/push`, { id: a.id, sub: { endpoint: "https://evil.example/x" } }, { "x-lang": "de" })).error, "Ungültiges Benachrichtigungsabonnement");
 
+// Panelde ulaşılabilirlik: son görülme ve bildirim durumu (elle eklenende yok); cihaz ve abonelik gönderilmez
+let s = await admin({});
+const ea = s.entries.find((e) => e.id === a.id), ec2 = s.entries.find((e) => e.id === c.id);
+assert.ok(Math.abs(s.now - ea.seen) < 60000, "son görülme");
+assert.deepEqual([ea.notify, ec2.notify], [true, false]);
+assert.ok(!("push" in ea) && !("device" in ea));
+
 // 3 kişi kalktı: #1 (2 kişi) çağrılır, 1 yer artar
-let s = await admin({ action: "free", n: 3 });
+s = await admin({ action: "free", n: 3 });
 assert.equal(s.error, undefined, "push gönderimi çağırmayı bozmaz");
 assert.equal((await me(a.id)).status, "called");
 assert.equal((await me(b.id)).status, "waiting");
@@ -115,6 +122,7 @@ assert.equal((await me(b.id)).status, "called", "#2 (4 kişi) artık sığıyor"
 
 s = await admin({ action: "add", size: 2, note: "telefonsuz" });
 assert.equal(s.added, 4);
+assert.ok(((e) => !("seen" in e) && !("notify" in e))(s.entries.find((e) => e.no === 4)), "elle eklenende ulaşılabilirlik yok");
 const st = await (await fetch(`${B}/api/r/${room}/status`)).json();
 assert.deepEqual([st.waiting, st.called, st.lastNo, st.next], [2, [b.no], b.no, c.no]);
 assert.ok(!JSON.stringify(st).includes("telefonsuz") && !("entries" in st), "herkese açık durumda not ve bilet bilgisi yok");

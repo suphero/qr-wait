@@ -75,6 +75,7 @@ export type Me = {
 export type Entry = {
   id: string; no: number; size: number; accept?: number[]; alloc?: number; table?: Table; desk?: string; zones?: string[]; zone?: string; src: "qr" | "manual"; note: string;
   status: "waiting" | "called"; at: number; calledAt?: number;
+  seen?: number; notify?: boolean; // ziyaretçi sayfasının son yoklaması (sunucu saati); push ile ulaşılabilir mi (yalnızca QR ile girenlerde)
 };
 export type AdminState = {
   name: string; flex: boolean; tables: boolean; mode: Mode; desks: string[]; idle: string[]; zones: string[]; spots: Record<string, number>; maxEmpty: number | null; available: number; added?: number;
